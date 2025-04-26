@@ -1,0 +1,38 @@
+// {
+//  "extends": "@sindresorhus/tsconfig",
+// 	"compilerOptions": {
+// 		"outDir": "dist",
+// 		"rewriteRelativeImportExtensions": true
+// 	},
+// 	"include": ["source"]
+// }
+{
+	"compilerOptions": {
+		"target": "es5",
+		// "extends": "@sindresorhus/tsconfig",
+		"lib": ["dom", "dom.iterable", "esnext"],
+		"downlevelIteration": true,
+		"outDir": "dist",
+		"rewriteRelativeImportExtensions": true,
+		"allowJs": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"strict": true,
+		"forceConsistentCasingInFileNames": true,
+		"module": "Node16",
+		"moduleResolution": "Node16",
+		"resolveJsonModule": true,
+		"isolatedModules": false,
+		// "noEmit": true,
+		"jsx": "react",
+		"baseUrl": ".",
+		"paths": {
+			"edit-package-json/dist/edit-package-json.cjs": [
+				"./gulpfile.ts/edit-package-json.d.ts"
+			]
+		},
+		"importHelpers": false
+	},
+	"include": ["source"]
+}

@@ -1,0 +1,14 @@
+
+* WORK IN PROGRESS
+
+** description
+rewrite of the famous game flaghack
+
+** Running the game
+#+BEGIN_SRC bash
+  git clone git@github.com:htayj/flaghack.git
+  cd flaghack
+  npm i
+  npm run build
+  npx flag-hack
+#+END_SRC

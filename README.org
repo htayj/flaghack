@@ -17,9 +17,8 @@ rewrite of the famous game flaghack
 
 *** otherwise if you want to continuously build the game as files change:
 
+(after cloning and cd'ing)
 #+BEGIN_SRC bash
-  git clone git@github.com:htayj/flaghack.git
-  cd flaghack
   npm i
   npm run dev
 #+END_SRC

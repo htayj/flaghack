@@ -1,6 +1,6 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {Box, Newline, Text, useInput} from 'ink';
-import GameBoard, {Tiles} from './components/GameBoard.tsx';
+import GameBoard, {Tile, Tiles} from './components/GameBoard.tsx';
 import {List, Map} from 'immutable';
 import {filterIs, noop, nullMatrix} from './util.js';
 import {
@@ -50,18 +50,18 @@ const getPosition = (e: Entity): UndefOr<Pos> =>
 	map(filterIs(e, isTerrain), (t: Terrain) => t.pos) ??
 	map(filterIs(e, isItem), (i: Item) => filterIs(i.in, isPosition));
 
-const getTile = (e: UndefOr<Entity>): string => {
+const getTile = (e: UndefOr<Entity>): Tile => {
 	switch (e?.type) {
 		case 'flag':
-			return 'F';
+			return {color: 'white', char: 'F'};
 		case 'player':
-			return '@';
+			return {color: 'white', char: '@'};
 		case 'wall':
-			return '#';
+			return {color: 'white', char: '#'};
 		case 'hippie':
-			return 'h';
+			return {color: 'yellow', char: 'h'};
 		default:
-			return '.';
+			return {color: 'grey', char: '.'};
 	}
 };
 
@@ -105,8 +105,8 @@ export default function App({name = 'DEV'}: Props) {
 			<Box borderStyle="round" height={30} width={100}>
 				<Text>{name}</Text>
 				<Text>
-					{messages.map(message => (
-						<Text>
+					{messages.map((message, i) => (
+						<Text key={i}>
 							$ {message} {'\n'}
 						</Text>
 					))}

@@ -2,7 +2,7 @@
 // import {Entity} from './gameloop.ts';
 import {defined} from 'scala-ts/UndefOr.js';
 import {isCreature} from './creatures.ts';
-import {GameState, World} from './gameloop.ts';
+import {World} from './gameloop.ts';
 import {collideP, Pos, shift} from './position.ts';
 import {isTerrain} from './terrain.ts';
 
@@ -10,7 +10,6 @@ export type Key = string;
 export type Keyed = {key: Key};
 export const getKey = <T extends Keyed>(a: T) => a.key;
 export type Positioned = {pos: Pos};
-// export const isPositioned = (a: Entity): a is Positioned=> isCreature(a)
 export const isPosition = (e: Pos | Key): e is Pos => typeof e === 'object';
 export type Contained = {in: Key};
 export type Located = Positioned | Contained;

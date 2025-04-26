@@ -1,4 +1,4 @@
-import {EntityBase, EntityPositioned, genKey} from './entity.ts';
+import {EntityPositioned, genKey} from './entity.ts';
 import {Entity} from './gameloop.ts';
 
 export type CreatureBase = EntityPositioned & {

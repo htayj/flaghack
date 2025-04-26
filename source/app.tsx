@@ -2,7 +2,7 @@ import React, {useCallback, useMemo, useState} from 'react';
 import {Box, Newline, Text, useInput} from 'ink';
 import GameBoard, {Tiles} from './components/GameBoard.tsx';
 import {List, Map} from 'immutable';
-import {nullMatrix} from './util.js';
+import {filterIs, noop, nullMatrix} from './util.js';
 import {
 	Action,
 	doPlayerAction,
@@ -44,14 +44,12 @@ const parseInput = (input: any) => {
 			return Action.noop;
 	}
 };
-export const filterIs = <T, R extends T>(
-	u: T,
-	f: (a: T) => a is R,
-): UndefOr<R> => (f(u) ? u : undefined);
+
 const getPosition = (e: Entity): UndefOr<Pos> =>
 	map(filterIs(e, isCreature), (c: Creature) => c.pos) ??
 	map(filterIs(e, isTerrain), (t: Terrain) => t.pos) ??
 	map(filterIs(e, isItem), (i: Item) => filterIs(i.in, isPosition));
+
 const getTile = (e: UndefOr<Entity>): string => {
 	switch (e?.type) {
 		case 'flag':
@@ -83,8 +81,6 @@ const drawWorld = (world: World): Tiles => {
 	);
 	return fullmap.map(r => r.toArray()).toArray();
 };
-const identity = <T extends any>(a: T) => a;
-const noop = <T extends any>(_: T) => undefined;
 export default function App({name = 'DEV'}: Props) {
 	const [messages, setMessages] = useState<List<string>>(List());
 	const log = useCallback(
@@ -97,9 +93,6 @@ export default function App({name = 'DEV'}: Props) {
 	);
 	const world = useMemo(() => gameState.get('world'), [gameState]);
 	const doActionWithLog = doPlayerAction(log);
-	// const [messages, setMessages] = useMessages();
-
-	// const theDrawMatrix = matrixToArray(drawMatrix(entityMatrix));
 	const theDrawMatrix = drawWorld(world);
 
 	useInput(input => setGameState(doActionWithLog(parseInput(input))));

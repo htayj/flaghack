@@ -1,6 +1,5 @@
 import {Map, Record} from 'immutable';
 import {Terrain, testWalls} from './terrain.js';
-// import {Creature, isPlayer, Player, player} from './creatures';
 import {
 	Creature,
 	hippie,
@@ -10,8 +9,9 @@ import {
 	player,
 } from './creatures.js';
 import {Item} from './items.js';
-import {actPosition, getKey, movePosition} from './entity.js';
+import {actPosition, getKey} from './entity.js';
 import {map, filter, UndefOr} from 'scala-ts/UndefOr.js';
+import {noop} from './util.js';
 export enum Action {
 	apply,
 	noop,
@@ -26,9 +26,7 @@ export enum Action {
 	moveUpLeft,
 }
 
-const noop = <T extends any>(_: T) => undefined;
 type logger = (a: string) => void;
-var llog: logger = noop;
 export type World = Map<string, Terrain | Creature | Item>;
 export type Entity = Terrain | Creature | Item;
 export type GameState = Record<{
@@ -43,9 +41,6 @@ const _state: {gameState: GameState; log: (s: string) => void} = {
 	})(),
 	log: noop,
 };
-// var _GameState: GameState = Record({
-// 	world: Map<string, Terrain | Creature | Item>({player: player(3, 3)}),
-// })();
 
 const setGameState = (s: GameState): void => {
 	_state.gameState = s;
@@ -73,6 +68,7 @@ const updateEntity =
 
 const getPlayer = (gs: GameState): UndefOr<Player> =>
 	filter(gs.get('world').get('player'), isPlayer) as Player;
+
 export const setLog = (l: (a: string) => void) => {
 	_state.log = l;
 };
@@ -147,9 +143,6 @@ export const doAction =
 				);
 			}
 			case Action.moveDownLeft: {
-				// log(
-				// 	`moveposition: ${JSON.stringify(movePosition(crea, {x: -1, y: 0}))}`,
-				// );
 				return (
 					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: -1, y: 1})) ?? c
 				);
@@ -170,13 +163,6 @@ export const doAction =
 					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 1, y: -1})) ?? c
 				);
 			}
-			// case Action.moveLeft: {
-			// 	return updateEntity(gs)(crea)(
-			// 		c =>
-			// 			map(filter(c, isCreature), c => movePosition(c, {x: -1, y: 0})) ??
-			// 			c,
-			// 	);
-			// }
 			default:
 				log('default case');
 				return gs;

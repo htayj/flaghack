@@ -18,6 +18,7 @@ export const testWalls = [
 	// top/bottom bounds
 	...range(2, 18).map(i => wall(1, i)),
 	...range(2, 18).map(i => wall(78, i)),
+
 	// left/right bounds
 	...range(1, 79).map(i => wall(i, 1)),
 	...range(1, 79).map(i => wall(i, 18)),

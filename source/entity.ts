@@ -1,5 +1,3 @@
-// import {isCreature} from './creatures.ts';
-// import {Entity} from './gameloop.ts';
 import {defined} from 'scala-ts/UndefOr.js';
 import {isCreature} from './creatures.ts';
 import {World} from './gameloop.ts';

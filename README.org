@@ -5,6 +5,8 @@
 rewrite of the famous game flaghack
 
 ** Running the game
+
+*** to run after building once:
 #+BEGIN_SRC bash
   git clone git@github.com:htayj/flaghack.git
   cd flaghack
@@ -12,3 +14,23 @@ rewrite of the famous game flaghack
   npm run build
   npx flag-hack
 #+END_SRC
+
+*** otherwise if you want to continuously build the game as files change:
+
+#+BEGIN_SRC bash
+  git clone git@github.com:htayj/flaghack.git
+  cd flaghack
+  npm i
+  npm run dev
+#+END_SRC
+
+and in a second terminal 
+
+#+BEGIN_SRC bash
+  npx flag-hack
+#+END_SRC
+
+(note, you will have to ^C the 2nd terminal and rerun it when something changes, it will not automatically update)
+
+** exiting the game
+press ^C (control-c)

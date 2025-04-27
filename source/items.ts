@@ -1,23 +1,51 @@
 import {Creature} from './creatures.js';
-import {genKey, Key, Keyed} from './entity.js';
-import {Entity} from './gameloop.js';
+import {
+	Contained,
+	genKey,
+	isPositioned,
+	Key,
+	Keyed,
+	WithContainer,
+	WithLocation,
+	WithPosition,
+} from './entity.js';
+import {Entity, Log, World} from './gameloop.js';
 import {Pos} from './position.js';
 
-export type ItemBase = Keyed & {kind: 'item'} & {
-	in: Pos | Key; // either position or owner
-};
+export type ItemBase = WithLocation<Keyed & {kind: 'item'}>;
+// export type ItemBase = Keyed & {kind: 'item'} & {
+// 	in: Pos | Key; // either position or owner
+// };
+export type GroundItem = WithPosition<ItemBase>;
+export type InventoryItem = WithContainer<ItemBase>;
 export type Flag = ItemBase & {type: 'flag'};
 export type Item = Flag;
 export const groundFlag = (pos: Pos): Flag => ({
-	in: pos,
+	pos,
 	type: 'flag',
 	kind: 'item',
 	key: genKey(),
 });
 
 export const isItem = (e: Entity): e is Item => e.kind === 'item';
-export const pickup = (item: Item, by: Creature): Item => ({
+export const pickup =
+	(by: Creature) =>
+	(item: GroundItem): InventoryItem => ({
+		...item,
+		in: by.key,
+	});
+// export const pickup = (item: GroundItem, by: Creature): InventoryItem => ({
+// 	...item,
+// 	in: by.key,
+// });
+export const drop = (item: InventoryItem, by: Creature): GroundItem => ({
 	...item,
-	in: by.key,
+	pos: by.pos,
 });
-export const drop = (item: Item, by: Creature): Item => ({...item, in: by.pos});
+export const isAt =
+	(p: Pos) =>
+	<T extends Entity>(e: T) =>
+		isPositioned(e) && e.pos === p;
+
+export const itemsAt = (log: Log) => (world: World) => (pos: Pos) =>
+	world.filter(isItem).filter(isAt(pos));

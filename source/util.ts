@@ -20,3 +20,16 @@ export const filterIs = <T, R extends T>(
 
 export const identity = <T extends any>(a: T) => a;
 export const noop = <T extends any>(_: T) => undefined;
+
+// export const hasProperty = <
+// 	P extends Object,
+// 	K extends keyof P,
+// 	T extends Omit<P, K>,
+// >(
+// 	o: T,
+// 	property: K,
+// ): o is T & Pick<P, K> => o.hasOwnProperty(property);
+// export const hasProperty = <T extends Object, P extends string>(
+// 	o: T,
+// 	property: P,
+// ): o is T & {[key: P] : unknown} => o.hasOwnProperty(property);

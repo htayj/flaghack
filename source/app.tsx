@@ -1,22 +1,20 @@
 import React, {useCallback, useMemo, useState} from 'react';
 import {Box, Newline, Text, useInput} from 'ink';
 import GameBoard, {Tile, Tiles} from './components/GameBoard.tsx';
-import {List, Map} from 'immutable';
-import {filterIs, noop, nullMatrix} from './util.js';
+import {List} from 'immutable';
+import {filterIs, nullMatrix} from './util.js';
 import {
 	Action,
 	doPlayerAction,
 	Entity,
 	GameState,
+	getGameStateExtern,
 	setLog,
 	World,
 } from './gameloop.ts';
-import {Creature, isCreature} from './creatures.ts';
 import {map, UndefOr} from 'scala-ts/UndefOr.js';
-import {isItem, Item} from './items.ts';
-import {isPosition} from './entity.ts';
+import {isPositioned} from './entity.ts';
 import {Pos} from './position.ts';
-import {isTerrain, Terrain} from './terrain.ts';
 
 type Props = {
 	name: string | undefined;
@@ -46,14 +44,12 @@ const parseInput = (input: any) => {
 };
 
 const getPosition = (e: Entity): UndefOr<Pos> =>
-	map(filterIs(e, isCreature), (c: Creature) => c.pos) ??
-	map(filterIs(e, isTerrain), (t: Terrain) => t.pos) ??
-	map(filterIs(e, isItem), (i: Item) => filterIs(i.in, isPosition));
+	map(filterIs(e, isPositioned), c => c.pos);
 
 const getTile = (e: UndefOr<Entity>): Tile => {
 	switch (e?.type) {
 		case 'flag':
-			return {color: 'white', char: 'F'};
+			return {color: 'yellow', bright: true, char: 'F'};
 		case 'player':
 			return {color: 'white', char: '@'};
 		case 'wall':
@@ -61,7 +57,7 @@ const getTile = (e: UndefOr<Entity>): Tile => {
 		case 'hippie':
 			return {color: 'yellow', char: 'h'};
 		default:
-			return {color: 'grey', char: '.'};
+			return {color: 'black', char: '.', bright: true};
 	}
 };
 
@@ -88,14 +84,15 @@ export default function App({name = 'DEV'}: Props) {
 		[setMessages],
 	);
 	setLog(log);
-	const [gameState, setGameState] = useState<GameState>(
-		doPlayerAction(noop)(Action.noop),
-	);
+	const [gameState, setGameState] = useState<GameState>(getGameStateExtern());
 	const world = useMemo(() => gameState.get('world'), [gameState]);
 	const doActionWithLog = doPlayerAction(log);
 	const theDrawMatrix = drawWorld(world);
 
-	useInput(input => setGameState(doActionWithLog(parseInput(input))));
+	useInput(input => {
+		setMessages(List());
+		setGameState(doActionWithLog(parseInput(input)));
+	});
 
 	return (
 		<Box flexDirection="column" margin={2}>

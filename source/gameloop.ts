@@ -8,7 +8,8 @@ import {
 	Player,
 	player,
 } from './creatures.js';
-import {Item} from './items.js';
+import {groundFlag, isItem, Item} from './items.js';
+// import {pickupAtFeet} from './actions.js';
 import {actPosition, getKey} from './entity.js';
 import {map, filter, UndefOr} from 'scala-ts/UndefOr.js';
 import {noop} from './util.js';
@@ -19,20 +20,25 @@ export enum Action {
 	moveDown,
 	moveRight,
 	moveUp,
-
 	moveDownLeft,
 	moveDownRight,
 	moveUpRight,
 	moveUpLeft,
+	pickup,
 }
 
-type logger = (a: string) => void;
+export type Log = (a: string) => void;
 export type World = Map<string, Terrain | Creature | Item>;
 export type Entity = Terrain | Creature | Item;
 export type GameState = Record<{
 	world: World;
 }>;
-const initWorld: Entity[] = [player(3, 3), ...testWalls, hippie(50, 3)];
+const initWorld: Entity[] = [
+	player(3, 3),
+	...testWalls,
+	groundFlag({x: 4, y: 4}),
+	hippie(50, 3),
+];
 const _state: {gameState: GameState; log: (s: string) => void} = {
 	gameState: Record({
 		world: Map<string, Entity>(
@@ -49,7 +55,7 @@ const setGameState = (s: GameState): void => {
 const getGameState = (): GameState => _state.gameState;
 
 const updateGameStateInMemory =
-	(log: logger) => (fn: (s: GameState) => GameState) => {
+	(log: Log) => (fn: (s: GameState) => GameState) => {
 		const oldGameState = getGameState();
 		// log(`Old game state: ${JSON.stringify(oldGameState)}`);
 		const newGameState = fn(oldGameState);
@@ -60,10 +66,10 @@ const updateGameStateInMemory =
 const updateWorld = (gs: GameState) => (fn: (w: World) => World) =>
 	gs.update('world', fn);
 
-const updateEntity =
+export const updateEntity =
 	(gs: GameState) =>
 	<T extends Entity>(e: T) =>
-	(fn: (e: T) => T): GameState =>
+	<R extends Entity>(fn: (e: T) => R): GameState =>
 		updateWorld(gs)((w: World) => w.update(getKey(e), _ => map(e, fn)));
 
 const getPlayer = (gs: GameState): UndefOr<Player> =>
@@ -88,6 +94,7 @@ export const doPlayerAction =
 	(log: (s: string) => void) =>
 	(action: Action): GameState => {
 		updateGameStateInMemory(log)(gs => {
+			log(JSON.stringify(gs.get('world').filter(isItem).valueSeq().toArray()));
 			const playerActed = doAction(log)(gs)(getPlayer(gs))(action);
 			// process creatures
 			const creaturesActed = gs
@@ -96,10 +103,17 @@ export const doPlayerAction =
 				.filterNot(isPlayer)
 				.map(e => [e, ai(gs)(e)] as [Creature, Action])
 				.map(s => {
-					log(`e: ${s[0].name} action: ${s[1]}`);
+					log(
+						`e: ${s[0].name}  (${s[0].pos.x}, ${s[0].pos.y})action: ${
+							Action[s[1]]
+						}`,
+					);
 					return s;
 				})
-				.reduce((acc, [e, act]) => doAction(log)(acc)(e)(act), playerActed);
+				.reduce((acc, [e, act]) => {
+					log(`doing action: ${JSON.stringify(act)}`);
+					return doAction(log)(acc)(e)(act);
+				}, playerActed);
 
 			return creaturesActed;
 		});
@@ -107,6 +121,9 @@ export const doPlayerAction =
 		return getGameState();
 	};
 
+export const getGameStateExtern = () => {
+	return _state.gameState;
+};
 export const doAction =
 	(log: (s: string) => void) =>
 	(gs: GameState) =>
@@ -124,45 +141,68 @@ export const doAction =
 				// 	`moveposition: ${JSON.stringify(movePosition(crea, {x: -1, y: 0}))}`,
 				// );
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: -1, y: 0})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: -1, y: 0}),
+					) ?? c
 				);
 			}
 			case Action.moveRight: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 1, y: 0})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: 1, y: 0}),
+					) ?? c
 				);
 			}
 			case Action.moveUp: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 0, y: -1})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: 0, y: -1}),
+					) ?? c
 				);
 			}
 			case Action.moveDown: {
+				log(
+					`moveposition: ${JSON.stringify(
+						actPosition(log)(world)(crea, {x: -1, y: 0}),
+					)}`,
+				);
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 0, y: 1})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: 0, y: 1}),
+					) ?? c
 				);
 			}
 			case Action.moveDownLeft: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: -1, y: 1})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: -1, y: 1}),
+					) ?? c
 				);
 			}
 			case Action.moveDownRight: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 1, y: 1})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: 1, y: 1}),
+					) ?? c
 				);
 			}
 			case Action.moveUpLeft: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: -1, y: -1})) ??
-					c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: -1, y: -1}),
+					) ?? c
 				);
 			}
 			case Action.moveUpRight: {
 				return (
-					updateEntity(gs)(crea)(c => actPosition(world)(c, {x: 1, y: -1})) ?? c
+					updateEntity(gs)(crea)(c =>
+						actPosition(log)(world)(c, {x: 1, y: -1}),
+					) ?? c
 				);
 			}
+			// case Action.pickup: {
+			// 	return pickupAtFeet(log)(gs)(crea);
+			// }
 			default:
 				log('default case');
 				return gs;

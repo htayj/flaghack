@@ -26,4 +26,5 @@ const cli = meow(
 	},
 );
 
-render(<App name={cli.flags.name} />);
+export type CliType = typeof cli;
+render(<App opts={cli} />);

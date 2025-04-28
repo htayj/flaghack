@@ -1,6 +1,6 @@
 import {defined} from 'scala-ts/UndefOr.js';
 import {isCreature} from './creatures.ts';
-import {Entity, World} from './gameloop.ts';
+import {Entity, log, World} from './gameloop.ts';
 import {collideP, Pos, shift} from './position.ts';
 import {isTerrain} from './terrain.ts';
 // import {hasProperty} from './util.ts';
@@ -38,7 +38,6 @@ export const movePosition = <T extends EntityPositioned>(e: T, by: Pos) => ({
 });
 
 export const actPosition =
-	(log: (s: string) => void) =>
 	(w: World) =>
 	<T extends EntityPositioned>(e: T, by: Pos) => {
 		log(`oldPosition: ${JSON.stringify(e.pos)}`);

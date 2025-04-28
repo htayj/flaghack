@@ -1,17 +1,51 @@
-import {Map} from 'immutable';
-import {EntityPositioned, isPositioned} from './entity.ts';
-import {Entity, GameState, updateEntity, World} from './gameloop.ts';
-import {itemsAt, pickup} from './items.ts';
+import {UV, Pos} from './position.js';
+import {actPosition} from './entity.ts';
+import {GameState, getPlayer, updateEntity} from './gameloop.ts';
+import {Match} from 'effect';
+import {Creature, player} from './creatures.ts';
 
-// export const pickupAtFeet =
-// 	(log: (s: string) => void) =>
-// 	(gs: GameState) =>
-// 	<T extends Entity>(e: T) => {
-// 		const toPickup = isPositioned(e)
-// 			? itemsAt(log)(gs.get('world'))(e.pos)
-// 			: Map();
-// 		return toPickup.reduce(
-// 			(acc, curr) => updateEntity(acc)(e)(pickup(e)(curr)),
-// 			gs,
-// 		);
-// 	};
+export enum Action {
+	apply,
+	noop,
+	moveLeft,
+	moveDown,
+	moveRight,
+	moveUp,
+	moveDownLeft,
+	moveDownRight,
+	moveUpRight,
+	moveUpLeft,
+	pickup,
+}
+
+const act = (gs: GameState) => (crea: Creature) => (action: Action) =>
+	Match.value(action).pipe(
+		Match.when(Action.moveUp, () => moveCreature(gs)(crea)(UV.Up)),
+		Match.when(Action.moveLeft, () => moveCreature(gs)(crea)(UV.Left)),
+		Match.when(Action.moveRight, () => moveCreature(gs)(crea)(UV.Right)),
+		Match.when(Action.moveDown, () => moveCreature(gs)(crea)(UV.Down)),
+		Match.when(Action.moveDownLeft, () => moveCreature(gs)(crea)(UV.DownLeft)),
+		Match.when(Action.moveUpLeft, () => moveCreature(gs)(crea)(UV.UpLeft)),
+		Match.when(Action.moveDownRight, () =>
+			moveCreature(gs)(crea)(UV.DownRight),
+		),
+		Match.when(Action.moveUpRight, () => moveCreature(gs)(crea)(UV.UpRight)),
+		Match.when(Action.apply, () => gs),
+		Match.when(Action.pickup, () => gs),
+		Match.when(Action.noop, () => gs),
+		Match.orElse(() => gs),
+	);
+const moveCreature =
+	(gs: GameState) =>
+	<T extends Creature>(entity: T) =>
+	(vec: Pos) =>
+		updateEntity(gs)(entity)(c => actPosition(gs.get('world'))(c, vec));
+
+export const doAction =
+	(gs: GameState) =>
+	<C extends Creature>(c?: C) =>
+	(action: Action): GameState => {
+		const crea = c ?? getPlayer(gs) ?? player(2, 2);
+
+		return act(gs)(crea)(action);
+	};

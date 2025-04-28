@@ -29,3 +29,5 @@ export const hippie = (x: number, y: number, name: string = 'Ian'): Hippie => ({
 	kind: 'creature',
 	key: genKey(),
 });
+
+export const isHippie = (e: Entity): e is Hippie => e.type === 'hippie';

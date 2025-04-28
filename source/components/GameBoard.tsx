@@ -82,3 +82,12 @@ export default function ({tiles}: Props) {
 		</Box>
 	);
 }
+
+// <Text>{tiles.map(row => row.map(tileToText).join('')).join('\n')}</Text>
+
+// FIXME: why is this way of doing it slow?
+// <Text>
+// 	{tiles.map((row, i) => (
+// 		<Text key={i}>{row.map(tileToText).join('')}</Text>
+// 	))}
+// </Text>

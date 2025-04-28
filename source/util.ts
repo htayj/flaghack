@@ -33,3 +33,30 @@ export const noop = <T extends any>(_: T) => undefined;
 // 	o: T,
 // 	property: P,
 // ): o is T & {[key: P] : unknown} => o.hasOwnProperty(property);
+
+type CFilterPredicate<K, V, I> = <F extends V>(
+	value: V,
+	key: K,
+	iter: I,
+) => value is F;
+type CMapPredicate<K, V, I, R> = (value: V, key: K, iter: I) => R;
+
+export const cfilter =
+	<
+		K,
+		V,
+		I,
+		P extends CFilterPredicate<K, V, I>,
+		T extends {filter: (pred: P) => T},
+	>(
+		fn: P,
+	) =>
+	(collection: T) =>
+		collection.filter(fn);
+
+export const cmap =
+	<K, V, I, R, T extends {filter: (pred: CMapPredicate<K, V, I, R>) => T}>(
+		fn: CMapPredicate<K, V, I, R>,
+	) =>
+	(collection: T) =>
+		collection.filter(fn);

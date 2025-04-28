@@ -1,25 +1,9 @@
 {
-	"compilerOptions": {
-		"target": "es5",
-		// "extends": "@sindresorhus/tsconfig",
-		"lib": ["dom", "dom.iterable", "esnext"],
-		"downlevelIteration": true,
-		"outDir": "dist",
-		"rewriteRelativeImportExtensions": true,
-		"allowJs": true,
-		"skipLibCheck": true,
-		"esModuleInterop": true,
-		"allowSyntheticDefaultImports": true,
-		"strict": true,
-		"forceConsistentCasingInFileNames": true,
-		"module": "Node16",
-		"moduleResolution": "Node16",
-		"resolveJsonModule": true,
-		"isolatedModules": false,
-		// "noEmit": true,
-		"jsx": "react",
-		"baseUrl": ".",
-		"importHelpers": false
-	},
-	"include": ["source"]
+  "extends": "./tsconfig.base.json",
+  "include": [],
+  "references": [
+    { "path": "packages/cli" },
+    { "path": "packages/domain" },
+    { "path": "packages/server" }
+  ]
 }

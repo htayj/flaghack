@@ -1,5 +1,5 @@
 import { List, Map } from "immutable"
-import { Box, Newline, Text, useInput } from "ink"
+import { Box, Newline, useInput } from "ink"
 import React, { useState } from "react"
 import { map, UndefOr } from "scala-ts/UndefOr.js"
 import { Action } from "../actions.js"
@@ -81,7 +81,7 @@ type Mode = "normal" | "inventory" | "using" | "popup"
 export default function Playing({ username }: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const [world, setWorld] = useState<World>(Map())
-	const [mode] = useState<Mode>("normal")
+  const [mode] = useState<Mode>("normal")
   if (world === undefined || world.size === 0) {
     apiGetWorld().then((w) => setWorld(w))
   }
@@ -91,14 +91,15 @@ export default function Playing({ username }: Props) {
     apiGetLogs().then((messages) => setMessages(List(messages)))
   })
 
-  return (mode === "normal" ? 
-    <Box flexDirection="column" margin={2}>
-				<Box>
-					<Messages messages={messages} />
-					<Newline />
-					<GameBoard tiles={theDrawMatrix} />
-				</Box>
-    <Box>
-		: <Box/>
-  )
+  return (mode === "normal"
+    ? (
+      <Box flexDirection="column" margin={2}>
+        <Box>
+          <Messages messages={messages} />
+          <Newline />
+          <GameBoard tiles={theDrawMatrix} />
+        </Box>
+      </Box>
+    )
+    : <Box />)
 }

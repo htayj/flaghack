@@ -1,4 +1,6 @@
 import { List } from "immutable"
+import { GameState } from "./gamestate.js"
+import { World } from "./world.js"
 
 export type Matrix<T> = List<List<T>>
 

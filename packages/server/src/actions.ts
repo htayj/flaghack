@@ -1,11 +1,11 @@
 import { Match } from "effect"
 import type { Creature } from "./creatures.js"
 import { player } from "./creatures.js"
-import { actPosition } from "./entity.js"
-import type { GameState } from "./gameloop.js"
-import { getPlayer, updateEntity } from "./gameloop.js"
+import { updateEntity } from "./gameloop.js"
+import { GameState, getPlayer } from "./gamestate.js"
 import type { Pos } from "./position.js"
 import { UV } from "./position.js"
+import { actPosition } from "./world.js"
 
 export enum Action {
   apply,

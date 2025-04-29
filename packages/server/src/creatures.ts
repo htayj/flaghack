@@ -1,6 +1,5 @@
 import type { EntityPositioned } from "./entity.js"
 import { genKey } from "./entity.js"
-import type { Entity } from "./gameloop.js"
 
 export type CreatureBase = EntityPositioned & {
   char: string
@@ -19,9 +18,6 @@ export const player = (x: number, y: number): Player => ({
   kind: "creature",
   key: "player"
 })
-export const isCreature = (e: Entity): e is Creature =>
-  e.kind === "creature"
-export const isPlayer = (e: Entity): e is Player => e.type === "player"
 
 export const hippie = (
   x: number,
@@ -35,5 +31,3 @@ export const hippie = (
   kind: "creature",
   key: genKey()
 })
-
-export const isHippie = (e: Entity): e is Hippie => e.type === "hippie"

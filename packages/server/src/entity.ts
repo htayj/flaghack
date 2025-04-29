@@ -1,10 +1,9 @@
 import { defined } from "scala-ts/UndefOr.js"
-import { isCreature } from "./creatures.js"
-import type { Entity, World } from "./gameloop.js"
 import { log } from "./gameloop.js"
 import type { Pos } from "./position.js"
 import { collideP, shift } from "./position.js"
 import { isTerrain } from "./terrain.js"
+import type { Entity, World } from "./world.js"
 // import {hasProperty} from './util.js';
 
 export type Key = string
@@ -43,18 +42,3 @@ export const movePosition = <T extends EntityPositioned>(
   ...e,
   pos: shift(e.pos, by)
 })
-
-export const actPosition =
-  (w: World) => <T extends EntityPositioned>(e: T, by: Pos) => {
-    log(`oldPosition: ${JSON.stringify(e.pos)}`)
-    log(`by: ${JSON.stringify(by)}`)
-    const newPosition = shift(e.pos, by)
-    log(`newPosition: ${JSON.stringify(newPosition)}`)
-    const eCollides = collideP(newPosition)
-    const collidedEntity = w
-      .filter((e) => isCreature(e) || isTerrain(e))
-      .find((o) => eCollides(o.pos))
-    if (!defined(collidedEntity)) return movePosition(e, by)
-    if (isTerrain(collidedEntity)) return e
-    return e
-  }

@@ -4,15 +4,10 @@ import React, { useState } from "react"
 import { map, UndefOr } from "scala-ts/UndefOr.js"
 import { Action } from "../actions.js"
 import { isPositioned } from "../entity.js"
-import {
-  apiDoPlayerAction,
-  apiGetLogs,
-  apiGetWorld,
-  Entity,
-  World
-} from "../gameloop.js"
+import { apiDoPlayerAction, apiGetLogs, apiGetWorld } from "../gameloop.js"
 import { Pos } from "../position.js"
 import { filterIs, nullMatrix } from "../util.js"
+import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
 import Messages from "./Messages.jsx"
 
@@ -91,15 +86,11 @@ export default function Playing({ username }: Props) {
     apiGetLogs().then((messages) => setMessages(List(messages)))
   })
 
-  return (mode === "normal"
-    ? (
-      <Box flexDirection="column" margin={2}>
-        <Box>
-          <Messages messages={messages} />
-          <Newline />
-          <GameBoard tiles={theDrawMatrix} />
-        </Box>
-      </Box>
-    )
-    : <Box />)
+  return (
+    <Box flexDirection="column" margin={2}>
+      <Messages messages={messages} />
+      <Newline />
+      <GameBoard tiles={theDrawMatrix} />
+    </Box>
+  )
 }

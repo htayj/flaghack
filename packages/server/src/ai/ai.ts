@@ -3,9 +3,9 @@ import type { Effect } from "effect/Effect"
 import { all, andThen, promise, succeed } from "effect/Effect"
 import { Action } from "../actions.js"
 import type { Creature, Player } from "../creatures.js"
-import { isHippie, isPlayer } from "../creatures.js"
-import type { GameState } from "../gameloop.js"
-import { creaturesFrom, notPlayerFrom, worldFrom } from "../gameloop.js"
+import { GameState, worldFrom } from "../gamestate.js"
+import { isHippie, isPlayer } from "../world.js"
+import { creaturesFrom, notPlayerFrom } from "../world.js"
 
 // class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 

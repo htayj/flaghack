@@ -14,14 +14,12 @@ import type { Action } from "./actions.js"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
-import type { Creature, Player } from "./creatures.js"
-import { hippie, isCreature, isPlayer, player } from "./creatures.js"
+import { isCreature, isPlayer, player } from "./creatures.js"
+import type { Player } from "./creatures.js"
 import { getKey } from "./entity.js"
-import type { Item } from "./items.js"
-import { groundFlag } from "./items.js"
-import type { Terrain } from "./terrain.js"
-import { testWalls } from "./terrain.js"
+import { GameState, getPlayer } from "./gamestate.js"
 import { noop } from "./util.js"
+import { Entity, initWorld, World } from "./world.js"
 
 const _log: Array<string> = []
 const logger = Logger.make(({ message }) => {
@@ -34,17 +32,6 @@ export const log = (...m: Array<string>) => {
 const layer = Logger.replace(Logger.defaultLogger, logger)
 const getLogs = suspend(() => succeed(_log))
 export type Log = (a: string) => void
-export type World = Map<string, Terrain | Creature | Item>
-export type Entity = Terrain | Creature | Item
-export type GameState = Record<{
-  world: World
-}>
-const initWorld: Array<Entity> = [
-  player(3, 3),
-  ...testWalls,
-  groundFlag({ x: 4, y: 4 }),
-  hippie(50, 3)
-]
 
 const _state: { gameState: GameState; log: (s: string) => void } = {
   gameState: Record({
@@ -77,16 +64,6 @@ export const updateEntity =
   <T extends Entity>(e: T) =>
   <R extends Entity>(fn: (e: T) => R): GameState =>
     updateWorld(gs)((w: World) => w.update(getKey(e), (_) => map(e, fn)))
-
-export const getPlayer = (gs: GameState): Player =>
-  (filter(gs.get("world").get("player"), isPlayer)
-    ?? player(1, 2)) as Player // fixme
-
-export const worldFrom = (gs: GameState) => sync(() => gs.get("world"))
-export const creaturesFrom = <T extends World>(w: T) =>
-  sync(() => w.filter(isCreature))
-export const notPlayerFrom = <T extends World>(w: T) =>
-  sync(() => w.filterNot(isPlayer))
 
 const executePlansSync = (gs: GameState) => (acts: Array<PlannedAction>) =>
   acts.reduce((acc, { action, entity }) => {

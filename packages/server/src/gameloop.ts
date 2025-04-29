@@ -1,7 +1,7 @@
 import { Logger, LogLevel, pipe } from "effect"
+import type { Effect } from "effect/Effect"
 import {
   andThen,
-  Effect,
   provide,
   runPromise,
   succeed,
@@ -10,26 +10,24 @@ import {
 } from "effect/Effect"
 import { Map, Record } from "immutable"
 import { filter, map } from "scala-ts/UndefOr.js"
-import { Action, doAction } from "./actions.js"
-import { allAiPlan, PlannedAction } from "./ai/ai.js"
-import {
-  Creature,
-  hippie,
-  isCreature,
-  isPlayer,
-  Player,
-  player
-} from "./creatures.js"
+import type { Action } from "./actions.js"
+import { doAction } from "./actions.js"
+import type { PlannedAction } from "./ai/ai.js"
+import { allAiPlan } from "./ai/ai.js"
+import type { Creature, Player } from "./creatures.js"
+import { hippie, isCreature, isPlayer, player } from "./creatures.js"
 import { getKey } from "./entity.js"
-import { groundFlag, Item } from "./items.js"
-import { Terrain, testWalls } from "./terrain.js"
+import type { Item } from "./items.js"
+import { groundFlag } from "./items.js"
+import type { Terrain } from "./terrain.js"
+import { testWalls } from "./terrain.js"
 import { noop } from "./util.js"
 
-const _log: string[] = []
-const logger = Logger.make(({ logLevel, message }) => {
+const _log: Array<string> = []
+const logger = Logger.make(({ message }) => {
   _log.push(`${message}`)
 })
-export const log = (...m: string[]) => {
+export const log = (...m: Array<string>) => {
   _log.unshift(m.join(" "))
 }
 
@@ -41,7 +39,7 @@ export type Entity = Terrain | Creature | Item
 export type GameState = Record<{
   world: World
 }>
-const initWorld: Entity[] = [
+const initWorld: Array<Entity> = [
   player(3, 3),
   ...testWalls,
   groundFlag({ x: 4, y: 4 }),
@@ -81,7 +79,8 @@ export const updateEntity =
     updateWorld(gs)((w: World) => w.update(getKey(e), (_) => map(e, fn)))
 
 export const getPlayer = (gs: GameState): Player =>
-  (filter(gs.get("world").get("player"), isPlayer) ?? player(1, 2)) as Player // fixme
+  (filter(gs.get("world").get("player"), isPlayer)
+    ?? player(1, 2)) as Player // fixme
 
 export const worldFrom = (gs: GameState) => sync(() => gs.get("world"))
 export const creaturesFrom = <T extends World>(w: T) =>
@@ -89,8 +88,8 @@ export const creaturesFrom = <T extends World>(w: T) =>
 export const notPlayerFrom = <T extends World>(w: T) =>
   sync(() => w.filterNot(isPlayer))
 
-const executePlansSync = (gs: GameState) => (acts: PlannedAction[]) =>
-  acts.reduce((acc, { entity, action }) => {
+const executePlansSync = (gs: GameState) => (acts: Array<PlannedAction>) =>
+  acts.reduce((acc, { action, entity }) => {
     log(`doing action: ${JSON.stringify(action)}`)
     return doAction(acc)(entity)(action)
   }, gs)

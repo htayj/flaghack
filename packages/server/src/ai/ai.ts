@@ -1,18 +1,16 @@
-import { Data, Match, pipe } from "effect"
-import { all, andThen, Effect, promise, succeed } from "effect/Effect"
+import { Match, pipe } from "effect"
+import type { Effect } from "effect/Effect"
+import { all, andThen, promise, succeed } from "effect/Effect"
 import { Action } from "../actions.js"
-import { Creature, isHippie, isPlayer, Player } from "../creatures.js"
-import {
-  creaturesFrom,
-  GameState,
-  notPlayerFrom,
-  worldFrom
-} from "../gameloop.js"
+import type { Creature, Player } from "../creatures.js"
+import { isHippie, isPlayer } from "../creatures.js"
+import type { GameState } from "../gameloop.js"
+import { creaturesFrom, notPlayerFrom, worldFrom } from "../gameloop.js"
 
-class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
+// class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 
 export type PlannedAction = { entity: Creature; action: Action }
-const hippieAi = (gs: GameState) => (e: Creature) => {
+const hippieAi = (_: GameState) => (e: Creature) => {
   if (e.pos.y < 15 && e.pos.x == 50) return Action.moveDown
   if (e.pos.y == 15 && e.pos.x < 70) return Action.moveRight
   if (e.pos.y > 5 && e.pos.x == 70) return Action.moveUp
@@ -30,7 +28,7 @@ const ai = (gs: GameState) =>
 
 const eAi = (gs: GameState) => (e: Creature) =>
   promise(async () => ({ entity: e, action: ai(gs)(e) }))
-export const allAiPlan = (gs: GameState): Effect<PlannedAction[]> =>
+export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),
     andThen(worldFrom),

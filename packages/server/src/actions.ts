@@ -1,8 +1,11 @@
 import { Match } from "effect"
-import { Creature, player } from "./creatures.js"
+import type { Creature } from "./creatures.js"
+import { player } from "./creatures.js"
 import { actPosition } from "./entity.js"
-import { GameState, getPlayer, updateEntity } from "./gameloop.js"
-import { Pos, UV } from "./position.js"
+import type { GameState } from "./gameloop.js"
+import { getPlayer, updateEntity } from "./gameloop.js"
+import type { Pos } from "./position.js"
+import { UV } from "./position.js"
 
 export enum Action {
   apply,
@@ -24,13 +27,19 @@ const act = (gs: GameState) => (crea: Creature) => (action: Action) =>
     Match.when(Action.moveLeft, () => moveCreature(gs)(crea)(UV.Left)),
     Match.when(Action.moveRight, () => moveCreature(gs)(crea)(UV.Right)),
     Match.when(Action.moveDown, () => moveCreature(gs)(crea)(UV.Down)),
-    Match.when(Action.moveDownLeft, () => moveCreature(gs)(crea)(UV.DownLeft)),
+    Match.when(
+      Action.moveDownLeft,
+      () => moveCreature(gs)(crea)(UV.DownLeft)
+    ),
     Match.when(Action.moveUpLeft, () => moveCreature(gs)(crea)(UV.UpLeft)),
     Match.when(
       Action.moveDownRight,
       () => moveCreature(gs)(crea)(UV.DownRight)
     ),
-    Match.when(Action.moveUpRight, () => moveCreature(gs)(crea)(UV.UpRight)),
+    Match.when(
+      Action.moveUpRight,
+      () => moveCreature(gs)(crea)(UV.UpRight)
+    ),
     Match.when(Action.apply, () => gs),
     Match.when(Action.pickup, () => gs),
     Match.when(Action.noop, () => gs),

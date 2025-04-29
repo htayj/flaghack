@@ -18,8 +18,8 @@ export const filterIs = <T, R extends T>(
   f: (a: T) => a is R
 ): UndefOr<R> => (f(u) ? u : undefined)
 
-export const identity = <T extends any>(a: T) => a
-export const noop = <T extends any>(_: T) => undefined
+export const identity = <T>(a: T) => a
+export const noop = <T>(_: T) => undefined
 
 // export const hasProperty = <
 // 	P extends Object,

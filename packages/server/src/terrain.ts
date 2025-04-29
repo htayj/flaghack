@@ -1,5 +1,5 @@
-import { EntityPositioned } from "./entity.js"
-import { Entity } from "./gameloop.js"
+import type { EntityPositioned } from "./entity.js"
+import type { Entity } from "./gameloop.js"
 
 export const genKey = () => (Math.random() * 2 ** 8).toString(16)
 type TerrainBase = EntityPositioned & { kind: "terrain" }

@@ -1,16 +1,13 @@
-import { Creature } from "./creatures.js"
-import {
-  Contained,
-  genKey,
-  isPositioned,
-  Key,
+import type { Creature } from "./creatures.js"
+import type {
   Keyed,
   WithContainer,
   WithLocation,
   WithPosition
 } from "./entity.js"
-import { Entity, Log, World } from "./gameloop.js"
-import { Pos } from "./position.js"
+import { genKey, isPositioned } from "./entity.js"
+import type { Entity, Log, World } from "./gameloop.js"
+import type { Pos } from "./position.js"
 
 export type ItemBase = WithLocation<Keyed & { kind: "item" }>
 // export type ItemBase = Keyed & {kind: 'item'} & {
@@ -44,5 +41,5 @@ export const drop = (item: InventoryItem, by: Creature): GroundItem => ({
 export const isAt = (p: Pos) => <T extends Entity>(e: T) =>
   isPositioned(e) && e.pos === p
 
-export const itemsAt = (log: Log) => (world: World) => (pos: Pos) =>
+export const itemsAt = (_: Log) => (world: World) => (pos: Pos) =>
   world.filter(isItem).filter(isAt(pos))

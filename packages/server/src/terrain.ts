@@ -1,9 +1,7 @@
-import { hippie, player } from "./creatures.js"
 import type { EntityPositioned } from "./entity.js"
-import { groundFlag } from "./items.js"
+import { genKey } from "./util.js"
 import type { Entity } from "./world.js"
 
-export const genKey = () => (Math.random() * 2 ** 8).toString(16)
 type TerrainBase = EntityPositioned & { kind: "terrain" }
 export type Wall = TerrainBase & { type: "wall" }
 export type Terrain = Wall

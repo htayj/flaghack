@@ -1,6 +1,4 @@
 import { List } from "immutable"
-import { GameState } from "./gamestate.js"
-import { World } from "./world.js"
 
 export type Matrix<T> = List<List<T>>
 
@@ -22,19 +20,6 @@ export const filterIs = <T, R extends T>(
 
 export const identity = <T>(a: T) => a
 export const noop = <T>(_: T) => undefined
-
-// export const hasProperty = <
-// 	P extends Object,
-// 	K extends keyof P,
-// 	T extends Omit<P, K>,
-// >(
-// 	o: T,
-// 	property: K,
-// ): o is T & Pick<P, K> => o.hasOwnProperty(property);
-// export const hasProperty = <T extends Object, P extends string>(
-// 	o: T,
-// 	property: P,
-// ): o is T & {[key: P] : unknown} => o.hasOwnProperty(property);
 
 type CFilterPredicate<K, V, I> = <F extends V>(
   value: V,
@@ -64,3 +49,5 @@ export const cmap = <
   fn: CMapPredicate<K, V, I, R>
 ) =>
 (collection: T) => collection.filter(fn)
+
+export const genKey = () => (Math.random() * 2 ** 8).toString(16)

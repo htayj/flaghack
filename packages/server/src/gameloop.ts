@@ -5,21 +5,17 @@ import {
   provide,
   runPromise,
   succeed,
-  suspend,
-  sync
+  suspend
 } from "effect/Effect"
 import { Map, Record } from "immutable"
-import { filter, map } from "scala-ts/UndefOr.js"
 import type { Action } from "./actions.js"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
-import { isCreature, isPlayer, player } from "./creatures.js"
-import type { Player } from "./creatures.js"
-import { getKey } from "./entity.js"
+import { player } from "./creatures.js"
 import { GameState, getPlayer } from "./gamestate.js"
 import { noop } from "./util.js"
-import { Entity, initWorld, World } from "./world.js"
+import { Entity, initWorld } from "./world.js"
 
 const _log: Array<string> = []
 const logger = Logger.make(({ message }) => {
@@ -55,15 +51,6 @@ const eWithGameState = (fn: (gs: GameState) => Effect<GameState>) =>
     Logger.withMinimumLogLevel(LogLevel.Debug),
     provide(layer)
   )
-
-const updateWorld = (gs: GameState) => (fn: (w: World) => World) =>
-  gs.update("world", fn)
-
-export const updateEntity =
-  (gs: GameState) =>
-  <T extends Entity>(e: T) =>
-  <R extends Entity>(fn: (e: T) => R): GameState =>
-    updateWorld(gs)((w: World) => w.update(getKey(e), (_) => map(e, fn)))
 
 const executePlansSync = (gs: GameState) => (acts: Array<PlannedAction>) =>
   acts.reduce((acc, { action, entity }) => {

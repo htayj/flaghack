@@ -32,8 +32,8 @@ export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),
     andThen(worldFrom),
-    andThen(creaturesFrom),
     andThen(notPlayerFrom),
+    andThen(creaturesFrom),
     andThen((w) => w.map((e) => eAi(gs)(e))),
     andThen((w) => w.valueSeq().toArray()),
     andThen(all) // todo: set concurrency

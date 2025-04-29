@@ -5,9 +5,8 @@ import type {
   WithLocation,
   WithPosition
 } from "./entity.js"
-import { genKey, isPositioned } from "./entity.js"
-import type { Entity, Log, World } from "./gameloop.js"
 import type { Pos } from "./position.js"
+import { genKey } from "./util.js"
 
 export type ItemBase = WithLocation<Keyed & { kind: "item" }>
 // export type ItemBase = Keyed & {kind: 'item'} & {
@@ -24,7 +23,6 @@ export const groundFlag = (pos: Pos): Flag => ({
   key: genKey()
 })
 
-export const isItem = (e: Entity): e is Item => e.kind === "item"
 export const pickup =
   (by: Creature) => (item: GroundItem): InventoryItem => ({
     ...item,
@@ -38,8 +36,3 @@ export const drop = (item: InventoryItem, by: Creature): GroundItem => ({
   ...item,
   pos: by.pos
 })
-export const isAt = (p: Pos) => <T extends Entity>(e: T) =>
-  isPositioned(e) && e.pos === p
-
-export const itemsAt = (_: Log) => (world: World) => (pos: Pos) =>
-  world.filter(isItem).filter(isAt(pos))

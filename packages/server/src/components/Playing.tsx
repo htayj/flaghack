@@ -86,11 +86,13 @@ export default function Playing({ username }: Props) {
     apiGetLogs().then((messages) => setMessages(List(messages)))
   })
 
-  return (
-    <Box flexDirection="column" margin={2}>
-      <Messages messages={messages} />
-      <Newline />
-      <GameBoard tiles={theDrawMatrix} />
-    </Box>
-  )
+  return mode === "normal"
+    ? (
+      <Box flexDirection="column" margin={2}>
+        <Messages messages={messages} />
+        <Newline />
+        <GameBoard tiles={theDrawMatrix} />
+      </Box>
+    )
+    : <Box />
 }

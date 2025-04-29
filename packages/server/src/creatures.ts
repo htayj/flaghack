@@ -1,5 +1,5 @@
 import type { EntityPositioned } from "./entity.js"
-import { genKey } from "./entity.js"
+import { genKey } from "./util.js"
 
 export type CreatureBase = EntityPositioned & {
   char: string

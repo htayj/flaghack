@@ -1,9 +1,5 @@
-import { defined } from "scala-ts/UndefOr.js"
-import { log } from "./gameloop.js"
 import type { Pos } from "./position.js"
-import { collideP, shift } from "./position.js"
-import { isTerrain } from "./terrain.js"
-import type { Entity, World } from "./world.js"
+import { shift } from "./position.js"
 // import {hasProperty} from './util.js';
 
 export type Key = string
@@ -21,15 +17,8 @@ export const isContained = <T extends object>(
   e: T
 ): e is WithContainer<T> => Object.hasOwn(e, "in")
 
-export const isContainedIn = <T extends Entity, C extends Entity>(
-  contained: T,
-  container: C
-) => isContained(contained) && container.key === contained.in
-
 export type Located = Positioned | Contained
 export type WithLocation<T> = WithPosition<T> | WithContainer<T>
-
-export const genKey = () => (Math.random() * 2 ** 8).toString(16)
 
 export type EntityBase = WithLocation<Keyed>
 export type EntityPositioned = EntityBase & Positioned

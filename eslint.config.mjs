@@ -107,11 +107,12 @@ export default [
       "@effect/dprint": ["error", {
         config: {
           indentWidth: 2,
-          lineWidth: 120,
+          lineWidth: 75,
           semiColons: "asi",
           quoteStyle: "alwaysDouble",
           trailingCommas: "never",
-          operatorPosition: "maintain",
+          operatorPosition: "nextLine",
+    			spaceAround: false,
           "arrowFunction.useParentheses": "force"
         }
       }]

@@ -4,5 +4,8 @@
   "references": [
     { "path": "tsconfig.src.json" },
     { "path": "tsconfig.test.json" }
-  ]
+  ],
+  "compilerOptions": {
+    "jsx": "react"
+  }
 }

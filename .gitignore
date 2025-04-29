@@ -3,3 +3,10 @@ dist
 *~
 .#*
 *#
+**/dts/*
+**/build/*
+*.tsbuildinfo
+*.ts.map
+*.d.ts
+*.js.map
+**/.tsbuildinfo/*

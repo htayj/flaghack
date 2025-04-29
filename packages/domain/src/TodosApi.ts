@@ -14,12 +14,18 @@ export class Todo extends Schema.Class<Todo>("Todo")({
   done: Schema.Boolean
 }) {}
 
-export class TodoNotFound extends Schema.TaggedError<TodoNotFound>()("TodoNotFound", {
-  id: Schema.Number
-}) {}
+export class TodoNotFound
+  extends Schema.TaggedError<TodoNotFound>()("TodoNotFound", {
+    id: Schema.Number
+  })
+{}
 
 export class TodosApiGroup extends HttpApiGroup.make("todos")
-  .add(HttpApiEndpoint.get("getAllTodos", "/todos").addSuccess(Schema.Array(Todo)))
+  .add(
+    HttpApiEndpoint.get("getAllTodos", "/todos").addSuccess(
+      Schema.Array(Todo)
+    )
+  )
   .add(
     HttpApiEndpoint.get("getTodoById", "/todos/:id")
       .addSuccess(Todo)

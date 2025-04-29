@@ -31,14 +31,19 @@
 		"scala-ts": "^0.1.8"
 	},
 	"devDependencies": {
+		"@types/react": "^19.1.2",
 		"scala-ts": "^0.1.8"
 	},
 	"effect": {
 		"generateExports": {
-			"include": ["**/*.ts"]
+			"include": [
+				"**/*.ts"
+			]
 		},
 		"generateIndex": {
-			"include": ["**/*.ts"]
+			"include": [
+				"**/*.ts"
+			]
 		}
 	}
 }

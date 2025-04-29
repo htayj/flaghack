@@ -22,6 +22,7 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "noEmitOnError": false,
+    "jsx": "react",
     "noErrorTruncation": false,
     "allowJs": false,
     "checkJs": false,

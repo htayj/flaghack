@@ -3,7 +3,7 @@ import type { Creature } from "./creatures.js"
 import { player } from "./creatures.js"
 import {} from "./gameloop.js"
 import { GameState, getPlayer, updateEntity } from "./gamestate.js"
-import type { Pos } from "./position.js"
+import type { TPos } from "./position.js"
 import { UV } from "./position.js"
 import { actPosition } from "./world.js"
 
@@ -22,7 +22,7 @@ export enum Action {
 }
 
 const moveCreature =
-  (gs: GameState) => <T extends Creature>(entity: T) => (vec: Pos) =>
+  (gs: GameState) => <T extends Creature>(entity: T) => (vec: TPos) =>
     updateEntity(gs)(entity)((c) => actPosition(gs.get("world"))(c, vec))
 export const doAction =
   (gs: GameState) =>

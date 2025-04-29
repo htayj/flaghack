@@ -1,22 +1,22 @@
 import type { Creature } from "./creatures.js"
 import type {
-  Keyed,
-  WithContainer,
-  WithLocation,
-  WithPosition
+  TKeyed,
+  TWithContainer,
+  TWithLocation,
+  TWithPosition
 } from "./entity.js"
-import type { Pos } from "./position.js"
+import type { TPos } from "./position.js"
 import { genKey } from "./util.js"
 
-export type ItemBase = WithLocation<Keyed & { kind: "item" }>
+export type ItemBase = TWithLocation<TKeyed & { kind: "item" }>
 // export type ItemBase = Keyed & {kind: 'item'} & {
 // 	in: Pos | Key; // either position or owner
 // };
-export type GroundItem = WithPosition<ItemBase>
-export type InventoryItem = WithContainer<ItemBase>
+export type GroundItem = TWithPosition<ItemBase>
+export type InventoryItem = TWithContainer<ItemBase>
 export type Flag = ItemBase & { type: "flag" }
 export type Item = Flag
-export const groundFlag = (pos: Pos): Flag => ({
+export const groundFlag = (pos: TPos): Flag => ({
   pos,
   type: "flag",
   kind: "item",

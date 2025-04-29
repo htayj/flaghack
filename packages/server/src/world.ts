@@ -3,13 +3,13 @@ import { Map } from "immutable"
 import { defined } from "scala-ts/UndefOr.js"
 import { Creature, Hippie, hippie, Player, player } from "./creatures.js"
 import {
-  EntityPositioned,
   isContained,
   isPositioned,
-  movePosition
+  movePosition,
+  TEntityPositioned
 } from "./entity.js"
 import { groundFlag, Item } from "./items.js"
-import { collideP, Pos, shift } from "./position.js"
+import { collideP, shift, TPos } from "./position.js"
 import { isTerrain, Terrain, testWalls } from "./terrain.js"
 
 export type Entity = Terrain | Creature | Item
@@ -35,13 +35,13 @@ export const creaturesFrom = <T extends World>(w: T) =>
   sync(() => w.filter(isCreature))
 export const notPlayerFrom = <T extends World>(w: T) =>
   sync(() => w.filterNot(isPlayer))
-export const isAt = (p: Pos) => <T extends Entity>(e: T) =>
+export const isAt = (p: TPos) => <T extends Entity>(e: T) =>
   isPositioned(e) && e.pos === p
-export const itemsAt = (world: World) => (pos: Pos) =>
+export const itemsAt = (world: World) => (pos: TPos) =>
   world.filter(isItem).filter(isAt(pos))
 
 export const actPosition =
-  (w: World) => <T extends EntityPositioned>(e: T, by: Pos) => {
+  (w: World) => <T extends TEntityPositioned>(e: T, by: TPos) => {
     const newPosition = shift(e.pos, by)
     const eCollides = collideP(newPosition)
     const collidedEntity = w

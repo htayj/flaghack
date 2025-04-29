@@ -5,7 +5,7 @@ import { map, UndefOr } from "scala-ts/UndefOr.js"
 import { Action } from "../actions.js"
 import { isPositioned } from "../entity.js"
 import { apiDoPlayerAction, apiGetLogs, apiGetWorld } from "../gameloop.js"
-import { Pos } from "../position.js"
+import { TPos } from "../position.js"
 import { filterIs, nullMatrix } from "../util.js"
 import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
@@ -38,7 +38,7 @@ const parseInput = (input: any) => {
   }
 }
 
-const getPosition = (e: Entity): UndefOr<Pos> =>
+const getPosition = (e: Entity): UndefOr<TPos> =>
   map(filterIs(e, isPositioned), (c) => c.pos)
 
 const getTile = (e: UndefOr<Entity>): Tile => {
@@ -56,12 +56,12 @@ const getTile = (e: UndefOr<Entity>): Tile => {
   }
 }
 
-const posKey = (p: Pos): string => `${p.x},${p.y}`
+const posKey = (p: TPos): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
   const worldMap = world
     .valueSeq()
-    .groupBy((entity) => map(getPosition(entity), (p: Pos) => posKey(p)))
+    .groupBy((entity) => map(getPosition(entity), (p: TPos) => posKey(p)))
     .map((v) => v.valueSeq().toArray())
   const fullmap = emptyMatrix.map((row, y) =>
     row

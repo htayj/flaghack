@@ -11,10 +11,10 @@ import { creaturesFrom, notPlayerFrom } from "../world.js"
 
 export type PlannedAction = { entity: Creature; action: Action }
 const hippieAi = (_: GameState) => (e: Creature) => {
-  if (e.pos.y < 15 && e.pos.x == 50) return Action.moveDown
-  if (e.pos.y == 15 && e.pos.x < 70) return Action.moveRight
-  if (e.pos.y > 5 && e.pos.x == 70) return Action.moveUp
-  if (e.pos.y == 5 && e.pos.x > 50) return Action.moveLeft
+  if (e.loc.at.y < 15 && e.loc.at.x == 50) return Action.moveDown
+  if (e.loc.at.y == 15 && e.loc.at.x < 70) return Action.moveRight
+  if (e.loc.at.y > 5 && e.loc.at.x == 70) return Action.moveUp
+  if (e.loc.at.y == 5 && e.loc.at.x > 50) return Action.moveLeft
   else return Action.noop
 }
 const playerAi = (_: GameState) => (_: Player) => Action.noop

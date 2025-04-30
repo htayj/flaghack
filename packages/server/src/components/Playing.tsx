@@ -1,12 +1,12 @@
+import { Match } from "effect"
 import { List, Map } from "immutable"
 import { Box, Newline, useInput } from "ink"
 import React, { useState } from "react"
-import { map, UndefOr } from "scala-ts/UndefOr.js"
+import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
 import { Action } from "../actions.js"
-import { isPositioned } from "../entity.js"
 import { apiDoPlayerAction, apiGetLogs, apiGetWorld } from "../gameloop.js"
 import { TPos } from "../position.js"
-import { filterIs, nullMatrix } from "../util.js"
+import { nullMatrix } from "../util.js"
 import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
 import Messages from "./Messages.jsx"
@@ -39,22 +39,52 @@ const parseInput = (input: any) => {
 }
 
 const getPosition = (e: Entity): UndefOr<TPos> =>
-  map(filterIs(e, isPositioned), (c) => c.pos)
+  (((e as any)["loc"] ?? {}) as any)["at"]
+// const getPosition = (e: Entity): UndefOr<TPos> =>
+//   map(Map(e as any).get("loc"), (l) => l.get("at"))
+// const getPosition = (e: Entity): UndefOr<TPos> =>
+//   map(filterIs(e, isPositioned), (c) => c.loc.at)
 
 const getTile = (e: UndefOr<Entity>): Tile => {
-  switch (e?.type) {
-    case "flag":
-      return { color: "yellow", bright: true, char: "F" }
-    case "player":
-      return { color: "white", char: "@" }
-    case "wall":
-      return { color: "white", char: "#" }
-    case "hippie":
-      return { color: "yellow", char: "h" }
-    default:
-      return { color: "black", char: ".", bright: true }
-  }
+  return defined(e)
+    ? Match.type<Entity>().pipe(
+      Match.tag("player", () => ({ color: "white", char: "@" })),
+      Match.tag("hippie", () => ({ color: "yellow", char: "h" })),
+      Match.tag("wall", () => ({ color: "white", char: "#" })),
+      Match.tag(
+        "flag",
+        () => ({ color: "yellow", bright: true, char: "F" })
+      ),
+      Match.exhaustive
+    )(e) as Tile
+    : { color: "black", char: ".", bright: true }
+  // (e?.type) {
+  //     case "flag":
+  //       return { color: "yellow", bright: true, char: "F" }
+  //     case "player":
+  //       return { color: "white", char: "@" }
+  //     case "wall":
+  //       return { color: "white", char: "#" }
+  //     case "hippie":
+  //       return { color: "yellow", char: "h" }
+  //     default:
+  //       return { color: "black", char: ".", bright: true }
+  //   }
 }
+// const getTile = (e: UndefOr<Entity>): Tile => {
+//   switch (e?.type) {
+//     case "flag":
+//       return { color: "yellow", bright: true, char: "F" }
+//     case "player":
+//       return { color: "white", char: "@" }
+//     case "wall":
+//       return { color: "white", char: "#" }
+//     case "hippie":
+//       return { color: "yellow", char: "h" }
+//     default:
+//       return { color: "black", char: ".", bright: true }
+//   }
+// }
 
 const posKey = (p: TPos): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
@@ -63,6 +93,7 @@ const drawWorld = (world: World): Tiles => {
     .valueSeq()
     .groupBy((entity) => map(getPosition(entity), (p: TPos) => posKey(p)))
     .map((v) => v.valueSeq().toArray())
+  // console.log("worldmap: ", JSON.stringify(worldMap))
   const fullmap = emptyMatrix.map((row, y) =>
     row
       .map((_, x) => worldMap.get(posKey({ x, y })))
@@ -82,7 +113,10 @@ export default function Playing({ username }: Props) {
   }
   const theDrawMatrix = drawWorld(world)
   useInput((input) => {
-    apiDoPlayerAction(parseInput(input)).then(apiGetWorld).then(setWorld)
+    apiDoPlayerAction(parseInput(input)).then(apiGetWorld).then((res) => {
+      setWorld(res)
+      // setMessages(List([JSON.stringify(res)]))
+    })
     apiGetLogs().then((messages) => setMessages(List(messages)))
   })
 

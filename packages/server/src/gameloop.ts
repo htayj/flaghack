@@ -6,6 +6,7 @@ import {
   runPromise,
   succeed,
   suspend
+  // tap
 } from "effect/Effect"
 import { Map, Record } from "immutable"
 import type { Action } from "./actions.js"
@@ -64,6 +65,7 @@ export const actPlayerAction = (action: Action): Effect<GameState> =>
     pipe(
       // figure out what the AI wants to do
       allAiPlan(gs),
+      // tap(() => log(`gs: ${JSON.stringify(gs)}`)),
       // also append the player's plans
       andThen((w) =>
         w.concat({

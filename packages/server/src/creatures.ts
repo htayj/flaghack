@@ -1,19 +1,19 @@
-import type { TEntityPositioned } from "./entity.js"
+import { Creature, CreatureBase, Hippie, Player } from "./schemas.js"
 import { genKey } from "./util.js"
 
-export type CreatureBase = TEntityPositioned & {
-  char: string
-  name: string
-  kind: "creature"
-}
-export type Player = CreatureBase & { type: "player" }
-export type Hippie = CreatureBase & { type: "hippie" }
-export type Creature = Player | Hippie
+export type CreatureBase = typeof CreatureBase.Type
+//   char: string
+//   name: string
+//   kind: "creature"
+// }
+export type Player = typeof Player.Type
+export type Hippie = typeof Hippie.Type
+export type Creature = typeof Creature.Type
 
 export const player = (x: number, y: number): Player => ({
-  pos: { x, y },
+  loc: { at: { x, y } },
   type: "player",
-  char: "@",
+  _tag: "player",
   name: "you",
   kind: "creature",
   key: "player"
@@ -24,9 +24,9 @@ export const hippie = (
   y: number,
   name: string = "Ian"
 ): Hippie => ({
-  pos: { x, y },
+  loc: { at: { x, y } },
   type: "hippie",
-  char: "h",
+  _tag: "hippie",
   name,
   kind: "creature",
   key: genKey()

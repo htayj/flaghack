@@ -1,10 +1,11 @@
-import { Terrain, Wall } from "./schemas.js"
+import { Terrain, Wall } from "./schemas/schemas.js"
 import { genKey } from "./util.js"
 import type { Entity } from "./world.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof Wall.Type
 export type Terrain = typeof Terrain.Type
+
 export const isTerrain = (e: Entity): e is Terrain => e.kind === "terrain"
 export const wall = (x: number, y: number): Wall => ({
   loc: { at: { x, y } },

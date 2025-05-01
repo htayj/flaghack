@@ -10,7 +10,7 @@ import {
 } from "./entity.js"
 import { groundFlag, Item } from "./items.js"
 import { collideP, shift, TPos } from "./position.js"
-import { Entity } from "./schemas.js"
+import { Entity } from "./schemas/schemas.js"
 import { isTerrain, testWalls } from "./terrain.js"
 
 export type Entity = typeof Entity.Type

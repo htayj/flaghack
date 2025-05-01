@@ -1,4 +1,4 @@
-import { Pos } from "./schemas.js"
+import { Pos } from "./schemas/schemas.js"
 
 export type TPos = typeof Pos.Type
 export const UV = {

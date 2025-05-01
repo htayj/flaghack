@@ -1,4 +1,9 @@
-import { Creature, CreatureBase, Hippie, Player } from "./schemas.js"
+import {
+  Creature,
+  CreatureBase,
+  Hippie,
+  Player
+} from "./schemas/schemas.js"
 import { genKey } from "./util.js"
 
 export type CreatureBase = typeof CreatureBase.Type

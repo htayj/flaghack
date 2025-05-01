@@ -12,7 +12,7 @@ import {
   ItemBase,
   ItemContained,
   ItemPositioned
-} from "./schemas.js"
+} from "./schemas/schemas.js"
 import { genKey } from "./util.js"
 
 export type ItemBase = typeof ItemBase.Type

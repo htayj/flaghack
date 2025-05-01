@@ -7,8 +7,8 @@ import {
   EntityPositioned,
   Location,
   Position
-} from "./schemas.js"
-import { Key, Keyed } from "./schemas.js"
+} from "./schemas/schemas.js"
+import { Key, Keyed } from "./schemas/schemas.js"
 // import {hasProperty} from './util.js';
 
 export type TKey = typeof Key.Type

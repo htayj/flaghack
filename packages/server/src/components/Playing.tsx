@@ -4,11 +4,17 @@ import { Box, Newline, useInput } from "ink"
 import React, { useState } from "react"
 import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
 import { Action } from "../actions.js"
-import { apiDoPlayerAction, apiGetLogs, apiGetWorld } from "../gameloop.js"
+import {
+  apiDoPlayerAction,
+  apiGetInventory,
+  apiGetLogs,
+  apiGetWorld
+} from "../gameloop.js"
 import { TPos } from "../position.js"
 import { nullMatrix } from "../util.js"
 import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
+import Inventory from "./Inventory.js"
 import Messages from "./Messages.jsx"
 
 type Props = {
@@ -39,22 +45,50 @@ const parseInput = (input: any) => {
 }
 
 const getPosition = (e: Entity): UndefOr<TPos> =>
-  (((e as any)["loc"] ?? {}) as any)["at"]
-// const getPosition = (e: Entity): UndefOr<TPos> =>
-//   map(Map(e as any).get("loc"), (l) => l.get("at"))
-// const getPosition = (e: Entity): UndefOr<TPos> =>
-//   map(filterIs(e, isPositioned), (c) => c.loc.at)
+  e.in === "world" ? e.at : undefined
 
 const getTile = (e: UndefOr<Entity>): Tile => {
   return defined(e)
     ? Match.type<Entity>().pipe(
       Match.tag("player", () => ({ color: "white", char: "@" })),
+      Match.tag("ranger", () => ({ color: "magenta", char: "@" })),
       Match.tag("hippie", () => ({ color: "yellow", char: "h" })),
-      Match.tag("wall", () => ({ color: "white", char: "#" })),
+      Match.tag("wook", () => ({ color: "cyan", char: "h" })),
+      Match.tag("acidcop", () => ({ color: "magenta", char: "K" })),
+      Match.tag("lesser_egregore", () => ({ color: "green", char: "e" })),
+      Match.tag("greater_egregore", () => ({ color: "green", char: "E" })),
+      Match.tag(
+        "collective_egregore",
+        () => ({ color: "green", char: "E" })
+      ),
       Match.tag(
         "flag",
         () => ({ color: "yellow", bright: true, char: "F" })
       ),
+      Match.tag("water", () => ({ color: "cyan", char: "!" })),
+      Match.tag("booze", () => ({ color: "yellow", char: "!" })),
+      Match.tag("acid", () => ({ color: "green", char: "!" })),
+      Match.tag(
+        "bacon",
+        () => ({ color: "red", bright: true, char: "%" })
+      ),
+      Match.tag(
+        "poptart",
+        () => ({ color: "yellow", bright: true, char: "%" })
+      ),
+      Match.tag(
+        "trailmix",
+        () => ({ color: "yellow", char: "%" })
+      ),
+      Match.tag(
+        "pancake",
+        () => ({ color: "white", bright: true, char: "%" })
+      ),
+      Match.tag(
+        "soup",
+        () => ({ color: "red", char: "%" })
+      ),
+      Match.tag("wall", () => ({ color: "white", char: "#" })),
       Match.exhaustive
     )(e) as Tile
     : { color: "black", char: ".", bright: true }
@@ -107,6 +141,7 @@ type Mode = "normal" | "inventory" | "using" | "popup"
 export default function Playing({ username }: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const [world, setWorld] = useState<World>(Map())
+  const [inventory, setInventory] = useState<Map<string, Entity>>(Map())
   const [mode] = useState<Mode>("normal")
   if (world === undefined || world.size === 0) {
     apiGetWorld().then((w) => setWorld(w))
@@ -118,6 +153,7 @@ export default function Playing({ username }: Props) {
       // setMessages(List([JSON.stringify(res)]))
     })
     apiGetLogs().then((messages) => setMessages(List(messages)))
+    apiGetInventory().then(setInventory)
   })
 
   return mode === "normal"
@@ -125,7 +161,10 @@ export default function Playing({ username }: Props) {
       <Box flexDirection="column" margin={2}>
         <Messages messages={messages} />
         <Newline />
-        <GameBoard tiles={theDrawMatrix} />
+        <Box flexDirection="row">
+          <GameBoard tiles={theDrawMatrix} />
+          <Inventory inventory={inventory} />
+        </Box>
       </Box>
     )
     : <Box />

@@ -4,6 +4,7 @@ import { pipe, Schema as S } from "effect"
 // using extend and union - cant use .make?
 export const bothof = S.extend
 export const oneof = S.Union
+// export const oneofLiteral = <T extends [string, ...string[]]>(...args:T ) => oneof( args.map(v => S.Literal(v)) )
 export const and =
   <A extends S.Schema.Any>(a: A) => <B extends S.Schema.Any>(b: B) =>
     bothof(a, b)
@@ -26,6 +27,7 @@ export function allof<T extends [S.Schema.Any, ...S.Schema.Any[]]>(
 
 export const struct = S.Struct
 export const number = S.Number
+export const boolean = S.Boolean
 export const between = S.between
 
 export const prop = <A extends string, V extends S.Schema.Any>(
@@ -55,5 +57,9 @@ export const collect = <T extends [S.Schema.Any, ...S.Schema.Any[]]>(
 //   prop("n", S.Number),
 //   prop("s", S.String)
 // )
+// type b = typeof S.NumberFromString
+// type a = typeof all.ast.annotations
+// const safemake = S.make(all)
+// new safemake(false)
 // type allt = typeof all.Type
 // type onet = typeof one.Type

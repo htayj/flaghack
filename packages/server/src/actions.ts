@@ -29,9 +29,9 @@ export const doAction =
   <C extends Creature>(c?: C) =>
   (action: Action): GameState => {
     const crea = c ?? getPlayer(gs) ?? player(2, 2)
-
     return act(gs)(crea)(action)
   }
+
 const act = (gs: GameState) => (crea: Creature) => (action: Action) =>
   Match.value(action).pipe(
     Match.when(Action.moveUp, () => moveCreature(gs)(crea)(UV.Up)),

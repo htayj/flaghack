@@ -8,26 +8,20 @@ import {
   suspend
   // tap
 } from "effect/Effect"
+import { tap } from "effect/Effect"
 import { Map, Record } from "immutable"
 import type { Action } from "./actions.js"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
 import { player } from "./creatures.js"
+import { TKey } from "./entity.js"
 import { GameState, getPlayer } from "./gamestate.js"
+import { getLogs, log, logger } from "./log.js"
 import { noop } from "./util.js"
 import { Entity, initWorld } from "./world.js"
 
-const _log: Array<string> = []
-const logger = Logger.make(({ message }) => {
-  _log.push(`${message}`)
-})
-export const log = (...m: Array<string>) => {
-  _log.unshift(m.join(" "))
-}
-
 const layer = Logger.replace(Logger.defaultLogger, logger)
-const getLogs = suspend(() => succeed(_log))
 export type Log = (a: string) => void
 
 const _state: { gameState: GameState; log: (s: string) => void } = {
@@ -65,7 +59,11 @@ export const actPlayerAction = (action: Action): Effect<GameState> =>
     pipe(
       // figure out what the AI wants to do
       allAiPlan(gs),
-      // tap(() => log(`gs: ${JSON.stringify(gs)}`)),
+      tap(() =>
+        log(`gs: ${
+          JSON.stringify(gs.get("world").filter((e) => e.key === "player"))
+        }`)
+      ),
       // also append the player's plans
       andThen((w) =>
         w.concat({
@@ -86,8 +84,15 @@ const eGetWorld = pipe(
   eGetGameState,
   andThen((gs) => gs.get("world"))
 )
+const getInventory = (key: TKey) =>
+  pipe(
+    eGetWorld,
+    andThen((w) => w.filter((e) => e.in === key))
+  )
 
 export const apiGetLogs = () => pipe(getLogs, runPromise)
 export const apiGetWorld = () => pipe(eGetWorld, runPromise)
 export const apiDoPlayerAction = (action: Action) =>
   actPlayerAction(action).pipe(provide(layer)).pipe(runPromise)
+export const apiGetInventory = () =>
+  pipe(getInventory("player"), runPromise)

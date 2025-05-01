@@ -8,8 +8,8 @@ export type Terrain = typeof Terrain.Type
 
 export const isTerrain = (e: Entity): e is Terrain => e.kind === "terrain"
 export const wall = (x: number, y: number): Wall => ({
-  loc: { at: { x, y } },
-  type: "wall",
+  at: { x, y },
+  in: "world",
   _tag: "wall",
   kind: "terrain",
   key: genKey()

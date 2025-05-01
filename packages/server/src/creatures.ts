@@ -16,8 +16,9 @@ export type Hippie = typeof Hippie.Type
 export type Creature = typeof Creature.Type
 
 export const player = (x: number, y: number): Player => ({
-  loc: { at: { x, y } },
-  type: "player",
+  at: { x, y },
+  in: "world",
+  type: "human",
   _tag: "player",
   name: "you",
   kind: "creature",
@@ -29,8 +30,9 @@ export const hippie = (
   y: number,
   name: string = "Ian"
 ): Hippie => ({
-  loc: { at: { x, y } },
-  type: "hippie",
+  at: { x, y },
+  in: "world",
+  type: "humanoid",
   _tag: "hippie",
   name,
   kind: "creature",

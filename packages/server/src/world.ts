@@ -9,7 +9,6 @@ import {
 } from "@flaghack/domain/schemas"
 import { HashMap, Option } from "effect"
 import { filter, findFirst } from "effect/HashMap"
-import { defined } from "scala-ts/UndefOr.js"
 import { Creature, hippie, player } from "./creatures.js"
 import { movePosition } from "./entity.js"
 import { groundFlag, waterbottle } from "./items.js"

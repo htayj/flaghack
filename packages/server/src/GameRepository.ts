@@ -26,7 +26,7 @@ export class GameRepository
           Effect.andThen(apiDoPlayerAction)
         )
       }
-      const getInventory = apiGetInventory
+      const getInventory = apiGetInventory("player")
 
       return {
         getLogs,

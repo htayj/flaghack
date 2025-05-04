@@ -32,7 +32,7 @@ export class GameApiGroup extends HttpApiGroup.make("todos")
   )
   .add(
     HttpApiEndpoint.get("getInventory", "/logs").addSuccess(
-      Schema.Array(World)
+      World
     )
   )
   .add(

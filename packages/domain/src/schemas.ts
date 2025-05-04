@@ -214,8 +214,8 @@ export const EAction = Data.taggedEnum<Action>()
 // export const SAction = S.TaggedStruct<Action>()
 // export const SAction = S.Tuple(taction)
 // export const SAction = S.Struct(straction)
-export const SAction = oneof(
-  S.TaggedStruct("action", {}),
+export const SAction = S.Union(
+  S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
   S.TaggedStruct("pickup", { object: Entity })

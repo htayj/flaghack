@@ -1,8 +1,5 @@
-// import { HashMap } from "effect/HashMap"
 import { GameState } from "@flaghack/domain/schemas"
-import * as assert from "assert"
 import { filter as hfilter, get, modify } from "effect/HashMap"
-import { replace, set } from "effect/Record"
 import { filter } from "scala-ts/UndefOr.js"
 import { Player, player } from "./creatures.js"
 import { getKey } from "./entity.js"

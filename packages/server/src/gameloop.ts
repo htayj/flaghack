@@ -8,9 +8,8 @@ import {
   suspend
   // tap
 } from "effect/Effect"
-import { tap } from "effect/Effect"
 import { Map, Record } from "immutable"
-import type { Action } from "./actions.js"
+// import type { Verb } from "./actions.js"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
@@ -18,6 +17,7 @@ import { player } from "./creatures.js"
 import { TKey } from "./entity.js"
 import { GameState, getPlayer } from "./gamestate.js"
 import { getLogs, log, logger } from "./log.js"
+import { Action } from "./schemas/schemas.js"
 import { noop } from "./util.js"
 import { Entity, initWorld } from "./world.js"
 
@@ -54,16 +54,18 @@ const executePlansSync = (gs: GameState) => (acts: Array<PlannedAction>) =>
   }, gs)
 
 // advances the game loop
-export const actPlayerAction = (action: Action): Effect<GameState> =>
+export const actPlayerAction = (
+  action: Action
+): Effect<GameState> =>
   eWithGameState((gs) =>
     pipe(
       // figure out what the AI wants to do
       allAiPlan(gs),
-      tap(() =>
-        log(`gs: ${
-          JSON.stringify(gs.get("world").filter((e) => e.key === "player"))
-        }`)
-      ),
+      // tap(() =>
+      //   log(`gs: ${
+      //     JSON.stringify(gs.get("world").filter((e) => e.key === "player"))
+      //   }`)
+      // ),
       // also append the player's plans
       andThen((w) =>
         w.concat({

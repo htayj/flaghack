@@ -3,7 +3,6 @@ import { List, Map } from "immutable"
 import { Box, Newline, useInput } from "ink"
 import React, { useState } from "react"
 import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
-import { Action } from "../actions.js"
 import {
   apiDoPlayerAction,
   apiGetInventory,
@@ -11,6 +10,7 @@ import {
   apiGetWorld
 } from "../gameloop.js"
 import { TPos } from "../position.js"
+import { EAction } from "../schemas/schemas.js"
 import { nullMatrix } from "../util.js"
 import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
@@ -24,23 +24,23 @@ type Props = {
 const parseInput = (input: any) => {
   switch (input) {
     case "j":
-      return Action.moveDown
+      return EAction.move({ dir: "S" })
     case "h":
-      return Action.moveLeft
+      return EAction.move({ dir: "W" })
     case "k":
-      return Action.moveUp
+      return EAction.move({ dir: "N" })
     case "l":
-      return Action.moveRight
+      return EAction.move({ dir: "E" })
     case "y":
-      return Action.moveUpLeft
+      return EAction.move({ dir: "NW" })
     case "u":
-      return Action.moveUpRight
+      return EAction.move({ dir: "NE" })
     case "b":
-      return Action.moveDownLeft
+      return EAction.move({ dir: "SW" })
     case "n":
-      return Action.moveDownRight
+      return EAction.move({ dir: "SE" })
     default:
-      return Action.noop
+      return EAction.noop()
   }
 }
 
@@ -137,21 +137,26 @@ const drawWorld = (world: World): Tiles => {
   )
   return fullmap.map((r) => r.toArray()).toArray()
 }
-type Mode = "normal" | "inventory" | "using" | "popup"
+type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
 export default function Playing({ username }: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const [world, setWorld] = useState<World>(Map())
   const [inventory, setInventory] = useState<Map<string, Entity>>(Map())
-  const [mode] = useState<Mode>("normal")
+  const [mode, setMode] = useState<Mode>("normal")
   if (world === undefined || world.size === 0) {
     apiGetWorld().then((w) => setWorld(w))
   }
   const theDrawMatrix = drawWorld(world)
   useInput((input) => {
-    apiDoPlayerAction(parseInput(input)).then(apiGetWorld).then((res) => {
-      setWorld(res)
-      // setMessages(List([JSON.stringify(res)]))
-    })
+    const action = parseInput(input)
+    action
+      ? (
+        apiDoPlayerAction(action).then(apiGetWorld).then((res) => {
+          setWorld(res)
+          // setMessages(List([JSON.stringify(res)]))
+        })
+      )
+      : setMode(action)
     apiGetLogs().then((messages) => setMessages(List(messages)))
     apiGetInventory().then(setInventory)
   })

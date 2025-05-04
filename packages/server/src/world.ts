@@ -1,12 +1,19 @@
 import { sync } from "effect/Effect"
 import { Map } from "immutable"
 import { defined } from "scala-ts/UndefOr.js"
-import { Creature, Hippie, hippie, Player, player } from "./creatures.js"
+import { hippie, player } from "./creatures.js"
 import { movePosition } from "./entity.js"
-import { groundFlag, Item, waterbottle } from "./items.js"
+import { groundFlag, waterbottle } from "./items.js"
 import { log } from "./log.js"
 import { collideP, shift, TPos } from "./position.js"
-import { Entity } from "./schemas/schemas.js"
+import {
+  AnyCreature,
+  AnyItem,
+  conforms,
+  Entity,
+  Hippie,
+  Player
+} from "./schemas/schemas.js"
 import { isTerrain, testWalls } from "./terrain.js"
 
 export type Entity = typeof Entity.Type
@@ -24,13 +31,10 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
   contained: T,
   container: C
 ) => container.key === contained.in
-export const isCreature = (e: Entity): e is Creature =>
-  e.kind === "creature"
-export const isPlayer = (e: Entity): e is Player =>
-  isCreature(e) && e._tag === "player"
-export const isHippie = (e: Entity): e is Hippie =>
-  isCreature(e) && e._tag === "hippie"
-export const isItem = (e: Entity): e is Item => e.kind === "item"
+export const isCreature = conforms(AnyCreature)
+export const isPlayer = conforms(Player)
+export const isHippie = conforms(Hippie)
+export const isItem = conforms(AnyItem)
 export const creaturesFrom = <T extends World>(w: T) =>
   sync(() => w.filter(isCreature))
 export const notPlayerFrom = <T extends World>(w: T) =>

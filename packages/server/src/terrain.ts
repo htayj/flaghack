@@ -1,17 +1,15 @@
-import { Terrain, Wall } from "./schemas/schemas.js"
+import { AnyTerrain, conforms, Wall } from "./schemas/schemas.js"
 import { genKey } from "./util.js"
-import type { Entity } from "./world.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof Wall.Type
-export type Terrain = typeof Terrain.Type
+export type Terrain = typeof AnyTerrain.Type
 
-export const isTerrain = (e: Entity): e is Terrain => e.kind === "terrain"
+export const isTerrain = conforms(AnyTerrain)
 export const wall = (x: number, y: number): Wall => ({
   at: { x, y },
   in: "world",
   _tag: "wall",
-  kind: "terrain",
   key: genKey()
 })
 const range = (start: number, end: number) =>

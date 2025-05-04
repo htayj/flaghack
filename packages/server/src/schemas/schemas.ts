@@ -1,5 +1,5 @@
-import { Schema as S } from "effect"
-import { allof, bothof, collect, oneof, prop, struct } from "./util.js"
+import { Data, Either, Schema as S } from "effect"
+import { allof, bothof, oneof, prop, struct } from "./util.js"
 
 // using extend and union - cant use .make?
 // const bothof = S.extend
@@ -18,26 +18,6 @@ const tagas = <A extends S.Schema.Any, T extends string>(
   bothof(
     schema,
     S.TaggedStruct(type, {})
-  )
-const typeas = <A extends S.Schema.Any, K extends string>(
-  schema: A,
-  kind: K
-) =>
-  bothof(
-    schema,
-    struct({
-      type: S.tag(kind)
-    })
-  )
-const kindas = <A extends S.Schema.Any, K extends string>(
-  schema: A,
-  kind: K
-) =>
-  bothof(
-    schema,
-    struct({
-      kind: S.tag(kind)
-    })
   )
 
 // const bothof = <A extends struct.Fields, B extends struct.Fields>(
@@ -78,33 +58,32 @@ export const EntityBase = allof(
   Contain
 )
 
-export const CreatureBase = kindas(
-  allof(EntityBase, struct({ name: S.String.pipe(S.optional) })),
-  "creature"
+export const CreatureBase = allof(
+  EntityBase,
+  struct({ name: S.String.pipe(S.optional) })
 )
-export const TerrainBase = kindas(EntityBase, "terrain")
-export const ItemPositioned = kindas(EntityBase, "item")
-export const ItemContained = kindas(EntityBase, "item")
-export const ItemBase = oneof(
-  ItemPositioned,
-  ItemContained
-)
+export const TerrainBase = EntityBase
+// export const ItemBase = kindas(EntityBase, "item")
 // ===========================
 // items
 // ===========================
 // >> Flags
-export const FlagType = typeas(ItemBase, "flag")
+export const FlagType = EntityBase
 
 export const Flag = tagas(FlagType, "flag")
 
+export const AnyFlag = oneof(
+  Flag
+)
+
 // >> Drinks
-export const Drink = typeas(ItemBase, "drink")
+export const Drink = EntityBase
 
 export const Water = tagas(Drink, "water")
 export const Acid = tagas(Drink, "acid")
 export const Booze = tagas(Drink, "booze")
 export const Milk = tagas(Drink, "booze")
-export const [AllDrink, AnyDrink] = collect(
+export const AnyDrink = oneof(
   Water,
   Acid,
   Booze,
@@ -112,14 +91,14 @@ export const [AllDrink, AnyDrink] = collect(
 )
 
 // >> Food
-export const Food = typeas(ItemBase, "food")
+export const Food = EntityBase
 
 export const Poptart = tagas(Food, "poptart")
 export const Trailmix = tagas(Food, "trailmix")
 export const Pancake = tagas(Food, "pancake")
 export const Bacon = tagas(Food, "bacon")
 export const Soup = tagas(Food, "soup")
-export const [AllFood, AnyFood] = collect(
+export const AnyFood = oneof(
   Poptart,
   Trailmix,
   Pancake,
@@ -128,61 +107,65 @@ export const [AllFood, AnyFood] = collect(
 )
 
 // >> Swag
-export const Swag = typeas(ItemBase, "swag")
+export const Swag = EntityBase
 
 // >> Wristbands
-export const Wristband = typeas(ItemBase, "wristband")
+export const Wristband = EntityBase
 
 // >> tools
-export const Tool = typeas(ItemBase, "tool")
+export const Tool = EntityBase
 
 export const Hammer = tagas(Tool, "hammer")
 export const Nails = tagas(Tool, "nails")
+export const AnyTool = oneof(
+  Hammer,
+  Nails
+)
 
 // <<<<<<
 
-export const Item = oneof(Flag, AnyFood, AnyDrink)
+export const AnyItem = oneof(Flag, AnyFood, AnyDrink)
 // ===========================
 // Creatures
 // ===========================
 // >> Humans
-export const Human = typeas(CreatureBase, "human")
+export const Human = CreatureBase
 
 export const Player = tagas(Human, "player")
 export const Ranger = tagas(Human, "ranger")
 // export const Player = tagas(Human, "player")
-export const [AllHumans, AnyHuman] = collect(Player, Ranger)
+export const AnyHuman = oneof(Player, Ranger)
 
 // >> Humanoids
-export const Humanoid = typeas(CreatureBase, "humanoid")
+export const Humanoid = CreatureBase
 
 export const Hippie = tagas(Humanoid, "hippie")
 export const Wook = tagas(Humanoid, "wook")
 
-export const [AllHumanoids, AnyHumanoid] = collect(Hippie, Wook)
+export const AnyHumanoid = oneof(Hippie, Wook)
 
 // >> Kops
-export const Kop = typeas(CreatureBase, "kop")
+export const Kop = CreatureBase
 
 export const AcidKop = tagas(Kop, "acidcop")
-export const [AllKops, AnyKop] = collect(AcidKop)
+export const AnyKop = oneof(AcidKop)
 
 // >> Egregores
-export const Egregore = typeas(CreatureBase, "egregore")
+export const Egregore = CreatureBase
 
 export const LesserEgregore = tagas(Egregore, "lesser_egregore")
 export const GreaterEgregore = tagas(Egregore, "greater_egregore")
-export const CollectiveEgregore = tagas(Egregore, "collective_egregore")
+export const OneofiveEgregore = tagas(Egregore, "collective_egregore")
 
-export const [AllEgregores, AnyEgregore] = collect(
+export const AnyEgregore = oneof(
   LesserEgregore,
   GreaterEgregore,
-  CollectiveEgregore
+  OneofiveEgregore
 )
 
 // <<<<<
 
-export const Creature = oneof(
+export const AnyCreature = oneof(
   AnyHuman,
   AnyHumanoid,
   AnyKop,
@@ -193,14 +176,41 @@ export const Creature = oneof(
 // ===========================
 export const Wall = tagas(TerrainBase, "wall")
 
-export const Terrain = oneof(Wall)
+export const AnyTerrain = oneof(Wall)
 
 // ===========================
 // ===========================
 // ===========================
 
-export const Entity = oneof(Item, Creature, Terrain)
+export const Entity = oneof(AnyItem, AnyCreature, AnyTerrain)
 // const testboth = bothof(struct({ a: S.Number }), struct({ b: S.Number }))
 // const testproj =  S.Class(testboth)
 // const encoded = S.encodedSchema(Entity)
 // const a = typeof encoded.make()
+
+export const Direction = S.Literal(
+  "N",
+  "E",
+  "S",
+  "W",
+  "NE",
+  "NW",
+  "SE",
+  "SW"
+)
+
+export type Action = Data.TaggedEnum<{
+  apply: {}
+  noop: {}
+  move: { dir: typeof Direction.Type }
+  pickup: { readonly object: typeof Entity.Type }
+}>
+export const EAction = Data.taggedEnum<Action>()
+
+export const conforms = <T>(
+  schema: S.Schema<any, T, never>
+) =>
+(u: unknown): u is T =>
+  S.validateEither(schema)(u).pipe(
+    Either.match({ onLeft: () => false, onRight: () => true })
+  )

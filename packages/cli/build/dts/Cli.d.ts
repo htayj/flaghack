@@ -1,3 +1,0 @@
-import { TodosClient } from "./TodosClient.js";
-export declare const cli: (args: ReadonlyArray<string>) => import("effect/Effect").Effect<void, import("@effect/platform/HttpApiError").HttpApiDecodeError | import("@effect/platform/HttpClientError").HttpClientError | import("effect/ParseResult").ParseError | import("@effect/cli/ValidationError").ValidationError, TodosClient | import("@effect/cli/CliApp").CliApp.Environment>;
-//# sourceMappingURL=Cli.d.ts.map

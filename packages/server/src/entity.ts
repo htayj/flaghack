@@ -1,12 +1,12 @@
-import type { TPos } from "./position.js"
-import { shift } from "./position.js"
 import {
   Contain,
   EntityBase,
   Location,
   Position
-} from "./schemas/schemas.js"
-import { Key, Keyed } from "./schemas/schemas.js"
+} from "@flaghack/domain/schemas"
+import { Key, Keyed } from "@flaghack/domain/schemas"
+import type { TPos } from "./position.js"
+import { shift } from "./position.js"
 // import {hasProperty} from './util.js';
 
 export type TKey = typeof Key.Type

@@ -1,7 +1,7 @@
+import { AnyItem, Flag, Water } from "@flaghack/domain/schemas"
 import type { Creature } from "./creatures.js"
 import { TKey } from "./entity.js"
 import type { TPos } from "./position.js"
-import { AnyItem, Flag, Water } from "./schemas/schemas.js"
 import { genKey } from "./util.js"
 import { Entity } from "./world.js"
 

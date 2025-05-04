@@ -1,4 +1,4 @@
-import { AnyTerrain, conforms, Wall } from "./schemas/schemas.js"
+import { AnyTerrain, conforms, Wall } from "@flaghack/domain/schemas"
 import { genKey } from "./util.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }

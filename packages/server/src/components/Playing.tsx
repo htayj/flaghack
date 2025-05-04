@@ -1,4 +1,6 @@
-import { Match } from "effect"
+import { EAction } from "@flaghack/domain/schemas"
+import { HashMap, Match } from "effect"
+import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import { Box, Newline, useInput } from "ink"
 import React, { useState } from "react"
@@ -10,7 +12,6 @@ import {
   apiGetWorld
 } from "../gameloop.js"
 import { TPos } from "../position.js"
-import { EAction } from "../schemas/schemas.js"
 import { nullMatrix } from "../util.js"
 import { Entity, World } from "../world.js"
 import GameBoard, { Tile, Tiles } from "./GameBoard.jsx"
@@ -123,7 +124,7 @@ const getTile = (e: UndefOr<Entity>): Tile => {
 const posKey = (p: TPos): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
-  const worldMap = world
+  const worldMap = Map(world)
     .valueSeq()
     .groupBy((entity) => map(getPosition(entity), (p: TPos) => posKey(p)))
     .map((v) => v.valueSeq().toArray())
@@ -140,10 +141,10 @@ const drawWorld = (world: World): Tiles => {
 type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
 export default function Playing({ username }: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
-  const [world, setWorld] = useState<World>(Map())
-  const [inventory, setInventory] = useState<Map<string, Entity>>(Map())
+  const [world, setWorld] = useState<World>(HashMap.empty())
+  const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [mode, setMode] = useState<Mode>("normal")
-  if (world === undefined || world.size === 0) {
+  if (world === undefined || size(world) === 0) {
     apiGetWorld().then((w) => setWorld(w))
   }
   const theDrawMatrix = drawWorld(world)
@@ -161,14 +162,14 @@ export default function Playing({ username }: Props) {
     apiGetInventory().then(setInventory)
   })
 
-  return mode === "normal"
+  return ["normal", "picking_up"].includes(mode)
     ? (
       <Box flexDirection="column" margin={2}>
         <Messages messages={messages} />
         <Newline />
         <Box flexDirection="row">
           <GameBoard tiles={theDrawMatrix} />
-          <Inventory inventory={inventory} />
+          <Inventory inventory={Map(inventory)} />
         </Box>
       </Box>
     )

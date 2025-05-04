@@ -1,23 +1,24 @@
-import { sync } from "effect/Effect"
-import { Map } from "immutable"
-import { defined } from "scala-ts/UndefOr.js"
-import { hippie, player } from "./creatures.js"
-import { movePosition } from "./entity.js"
-import { groundFlag, waterbottle } from "./items.js"
-import { log } from "./log.js"
-import { collideP, shift, TPos } from "./position.js"
 import {
   AnyCreature,
   AnyItem,
   conforms,
   Entity,
   Hippie,
-  Player
-} from "./schemas/schemas.js"
+  Player,
+  World
+} from "@flaghack/domain/schemas"
+import { HashMap, Option } from "effect"
+import { filter, findFirst } from "effect/HashMap"
+import { defined } from "scala-ts/UndefOr.js"
+import { Creature, hippie, player } from "./creatures.js"
+import { movePosition } from "./entity.js"
+import { groundFlag, waterbottle } from "./items.js"
+import { log } from "./log.js"
+import { collideP, shift, TPos } from "./position.js"
 import { isTerrain, testWalls } from "./terrain.js"
 
 export type Entity = typeof Entity.Type
-export type World = Map<string, Entity>
+export type World = typeof World.Type
 
 export const initWorld: Array<Entity> = [
   player(3, 3),
@@ -35,14 +36,15 @@ export const isCreature = conforms(AnyCreature)
 export const isPlayer = conforms(Player)
 export const isHippie = conforms(Hippie)
 export const isItem = conforms(AnyItem)
-export const creaturesFrom = <T extends World>(w: T) =>
-  sync(() => w.filter(isCreature))
+export const creaturesFrom = <T extends World>(
+  w: T
+): HashMap.HashMap<string, Creature> => w.pipe(filter(isCreature))
 export const notPlayerFrom = <T extends World>(w: T) =>
-  sync(() => w.filterNot(isPlayer))
+  w.pipe(filter((o) => !isPlayer(o)))
 export const isAt = (p: TPos) => <T extends Entity>(e: T) =>
   e.in === "world" && e.at === p
 export const itemsAt = (world: World) => (pos: TPos) =>
-  world.filter(isItem).filter(isAt(pos))
+  world.pipe(filter(isItem), filter(isAt(pos)))
 
 export const actPosition =
   (w: World) => <T extends Entity>(e: T, by: TPos) => {
@@ -50,12 +52,13 @@ export const actPosition =
     const newPosition = shift(e.at, by)
     log(`new position ${JSON.stringify(newPosition)}`)
     const eCollides = collideP(newPosition)
-    const collidedEntity = w
-      .filter((e) => isCreature(e) || isTerrain(e))
-      .find((o) => eCollides(o.at))
+    const collidedEntity = w.pipe(
+      filter((e) => isCreature(e) || isTerrain(e)),
+      findFirst((o) => eCollides(o.at))
+    )
 
     log(`collided entity ${JSON.stringify(collidedEntity)}`)
-    if (!defined(collidedEntity)) return movePosition(e, by)
+    if (Option.isNone(collidedEntity)) return movePosition(e, by)
     if (isTerrain(collidedEntity)) return e
     return e
   }

@@ -1,9 +1,10 @@
-import { Match, pipe } from "effect"
+import { Action, EAction } from "@flaghack/domain/schemas"
+import { HashMap, Match, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import { all, andThen, promise, succeed } from "effect/Effect"
+import { map, values } from "effect/HashMap"
 import type { Creature, Player } from "../creatures.js"
 import { GameState, worldFrom } from "../gamestate.js"
-import { Action, EAction } from "../schemas/schemas.js"
 import { isHippie, isPlayer } from "../world.js"
 import { creaturesFrom, notPlayerFrom } from "../world.js"
 
@@ -28,13 +29,17 @@ const ai = (gs: GameState) =>
 
 const eAi = (gs: GameState) => (e: Creature) =>
   promise(async () => ({ entity: e, action: ai(gs)(e) }))
+const planAllAi =
+  (gs: GameState) => (w: HashMap.HashMap<string, Creature>) =>
+    w.pipe(map((e) => eAi(gs)(e)), values)
 export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),
     andThen(worldFrom),
     andThen(notPlayerFrom),
     andThen(creaturesFrom),
-    andThen((w) => w.map((e) => eAi(gs)(e))),
-    andThen((w) => w.valueSeq().toArray()),
+    andThen(planAllAi(gs)),
+    // andThen((w) => w.map((e) => eAi(gs)(e))),
+    // andThen((w) => w.valueSeq().toArray()),
     andThen(all) // todo: set concurrency
   )

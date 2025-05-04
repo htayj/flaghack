@@ -1,5 +1,5 @@
+import { Pos } from "@flaghack/domain/schemas"
 import { TKey } from "./entity.js"
-import { Pos } from "./schemas/schemas.js"
 
 export type TPos = typeof Pos.Type
 export const UV = {

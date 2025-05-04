@@ -205,7 +205,21 @@ export type Action = Data.TaggedEnum<{
   move: { dir: typeof Direction.Type }
   pickup: { readonly object: typeof Entity.Type }
 }>
+
 export const EAction = Data.taggedEnum<Action>()
+// const CAction = Data.Class<Action>( EAction)
+
+// const taction = Data.tuple(EAction)
+// const straction = Data.struct(EAction)
+// export const SAction = S.TaggedStruct<Action>()
+// export const SAction = S.Tuple(taction)
+// export const SAction = S.Struct(straction)
+export const SAction = oneof(
+  S.TaggedStruct("action", {}),
+  S.TaggedStruct("noop", {}),
+  S.TaggedStruct("move", { dir: Direction }),
+  S.TaggedStruct("pickup", { object: Entity })
+)
 
 export const conforms = <T>(
   schema: S.Schema<any, T, never>
@@ -214,3 +228,6 @@ export const conforms = <T>(
   S.validateEither(schema)(u).pipe(
     Either.match({ onLeft: () => false, onRight: () => true })
   )
+
+export const World = S.HashMap({ key: S.String, value: Entity })
+export const GameState = S.Struct({ world: World })

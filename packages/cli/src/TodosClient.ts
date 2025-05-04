@@ -1,12 +1,12 @@
 import { HttpApiClient } from "@effect/platform"
-import { TodosApi } from "@template/domain/TodosApi"
+import { GameApi } from "@flaghack/domain/TodosApi"
 import { Effect } from "effect"
 
 export class TodosClient
   extends Effect.Service<TodosClient>()("cli/TodosClient", {
     accessors: true,
     effect: Effect.gen(function*() {
-      const client = yield* HttpApiClient.make(TodosApi, {
+      const client = yield* HttpApiClient.make(GameApi, {
         baseUrl: "http://localhost:3000"
       })
 

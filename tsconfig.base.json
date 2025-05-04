@@ -38,15 +38,15 @@
     "removeComments": false,
     "plugins": [{ "name": "@effect/language-service" }],
     "paths": {
-      "@template/cli": ["./packages/cli/src/index.js"],
-      "@template/cli/*": ["./packages/cli/src/*.js"],
-      "@template/cli/test/*": ["./packages/cli/test/*.js"],
-      "@template/domain": ["./packages/domain/src/index.js"],
-      "@template/domain/*": ["./packages/domain/src/*.js"],
-      "@template/domain/test/*": ["./packages/domain/test/*.js"],
-      "@template/server": ["./packages/server/src/index.js"],
-      "@template/server/*": ["./packages/server/src/*.js"],
-      "@template/server/test/*": ["./packages/server/test/*.js"]
+      "@flaghack/cli": ["./packages/cli/src/index.js"],
+      "@flaghack/cli/*": ["./packages/cli/src/*.js"],
+      "@flaghack/cli/test/*": ["./packages/cli/test/*.js"],
+      "@flaghack/domain": ["./packages/domain/src/index.js"],
+      "@flaghack/domain/*": ["./packages/domain/src/*.js"],
+      "@flaghack/domain/test/*": ["./packages/domain/test/*.js"],
+      "@flaghack/server": ["./packages/server/src/index.js"],
+      "@flaghack/server/*": ["./packages/server/src/*.js"],
+      "@flaghack/server/test/*": ["./packages/server/test/*.js"]
     }
   }
 }

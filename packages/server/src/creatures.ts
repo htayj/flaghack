@@ -1,4 +1,4 @@
-import { AnyCreature, Hippie, Player } from "./schemas/schemas.js"
+import { AnyCreature, Hippie, Player } from "@flaghack/domain/schemas"
 import { genKey } from "./util.js"
 
 export type Player = typeof Player.Type

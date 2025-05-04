@@ -1,36 +1,46 @@
-import { Args, Command, Options } from "@effect/cli"
-import { TodosClient } from "./TodosClient.js"
+// import { Args, Command, Options } from "@effect/cli"
+import { Command } from "@effect/cli"
+import { GameClient } from "./GameClient.js"
 
-const todoArg = Args.text({ name: "todo" }).pipe(
-  Args.withDescription("The message associated with a todo")
+// const todoArg = Args.text({ name: "todo" }).pipe(
+//   Args.withDescription("The message associated with a todo")
+// )
+
+// const todoId = Options.integer("id").pipe(
+//   Options.withDescription("The identifier of the todo")
+// )
+
+const test = Command.make("test").pipe(
+  Command.withDescription("test getting a world"),
+  Command.withHandler(() =>
+    GameClient.doPlayerAction({ _tag: "move", dir: "S" })
+  )
 )
+// const add = Command.make("add", { todo: todoArg }).pipe(
+//   Command.withDescription("Add a new todo"),
+//   Command.withHandler(({ todo }) => GameClient.create(todo))
+// )
 
-const todoId = Options.integer("id").pipe(
-  Options.withDescription("The identifier of the todo")
-)
+// const done = Command.make("done", { id: todoId }).pipe(
+//   Command.withDescription("Mark a todo as done"),
+//   Command.withHandler(({ id }) => GameClient.complete(id))
+// )
 
-const add = Command.make("add", { todo: todoArg }).pipe(
-  Command.withDescription("Add a new todo"),
-  Command.withHandler(({ todo }) => TodosClient.create(todo))
-)
+// const list = Command.make("list").pipe(
+//   Command.withDescription("List all todos"),
+//   Command.withHandler(() => GameClient.list)
+// )
 
-const done = Command.make("done", { id: todoId }).pipe(
-  Command.withDescription("Mark a todo as done"),
-  Command.withHandler(({ id }) => TodosClient.complete(id))
-)
+// const remove = Command.make("remove", { id: todoId }).pipe(
+//   Command.withDescription("Remove a todo"),
+//   Command.withHandler(({ id }) => GameClient.remove(id))
+// )
 
-const list = Command.make("list").pipe(
-  Command.withDescription("List all todos"),
-  Command.withHandler(() => TodosClient.list)
-)
-
-const remove = Command.make("remove", { id: todoId }).pipe(
-  Command.withDescription("Remove a todo"),
-  Command.withHandler(({ id }) => TodosClient.remove(id))
-)
-
+// const command = Command.make("todo").pipe(
+//   Command.withSubcommands([add, done, list, remove])
+// )
 const command = Command.make("todo").pipe(
-  Command.withSubcommands([add, done, list, remove])
+  Command.withSubcommands([test])
 )
 
 export const cli = Command.run(command, {

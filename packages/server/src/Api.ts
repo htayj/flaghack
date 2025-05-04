@@ -1,11 +1,11 @@
 import { HttpApiBuilder } from "@effect/platform"
-import { GameApi } from "@flaghack/domain/TodosApi"
+import { GameApi } from "@flaghack/domain/GameApi"
 import { Effect, Layer } from "effect"
 import { GameRepository } from "./GameRepository.js"
 
 const GameApiLive = HttpApiBuilder.group(
   GameApi,
-  "todos",
+  "game",
   (handlers) =>
     Effect.gen(function*() {
       const game = yield* GameRepository
@@ -13,7 +13,8 @@ const GameApiLive = HttpApiBuilder.group(
         .handle("getLogs", () => game.getLogs)
         .handle("getWorld", () => game.getWorld)
         .handle("getInventory", () => game.getInventory)
-        .handle("doAction", ({ payload }) => game.doPlayerAction(payload))
+        .handle("doAction", ({ payload: { action } }) =>
+          game.doPlayerAction(action))
       // .handle("getTodoById", ({ path: { id } }) => game.getById(id))
       // .handle(
       //   "createTodo",

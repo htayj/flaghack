@@ -2,6 +2,7 @@ import { HttpApiClient } from "@effect/platform"
 import { GameApi } from "@flaghack/domain/GameApi"
 import { Action } from "@flaghack/domain/schemas"
 import { Effect } from "effect"
+import { filter } from "effect/HashMap"
 
 export class GameClient
   extends Effect.Service<GameClient>()("cli/GameClient", {
@@ -24,7 +25,16 @@ export class GameClient
       const getInventory = client.game.getInventory
       const getWorld = client.game.getWorld
       function doPlayerAction(action: Action) {
-        return client.game.doAction({ payload: { action } })
+        return client.game.doAction({ payload: { action } }).pipe(
+          Effect.flatMap((world) =>
+            Effect.logInfo(
+              "new player: ",
+              JSON.stringify(
+                world.world.pipe(filter((e) => e._tag === "player"))
+              )
+            )
+          )
+        )
       }
 
       // const list = client.game.getAllTodos().pipe(

@@ -11,6 +11,7 @@ import {
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
 import { Action, GameState } from "@flaghack/domain/schemas"
+import { logInfo } from "effect/Effect"
 import { filter } from "effect/HashMap"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
@@ -52,7 +53,7 @@ const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
 const executePlansSync =
   (gs: TGameState) => (acts: Array<PlannedAction>) =>
     acts.reduce((acc, { action, entity }) => {
-      log(`doing action: ${JSON.stringify(action)}`)
+      logInfo(`doing action: ${JSON.stringify(action)}`)
       return doAction(acc)(entity)(action)
     }, gs)
 

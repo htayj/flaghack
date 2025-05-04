@@ -8,16 +8,8 @@ import {
 import { getLogs as apiGetLogs } from "./log.js"
 
 export class GameRepository
-  extends Effect.Service<GameRepository>()("api/TodosRepository", {
+  extends Effect.Service<GameRepository>()("api/GameRepository", {
     effect: Effect.gen(function*() {
-      // const gs = yield* Ref.make(_state)
-
-      // const gs = yield* Ref.make(
-      //   HashMap.make(
-      //     ["world", initWorld.map((e) => [e.key, e])]
-      //   )
-      // )
-
       const getLogs = apiGetLogs
       const getWorld = apiGetWorld
       function doPlayerAction(action: Action) {

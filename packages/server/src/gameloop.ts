@@ -19,7 +19,7 @@ import { allAiPlan } from "./ai/ai.js"
 import { player } from "./creatures.js"
 import { TKey } from "./entity.js"
 import { getPlayer } from "./gamestate.js"
-import { getLogs, log, logger } from "./log.js"
+import { getLogs, logger } from "./log.js"
 import { noop } from "./util.js"
 import { initWorld } from "./world.js"
 

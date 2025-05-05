@@ -1,5 +1,8 @@
 // import { Args, Command, Options } from "@effect/cli"
 import { Command } from "@effect/cli"
+import { Effect } from "effect"
+import { Service } from "effect/Effect"
+import { startapp } from "./cli.js"
 import { GameClient } from "./GameClient.js"
 
 // const todoArg = Args.text({ name: "todo" }).pipe(
@@ -15,6 +18,14 @@ const test = Command.make("test").pipe(
   Command.withHandler(() =>
     GameClient.doPlayerAction({ _tag: "move", dir: "S" })
   )
+)
+const inventory = Command.make("i").pipe(
+  Command.withDescription("Add a new todo"),
+  Command.withHandler(() => GameClient.getInventory)
+)
+const play = Command.make("play").pipe(
+  Command.withDescription("play the game"),
+  Command.withHandler(() => Effect.sync(() => startapp()))
 )
 // const add = Command.make("add", { todo: todoArg }).pipe(
 //   Command.withDescription("Add a new todo"),
@@ -40,9 +51,10 @@ const test = Command.make("test").pipe(
 //   Command.withSubcommands([add, done, list, remove])
 // )
 const command = Command.make("todo").pipe(
-  Command.withSubcommands([test])
+  Command.withSubcommands([test, inventory, play])
 )
 
+// export const cli = Effect.succeed(startapp())
 export const cli = Command.run(command, {
   name: "Todo CLI",
   version: "0.0.0"

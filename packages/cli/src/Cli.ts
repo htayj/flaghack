@@ -2,7 +2,8 @@
 import { Command } from "@effect/cli"
 import { Effect } from "effect"
 import { Service } from "effect/Effect"
-import { startapp } from "./cli.js"
+// import { startapp } from "./cli.js"
+import { startblessed } from "./cliBlessed.js"
 import { GameClient } from "./GameClient.js"
 
 // const todoArg = Args.text({ name: "todo" }).pipe(
@@ -23,9 +24,13 @@ const inventory = Command.make("i").pipe(
   Command.withDescription("Add a new todo"),
   Command.withHandler(() => GameClient.getInventory)
 )
-const play = Command.make("play").pipe(
+// const playInk = Command.make("playInk").pipe(
+//   Command.withDescription("play the game"),
+//   Command.withHandler(() => Effect.sync(() => startapp()))
+// )
+const playBlessed = Command.make("playB").pipe(
   Command.withDescription("play the game"),
-  Command.withHandler(() => Effect.sync(() => startapp()))
+  Command.withHandler(() => Effect.sync(() => startblessed()))
 )
 // const add = Command.make("add", { todo: todoArg }).pipe(
 //   Command.withDescription("Add a new todo"),
@@ -51,7 +56,7 @@ const play = Command.make("play").pipe(
 //   Command.withSubcommands([add, done, list, remove])
 // )
 const command = Command.make("todo").pipe(
-  Command.withSubcommands([test, inventory, play])
+  Command.withSubcommands([test, inventory, playBlessed])
 )
 
 // export const cli = Effect.succeed(startapp())

@@ -29,11 +29,10 @@
     "@effect/platform-node": "latest",
     "@flaghack/domain": "workspace:^",
     "blessed": "latest",
-    "blessed-react": "latest",
+    "react-blessed": "latest",
     "blessed-contrib": "latest",
-    "ink": "^4.1.0",
-    "meow": "^11.0.0",
-    "react": "^18.2.0",
+    "react": "^17.0.2",
+    "react-devtools": "latest",
     "scala-ts": "^0.1.8",
     "immutable": "^4.0.0-rc.12",
     "effect": "latest"
@@ -44,6 +43,7 @@
     "@effect/platform-node": "latest",
     "@flaghack/domain": "workspace:^",
     "@types/blessed": "0.1.25",
+    "@types/react-blessed": "latest",
     "effect": "latest",
     "@types/react": "^19.1.2",
     "scala-ts": "^0.1.8"

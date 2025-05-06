@@ -15,7 +15,7 @@ download package and its dependencies:
   pnpm run build
 #+END_SRC
 
-build (note: building is optional and doesnt really do anything for now):
+build (note: building is optional and doesnt really do anything for now, and it will probably fail at the moment):
 #+BEGIN_SRC bash
   pnpm run build
 #+END_SRC

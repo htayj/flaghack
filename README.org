@@ -6,30 +6,36 @@ rewrite of the famous game flaghack
 
 ** Running the game
 
-*** to run after building once:
+*** downloading and building
+download package and its dependencies:
 #+BEGIN_SRC bash
   git clone git@github.com:htayj/flaghack.git
   cd flaghack
-  npm i
-  npm run build
-  npx flag-hack
+  pnpm i
+  pnpm run build
 #+END_SRC
 
-*** otherwise if you want to continuously build the game as files change:
-
-(after cloning and cd'ing)
+build (note: building is optional and doesnt really do anything for now):
 #+BEGIN_SRC bash
-  npm i
-  npm run dev
+  pnpm run build
 #+END_SRC
 
-and in a second terminal 
 
+*** to run the game
+in one terminal run (this starts the server):
 #+BEGIN_SRC bash
-  npx flag-hack
+  pnpm run serve
 #+END_SRC
 
-(note, you will have to ^C the 2nd terminal and rerun it when something changes, it will not automatically update)
+and then in a second terminal run:
+#+BEGIN_SRC bash
+  pnpm run cli
+#+END_SRC
+to start the client
+
+*** TODO:  hotreloading
+
+
 
 ** exiting the game
-press ^C (control-c)
+press ^C (control-c) 

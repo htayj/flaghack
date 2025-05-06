@@ -5,8 +5,6 @@ import blessed from "react-blessed"
 import { getOrElse } from "scala-ts/UndefOr.js"
 import { identity } from "../util.js"
 
-// const identity = <T>(a: T) => a
-
 type Props = {
   tiles: Tiles
 }

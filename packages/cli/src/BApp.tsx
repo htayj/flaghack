@@ -1,5 +1,4 @@
 import React, { useState } from "react"
-// import { CliType } from "./cli.jsx"
 import BModeError from "./components/BModeError.js"
 import BPlaying from "./components/BPlaying.js"
 

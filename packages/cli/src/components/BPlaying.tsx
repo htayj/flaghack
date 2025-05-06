@@ -1,23 +1,14 @@
 import { EAction, Entity, Pos, World } from "@flaghack/domain/schemas"
+import blessed from "blessed"
 import { Effect, HashMap, Match } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
-// import { Box, Newline, useInput } from "ink"
 import React, { useEffect, useRef, useState } from "react"
+import reactBlessed, { BoxElement } from "react-blessed"
 import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
-// import {
-//   apiDoPlayerAction,
-//   apiGetInventory,
-//   apiGetLogs,
-//   apiGetWorld
-// } from "../gameloop.js"
-// import { nullMatrix } from "../util.js"
+import { MainLive } from "../bin.js"
 import { GameClient } from "../GameClient.js"
 import BGameBoard, { Tile, Tiles } from "./BGameBoard.jsx"
-// import Inventory from "./Inventory.js"
-import blessed from "blessed"
-import reactBlessed, { BoxElement } from "react-blessed"
-import { MainLive } from "../bin.js"
 import Messages from "./Messages.jsx"
 
 const apiDoPlayerAction = GameClient.doPlayerAction

@@ -2,16 +2,20 @@ import { HashMap, Logger, LogLevel, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   andThen,
+  log,
   provide,
   runPromise,
   succeed,
-  suspend
+  suspend,
+  sync,
+  withLogSpan
   // tap
 } from "effect/Effect"
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
 import { Action, GameState } from "@flaghack/domain/schemas"
 import { logInfo } from "effect/Effect"
+import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
@@ -43,19 +47,26 @@ const setGameState = (s: TGameState): void => {
 const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
   pipe(
     eGetGameState,
+    tap(() => log("gotgamestate")),
     andThen((gs) => fn(gs)),
+    tap(() => log("altered gamestate")),
     andThen((gs) => eSetGameState(gs)),
+    tap(() => log("set gamestate")),
     andThen(() => eGetGameState),
+    tap(() => log("finished with gamestate")),
     Logger.withMinimumLogLevel(LogLevel.Debug),
-    provide(layer)
+    provide(layer),
+    withLogSpan("with.gs")
   )
 
 const executePlansSync =
   (gs: TGameState) => (acts: Array<PlannedAction>) =>
-    acts.reduce((acc, { action, entity }) => {
-      logInfo(`doing action: ${JSON.stringify(action)}`)
-      return doAction(acc)(entity)(action)
-    }, gs)
+    sync(() =>
+      acts.reduce((acc, { action, entity }) => {
+        logInfo(`doing action: ${JSON.stringify(action)}`)
+        return doAction(acc)(entity)(action)
+      }, gs)
+    )
 
 // advances the game loop
 export const eActPlayerAction = (gs: TGameState) =>
@@ -65,11 +76,7 @@ export const eActPlayerAction = (gs: TGameState) =>
   pipe(
     // figure out what the AI wants to do
     allAiPlan(gs),
-    // tap(() =>
-    //   log(`gs: ${
-    //     JSON.stringify(gs.get("world").filter((e) => e.key === "player"))
-    //   }`)
-    // ),
+    // tap(() => log("ai planned:: gs:", gs)),
     // also append the player's plans
     andThen((w) =>
       w.concat({
@@ -87,11 +94,7 @@ export const actPlayerAction = (
     pipe(
       // figure out what the AI wants to do
       allAiPlan(gs),
-      // tap(() =>
-      //   log(`gs: ${
-      //     JSON.stringify(gs.get("world").filter((e) => e.key === "player"))
-      //   }`)
-      // ),
+      tap(() => log("planned ai actions")),
       // also append the player's plans
       andThen((w) =>
         w.concat({
@@ -99,8 +102,11 @@ export const actPlayerAction = (
           action
         })
       ),
+      tap(() => log("added player action ", action)),
       // execute the plans
-      andThen(executePlansSync(gs))
+      andThen(executePlansSync(gs)),
+      tap(() => log("finished action")),
+      withLogSpan(`playeract.${action._tag}`)
     )
   )
 

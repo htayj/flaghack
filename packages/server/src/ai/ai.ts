@@ -1,7 +1,15 @@
 import { Action, EAction } from "@flaghack/domain/schemas"
 import { HashMap, Match, pipe } from "effect"
 import type { Effect } from "effect/Effect"
-import { all, andThen, promise, succeed } from "effect/Effect"
+import {
+  all,
+  andThen,
+  log,
+  promise,
+  succeed,
+  tap,
+  withLogSpan
+} from "effect/Effect"
 import { map, values } from "effect/HashMap"
 import type { Creature, Player } from "../creatures.js"
 import { GameState, worldFrom } from "../gamestate.js"
@@ -35,11 +43,18 @@ const planAllAi =
 export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),
+    tap(() => log("planning ai for world")),
     andThen(worldFrom),
+    tap(() => log("narrowed to world")),
     andThen(notPlayerFrom),
+    tap(() => log("narrowed out player")),
     andThen(creaturesFrom),
+    tap(() => log("narrowed to creatures")),
     andThen(planAllAi(gs)),
+    tap(() => log("setup planned all ai")),
     // andThen((w) => w.map((e) => eAi(gs)(e))),
     // andThen((w) => w.valueSeq().toArray()),
-    andThen(all) // todo: set concurrency
+    andThen(all), // todo: set concurrency
+    tap(() => log("executed planning all ai")),
+    withLogSpan(`planning`)
   )

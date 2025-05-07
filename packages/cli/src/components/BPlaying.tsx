@@ -1,10 +1,10 @@
 import { EAction, Entity, Pos, World } from "@flaghack/domain/schemas"
-import blessed from "blessed"
+// import blessed from "blessed"
 import { Effect, HashMap, Match } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import React, { useEffect, useRef, useState } from "react"
-import reactBlessed, { BoxElement } from "react-blessed"
+import { BoxElement } from "react-blessed"
 import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
 import { MainLive } from "../bin.js"
 import { GameClient } from "../GameClient.js"
@@ -123,7 +123,7 @@ type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
 export default function BPlaying({}: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
-  const [debugdump, setDebugdump] = useState<string>("aaaa")
+  // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
   const [_, setInventory] = useState<World>(HashMap.empty())
   const [mode, setMode] = useState<Mode>("normal")

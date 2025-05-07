@@ -1,7 +1,7 @@
-import { Match } from "effect"
+// import { Match } from "effect"
 import { Map } from "immutable"
 import React from "react"
-import blessed from "react-blessed"
+// import blessed from "react-blessed"
 import { getOrElse } from "scala-ts/UndefOr.js"
 import { identity } from "../util.js"
 
@@ -49,24 +49,24 @@ const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
       )
     )
   )
-const tcolor = (
-  opening: boolean,
-  color: Color = "white",
-  bright?: boolean,
-  bg?: boolean
-) =>
-  `{${opening ? "" : "/"}${bright ? "bright" : ""}${color}${
-    bg ? "-bg" : "-fg"
-  }}`
-const bcolor = (
-  char: string,
-  color: Color = "white",
-  bright?: boolean,
-  bg?: boolean
-) =>
-  `${tcolor(true, color, bright, bg)}${char}${
-    tcolor(false, color, bright, bg)
-  }`
+// const tcolor = (
+//   opening: boolean,
+//   color: Color = "white",
+//   bright?: boolean,
+//   bg?: boolean
+// ) =>
+//   `{${opening ? "" : "/"}${bright ? "bright" : ""}${color}${
+//     bg ? "-bg" : "-fg"
+//   }}`
+// const bcolor = (
+//   char: string,
+//   color: Color = "white",
+//   bright?: boolean,
+//   bg?: boolean
+// ) =>
+//   `${tcolor(true, color, bright, bg)}${char}${
+//     tcolor(false, color, bright, bg)
+//   }`
 // escColor(
 //   maybeDo(bg)(bgColor)(
 //     maybeDo(bright)(brightenColor)(

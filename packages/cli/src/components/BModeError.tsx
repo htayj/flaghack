@@ -1,8 +1,8 @@
 // import { Box } from "ink"
 import React from "react"
-import blessed from "react-blessed"
+// import blessed from "react-blessed"
 // import { } from "react-blessed"
-import { AppMode } from "../app.jsx"
+import { AppMode } from "../BApp.jsx"
 
 type Props = {
   mode: AppMode

@@ -13,8 +13,7 @@ import {
 } from "effect/Effect"
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
-import { Action, GameState } from "@flaghack/domain/schemas"
-import { logInfo } from "effect/Effect"
+import { Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
 import { doAction } from "./actions.js"
@@ -63,7 +62,6 @@ const executePlansSync =
   (gs: TGameState) => (acts: Array<PlannedAction>) =>
     sync(() =>
       acts.reduce((acc, { action, entity }) => {
-        logInfo(`doing action: ${JSON.stringify(action)}`)
         return doAction(acc)(entity)(action)
       }, gs)
     )
@@ -104,6 +102,10 @@ export const actPlayerAction = (
       ),
       tap(() => log("added player action ", action)),
       // execute the plans
+      andThen((plannedActions) =>
+        plannedActions.filter((pa) => !EAction.$is("noop")(pa.action))
+      ),
+      tap((actions) => log("filtered noops for a result of : ", actions)),
       andThen(executePlansSync(gs)),
       tap(() => log("finished action")),
       withLogSpan(`playeract.${action._tag}`)

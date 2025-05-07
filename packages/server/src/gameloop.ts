@@ -4,10 +4,10 @@ import {
   andThen,
   log,
   provide,
+  reduce,
   runPromise,
   succeed,
   suspend,
-  sync,
   withLogSpan
   // tap
 } from "effect/Effect"
@@ -16,7 +16,6 @@ import {
 import { Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
-import { some } from "effect/Option"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
@@ -59,34 +58,10 @@ const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
     withLogSpan("with.gs")
   )
 
-const executePlansSync =
-  (gs: TGameState) => (acts: Array<PlannedAction>) =>
-    sync(() =>
-      acts.reduce((acc, { action, entity }) => {
-        log("doing action")
-        return doAction(acc)(some(entity))(action)
-      }, gs)
-    )
+const executePlans = (gs: TGameState) => (acts: Array<PlannedAction>) =>
+  reduce(acts, gs, (acc, curr) => doAction(acc, curr))
 
 // advances the game loop
-export const eActPlayerAction = (gs: TGameState) =>
-(
-  action: Action
-): Effect<TGameState> =>
-  pipe(
-    // figure out what the AI wants to do
-    allAiPlan(gs),
-    // tap(() => log("ai planned:: gs:", gs)),
-    // also append the player's plans
-    andThen((w) =>
-      w.concat({
-        entity: getPlayer(gs) ?? player(0, 0),
-        action
-      })
-    ),
-    // execute the plans
-    andThen(executePlansSync(gs))
-  )
 export const actPlayerAction = (
   action: Action
 ): Effect<TGameState> =>
@@ -103,12 +78,12 @@ export const actPlayerAction = (
         })
       ),
       tap(() => log("added player action ", action)),
-      // execute the plans
       andThen((plannedActions) =>
         plannedActions.filter((pa) => !EAction.$is("noop")(pa.action))
-      ),
+      ), // todo: change the filter to Option.reduceCompact once everything is options
       tap((actions) => log("filtered noops for a result of : ", actions)),
-      andThen(executePlansSync(gs)),
+      // execute the plans
+      andThen(executePlans(gs)),
       tap(() => log("finished action")),
       withLogSpan(`playeract.${action._tag}`)
     )

@@ -1,6 +1,7 @@
 import { Action, EAction } from "@flaghack/domain/schemas"
-import { Match } from "effect"
+import { Effect, Match } from "effect"
 import { Option, some } from "effect/Option"
+import { PlannedAction } from "./ai/ai.js"
 import { GameState, updateEntity } from "./gamestate.js"
 import { pickup } from "./items.js"
 import type { TPos } from "./position.js"
@@ -19,17 +20,10 @@ const pickupItem =
   <I extends Entity>(item: Option<I>): GameState =>
     updateEntity(gs)(item)((i) => pickup(entity)(i))
 
-// export const eDoAction =
-//   (gs: GameState) =>
-//   <C extends Entity>(c?: C) =>
-//   (action: Action): GameState => {
-//     const crea = c ?? getPlayer(gs) ?? player(2, 2)
-//     return act(gs)(crea)(action)
-//   }
-export const doAction =
-  (gs: GameState) =>
-  <C extends Entity>(c: Option<C>) =>
-  (action: Action): GameState => act(gs)(c)(action)
+export const doAction = (
+  gs: GameState,
+  { action, entity }: PlannedAction
+) => Effect.succeed(act(gs)(some(entity))(action))
 
 const act =
   (gs: GameState) =>

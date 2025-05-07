@@ -17,6 +17,7 @@ import { collideP, shift, TPos } from "./position.js"
 import { isTerrain, testWalls } from "./terrain.js"
 
 export type Entity = typeof Entity.Type
+type Player = typeof Player.Type
 export type World = typeof World.Type
 
 export const initWorld: Array<Entity> = [
@@ -32,7 +33,7 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
   container: C
 ) => container.key === contained.in
 export const isCreature = conforms(AnyCreature)
-export const isPlayer = conforms(Player)
+export const isPlayer = (e: Entity): e is Player => e._tag === "player"
 export const isHippie = conforms(Hippie)
 export const isItem = conforms(AnyItem)
 export const creaturesFrom = <T extends World>(

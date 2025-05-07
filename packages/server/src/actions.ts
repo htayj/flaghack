@@ -46,29 +46,3 @@ const act =
         ),
       pickup: ({ object }) => pickupItem(gs)(crea)(some(object))
     })(action)
-// Match.value(verb).pipe(
-//   Match.when(Verb.moveUp, () => moveCreature(gs)(crea)(UV.Up)),
-//   Match.when(Verb.moveLeft, () => moveCreature(gs)(crea)(UV.Left)),
-//   Match.when(Verb.moveRight, () => moveCreature(gs)(crea)(UV.Right)),
-//   Match.when(Verb.moveDown, () => moveCreature(gs)(crea)(UV.Down)),
-//   Match.when(
-//     Verb.moveDownLeft,
-//     () => moveCreature(gs)(crea)(UV.DownLeft)
-//   ),
-//   Match.when(Verb.moveUpLeft, () => moveCreature(gs)(crea)(UV.UpLeft)),
-//   Match.when(
-//     Verb.moveDownRight,
-//     () => moveCreature(gs)(crea)(UV.DownRight)
-//   ),
-//   Match.when(
-//     Verb.moveUpRight,
-//     () => moveCreature(gs)(crea)(UV.UpRight)
-//   ),
-//   Match.when(Verb.apply, () => gs),
-//   Match.when(
-//     Verb.pickup,
-//     () => object ? pickupItem(gs)(crea)(object) : gs
-//   ),
-//   Match.when(Verb.noop, () => gs),
-//   Match.orElse(() => gs)
-// )

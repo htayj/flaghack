@@ -16,10 +16,10 @@ import {
 import { Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
+import { match as omatch } from "effect/Option"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
-import { player } from "./creatures.js"
 import { TKey } from "./entity.js"
 import { getPlayer } from "./gamestate.js"
 import { getLogs, logger } from "./log.js"
@@ -64,7 +64,7 @@ const executePlans = (gs: TGameState) => (acts: Array<PlannedAction>) =>
 // advances the game loop
 export const actPlayerAction = (
   action: Action
-): Effect<TGameState> =>
+) =>
   eWithGameState((gs) =>
     pipe(
       // figure out what the AI wants to do
@@ -72,10 +72,17 @@ export const actPlayerAction = (
       tap(() => log("planned ai actions")),
       // also append the player's plans
       andThen((w) =>
-        w.concat({
-          entity: getPlayer(gs) ?? player(0, 0),
-          action
-        })
+        omatch(
+          getPlayer(gs),
+          {
+            onNone: () => w, // todo: throw some kind of error, this isnt right
+            onSome: (player) =>
+              w.concat({
+                entity: player,
+                action
+              })
+          }
+        )
       ),
       tap(() => log("added player action ", action)),
       andThen((plannedActions) =>

@@ -25,13 +25,11 @@ const hippieAi = (_: GameState) => (e: Creature): Action => {
   if (e.at.y == 5 && e.at.x > 50) return EAction.move({ dir: "W" })
   else return EAction.noop()
 }
-// const playerAi = (_: GameState) => (_: Player): Action => (EAction.noop())
 const noAi = (_: GameState) => (_: Entity): Action => (EAction.noop())
 
 const ai = (gs: GameState) =>
   Match.type<Entity>().pipe(
     Match.tag("hippie", hippieAi(gs)),
-    // Match.when(isPlayer, playerAi(gs)),
     Match.orElse(noAi(gs))
   )
 

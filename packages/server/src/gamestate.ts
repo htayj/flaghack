@@ -1,10 +1,10 @@
 import { GameState } from "@flaghack/domain/schemas"
-import { filter as hfilter, get, modify } from "effect/HashMap"
+import { get, modify } from "effect/HashMap"
+import { getOrElse, match as omatch, Option, some } from "effect/Option"
 import { filter } from "scala-ts/UndefOr.js"
 import { Player, player } from "./creatures.js"
 import { getKey } from "./entity.js"
-import { log } from "./log.js"
-import { creaturesFrom, Entity, isPlayer, World } from "./world.js"
+import { Entity, isPlayer, World } from "./world.js"
 
 export type GameState = typeof GameState.Type
 // export type GameState = HashMap<
@@ -20,32 +20,31 @@ export const getPlayer = (gs: GameState): Player =>
 
 export const updateWorld =
   (gs: GameState) => (fn: (w: World) => World): GameState => {
-    // log("updating world:: player: ", w.pipe())
-    // const a = replace("world", fn(gs.world))(gs) //as GameState // fixme
-    const a = GameState.make({ world: fn(gs.world) })
+    const a = GameState.make({ world: fn(gs.world) }) // fixme
     return a
   }
 
 const worldEntUp =
-  <T extends Entity>(e: Entity) =>
-  <R extends Entity>(fn: (e: Entity) => R) =>
-  (w: World) => {
-    log(`updating entity: ${JSON.stringify(e)} `)
-    const newworld = w.pipe(modify(getKey(e), (e) => fn(e)))
-    log(
-      `updated world for that entity: ${
-        creaturesFrom(newworld).pipe(hfilter((e) => e.key === "player"))
-      } `
-    )
-    log(`what it should have been: ${JSON.stringify(fn(e))} `)
-    return newworld
-  }
+  <T extends Entity>(e: Option<T>) =>
+  <R extends Entity>(fn: (e: Option<Entity>) => Option<R>) =>
+  (w: World) =>
+    omatch({
+      onSome: (e: T) =>
+        w.pipe(modify(getKey(e), (e) => getOrElse(fn(some(e)), () => e))),
+      onNone: () => w
+    })(e)
 
+// export const eUpdateEntity =
+//   (gs: GameState) =>
+//   <T extends Entity>(e: Option<Entity>) =>
+//   <R extends Entity>(fn: Effect.Effect<Entity>): GameState =>
+//     updateWorld(gs)(worldEntUp(e)(fn))
 export const updateEntity =
   (gs: GameState) =>
-  <T extends Entity>(e: Entity) =>
-  <R extends Entity>(fn: (e: Entity) => Entity): GameState =>
-    updateWorld(gs)(worldEntUp(e)(fn))
+  <T extends Entity>(e: Option<Entity>) =>
+  <R extends Entity>(
+    fn: (e: Option<Entity>) => Option<Entity>
+  ): GameState => updateWorld(gs)(worldEntUp(e)(fn))
 
 // (w: World) => w.pipe(modify(getKey(e), (_) => map(e, fn)))
 // .update(getKey(e), (_) => map(e, fn)))

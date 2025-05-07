@@ -16,6 +16,7 @@ import {
 import { Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
+import { some } from "effect/Option"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
@@ -62,7 +63,8 @@ const executePlansSync =
   (gs: TGameState) => (acts: Array<PlannedAction>) =>
     sync(() =>
       acts.reduce((acc, { action, entity }) => {
-        return doAction(acc)(entity)(action)
+        log("doing action")
+        return doAction(acc)(some(entity))(action)
       }, gs)
     )
 

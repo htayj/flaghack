@@ -46,18 +46,23 @@ export const itemsAt = (world: World) => (pos: TPos) =>
   world.pipe(filter(isItem), filter(isAt(pos)))
 
 export const actPosition =
-  (w: World) => <T extends Entity>(e: T, by: TPos) => {
-    log(`acting position of ${JSON.stringify(e)} by ${JSON.stringify(by)}`)
-    const newPosition = shift(e.at, by)
-    log(`new position ${JSON.stringify(newPosition)}`)
-    const eCollides = collideP(newPosition)
-    const collidedEntity = w.pipe(
-      filter((e) => isCreature(e) || isTerrain(e)),
-      findFirst((o) => eCollides(o.at))
-    )
+  (w: World) => <T extends Entity>(e: Option.Option<T>, by: TPos) => {
+    return Option.match({
+      onNone: () => e,
+      onSome: (e: T) => {
+        const newPosition = shift(e.at, by)
+        const eCollides = collideP(newPosition)
+        const collidedEntity = w.pipe(
+          filter((e) => isCreature(e) || isTerrain(e)),
+          findFirst((o) => eCollides(o.at))
+        )
 
-    log(`collided entity ${JSON.stringify(collidedEntity)}`)
-    if (Option.isNone(collidedEntity)) return movePosition(e, by)
-    if (isTerrain(collidedEntity)) return e
-    return e
+        log(`collided entity ${JSON.stringify(collidedEntity)}`)
+        if (Option.isNone(collidedEntity)) {
+          return Option.some(movePosition(e, by))
+        }
+        if (isTerrain(collidedEntity)) return Option.some(e)
+        return Option.some(e)
+      }
+    })(e)
   }

@@ -1,7 +1,7 @@
 import { Action, EAction } from "@flaghack/domain/schemas"
 import { Match } from "effect"
-import { player } from "./creatures.js"
-import { GameState, getPlayer, updateEntity } from "./gamestate.js"
+import { Option, some } from "effect/Option"
+import { GameState, updateEntity } from "./gamestate.js"
 import { pickup } from "./items.js"
 import type { TPos } from "./position.js"
 import { UV } from "./position.js"
@@ -9,26 +9,32 @@ import { actPosition, Entity } from "./world.js"
 
 const moveEntity =
   (gs: GameState) =>
-  <T extends Entity>(entity: T) =>
+  <T extends Entity>(entity: Option<T>) =>
   (vec: TPos): GameState =>
     updateEntity(gs)(entity)((c) => actPosition(gs.world)(c, vec))
 
 const pickupItem =
   (gs: GameState) =>
-  <T extends Entity>(entity: T) =>
-  <I extends Entity>(item: I): GameState =>
+  <T extends Entity>(entity: Option<T>) =>
+  <I extends Entity>(item: Option<I>): GameState =>
     updateEntity(gs)(item)((i) => pickup(entity)(i))
 
+// export const eDoAction =
+//   (gs: GameState) =>
+//   <C extends Entity>(c?: C) =>
+//   (action: Action): GameState => {
+//     const crea = c ?? getPlayer(gs) ?? player(2, 2)
+//     return act(gs)(crea)(action)
+//   }
 export const doAction =
   (gs: GameState) =>
-  <C extends Entity>(c?: C) =>
-  (action: Action): GameState => {
-    const crea = c ?? getPlayer(gs) ?? player(2, 2)
-    return act(gs)(crea)(action)
-  }
+  <C extends Entity>(c: Option<C>) =>
+  (action: Action): GameState => act(gs)(c)(action)
 
 const act =
-  (gs: GameState) => (crea: Entity) => (action: Action): GameState =>
+  (gs: GameState) =>
+  (crea: Option<Entity>) =>
+  (action: Action): GameState =>
     EAction.$match({
       apply: () => gs,
       noop: () => gs,
@@ -44,7 +50,7 @@ const act =
           Match.when("SW", () => moveEntity(gs)(crea)(UV.DownLeft)),
           Match.exhaustive
         ),
-      pickup: ({ object }) => pickupItem(gs)(crea)(object)
+      pickup: ({ object }) => pickupItem(gs)(crea)(some(object))
     })(action)
 // Match.value(verb).pipe(
 //   Match.when(Verb.moveUp, () => moveCreature(gs)(crea)(UV.Up)),

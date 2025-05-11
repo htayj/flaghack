@@ -199,27 +199,47 @@ export const Direction = S.Literal(
   "SW"
 )
 
-export type Action = Data.TaggedEnum<{
-  apply: {}
-  noop: {}
-  move: { dir: typeof Direction.Type }
-  pickup: { readonly object: typeof Entity.Type }
-}>
+// export type Action = Data.TaggedEnum<{
+//   apply: {}
+//   noop: {}
+//   move: { dir: typeof Direction.Type }
+//   pickup: { readonly object: typeof Entity.Type }
+// }>
 
-export const EAction = Data.taggedEnum<Action>()
-// const CAction = Data.Class<Action>( EAction)
+// export const EAction = Data.taggedEnum<Action>()
 
-// const taction = Data.tuple(EAction)
-// const straction = Data.struct(EAction)
-// export const SAction = S.TaggedStruct<Action>()
-// export const SAction = S.Tuple(taction)
-// export const SAction = S.Struct(straction)
-export const SAction = S.Union(
+const ActionOptions = [
   S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
   S.TaggedStruct("pickup", { object: Entity })
+]
+export const SAction = S.Union(
+  ...ActionOptions
 )
+// export const SAction = S.Union(
+//   S.TaggedStruct("apply", {}),
+//   S.TaggedStruct("noop", {}),
+//   S.TaggedStruct("move", { dir: Direction }),
+//   S.TaggedStruct("pickup", { object: Entity })
+// )
+export const SEAction = S.Data(SAction)
+export const EAction = Data.taggedEnum<typeof SEAction.Type>()
+export type Action = typeof SAction.Type
+// const schemaUnionToDataEnum = <
+//   A extends [
+//     S.TaggedStruct<SchemaAST.LiteralValue, S.Struct.Fields>,
+//     ...S.TaggedStruct<SchemaAST.LiteralValue, S.Struct.Fields>[]
+//   ]
+// >(
+//   structs: A
+// ) => {
+//   const a = structs
+//   const union = S.Union(...a) as S.Union<A>
+//   const dataSchema = S.Data<typeof union, A, A>(union) // maybe add a type
+//   type DataSchemaT = typeof dataSchema.Type
+//   return Data.taggedEnum<DataSchemaT>()
+// }
 
 export const conforms = <T>(
   schema: S.Schema<any, T, never>
@@ -231,3 +251,8 @@ export const conforms = <T>(
 
 export const World = S.HashMap({ key: S.String, value: Entity })
 export const GameState = S.Struct({ world: World })
+
+// const flatten = <A, B, C>(s: S.Schema<A, B, C>) => {
+//   return s.pipe(S.asSchema, S.compose)
+// }
+// const b = flatten(AnyCreature)

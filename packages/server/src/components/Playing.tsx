@@ -121,7 +121,7 @@ const getTile = (e: UndefOr<Entity>): Tile => {
 //   }
 // }
 
-const posKey = (p: TPos): string => `${p.x},${p.y}`
+const posKey = (p: Omit<TPos, "z">): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
   const worldMap = Map(world)

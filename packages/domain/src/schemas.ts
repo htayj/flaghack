@@ -33,7 +33,8 @@ const tagas = <A extends S.Schema.Any, T extends string>(
 
 export const Pos = struct({
   x: S.Number,
-  y: S.Number
+  y: S.Number,
+  z: S.Number
 })
 
 export const Key = S.String

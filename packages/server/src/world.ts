@@ -12,7 +12,7 @@ import { filter, findFirst } from "effect/HashMap"
 import { hippie, player } from "./creatures.js"
 import { movePosition } from "./entity.js"
 import { groundFlag, waterbottle } from "./items.js"
-import { log } from "./log.js"
+// import { log } from "./log.js"
 import { collideP, shift, TPos } from "./position.js"
 import { isTerrain, testWalls } from "./terrain.js"
 
@@ -21,11 +21,11 @@ type Player = typeof Player.Type
 export type World = typeof World.Type
 
 export const initWorld: Array<Entity> = [
-  player(3, 3),
+  player(3, 3, 0),
   ...testWalls,
-  groundFlag({ x: 4, y: 4 }),
-  hippie(50, 3),
-  waterbottle(0, 0, "player")
+  groundFlag({ x: 4, y: 4, z: 0 }),
+  hippie(50, 3, 0),
+  waterbottle(0, 0, 0, "player")
 ]
 
 export const isContainedIn = <T extends Entity, C extends Entity>(
@@ -58,7 +58,7 @@ export const actPosition =
           findFirst((e) => isCreature(e) || isTerrain(e)) // todo: find a better way of detecting collision
         )
 
-        log(`collided entity ${JSON.stringify(collidedEntity)}`)
+        // log(`collided entity ${JSON.stringify(collidedEntity)}`)
         if (Option.isNone(collidedEntity)) {
           return Option.some(movePosition(e, by))
         }

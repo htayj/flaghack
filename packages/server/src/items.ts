@@ -27,9 +27,10 @@ export const groundFlag = (pos: TPos): Flag => ({
 export const waterbottle = (
   x: number,
   y: number,
+  z: number,
   container: TKey = "world"
 ): Water => ({
-  at: { x, y },
+  at: { x, y, z },
   in: container,
   _tag: "water",
   key: genKey()

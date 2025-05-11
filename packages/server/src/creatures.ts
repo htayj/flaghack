@@ -5,8 +5,8 @@ export type Player = typeof Player.Type
 export type Hippie = typeof Hippie.Type
 export type Creature = typeof AnyCreature.Type
 
-export const player = (x: number, y: number): Player => ({
-  at: { x, y },
+export const player = (x: number, y: number, z: number): Player => ({
+  at: { x, y, z },
   in: "world",
   _tag: "player",
   name: "you",
@@ -16,9 +16,10 @@ export const player = (x: number, y: number): Player => ({
 export const hippie = (
   x: number,
   y: number,
+  z: number,
   name: string = "Ian"
 ): Hippie => ({
-  at: { x, y },
+  at: { x, y, z },
   in: "world",
   _tag: "hippie",
   name,

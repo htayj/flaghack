@@ -213,7 +213,8 @@ const ActionOptions = [
   S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
-  S.TaggedStruct("pickup", { object: Entity })
+  S.TaggedStruct("pickup", { object: Entity }),
+  S.TaggedStruct("pickupMulti", { keys: S.Array(Key) })
 ]
 export const SAction = S.Union(
   ...ActionOptions

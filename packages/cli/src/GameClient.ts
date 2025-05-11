@@ -1,7 +1,9 @@
 import { HttpApiClient } from "@effect/platform"
 import { GameApi } from "@flaghack/domain/GameApi"
-import { Action } from "@flaghack/domain/schemas"
+import { Action, Key } from "@flaghack/domain/schemas"
 import { Effect } from "effect"
+
+type Key = typeof Key.Type
 
 export class GameClient
   extends Effect.Service<GameClient>()("cli/GameClient", {
@@ -23,6 +25,10 @@ export class GameClient
       const getLogs = client.game.getLogs()
       const getInventory = client.game.getInventory()
       const getWorld = client.game.getWorld()
+      // const getPickupItemsFor = client.game.getPickupItemsFor
+      function getPickupItemsFor(key: Key) {
+        return client.game.getPickupItemsFor({ urlParams: { key } })
+      }
       function doPlayerAction(action: Action) {
         return client.game.doAction({ payload: { action } })
       }
@@ -71,6 +77,7 @@ export class GameClient
         getLogs,
         getWorld,
         getInventory,
+        getPickupItemsFor,
         doPlayerAction
       } as const
     })

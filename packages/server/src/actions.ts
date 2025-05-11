@@ -1,7 +1,8 @@
 import { Action, EAction } from "@flaghack/domain/schemas"
-import { Effect, Match } from "effect"
+import { Effect, HashMap, Match, pipe } from "effect"
 import { Option, some } from "effect/Option"
 import { PlannedAction } from "./ai/ai.js"
+import { TKey } from "./entity.js"
 import { GameState, updateEntity } from "./gamestate.js"
 import { pickup } from "./items.js"
 import type { TPos } from "./position.js"
@@ -19,6 +20,32 @@ const pickupItem =
   <T extends Entity>(entity: Option<T>) =>
   <I extends Entity>(item: Option<I>): GameState =>
     updateEntity(gs)(item)((i) => pickup(entity)(i))
+const ePickupItem =
+  (gs: GameState) =>
+  <T extends Entity>(entity: Option<T>) =>
+  <I extends Entity>(item: Option<I>) =>
+    pipe(
+      Effect.succeed(entity),
+      Effect.tap(() =>
+        Effect.log("about to pick up item: ", item, " by ", entity)
+      ),
+      Effect.andThen(() =>
+        updateEntity(gs)(item)((i) => pickup(entity)(i))
+      ),
+      Effect.tap(() =>
+        Effect.log("picked up item: ", item, " by ", entity)
+      )
+    )
+
+const pickupItems =
+  (gs: GameState) =>
+  <T extends Entity>(entity: Option<T>) =>
+  (keys: readonly TKey[]): GameState =>
+    Effect.reduce(
+      keys.map((k) => gs.world.pipe(HashMap.get(k))),
+      gs,
+      (acc, curr) => ePickupItem(acc)(entity)(curr)
+    ).pipe(Effect.runSync)
 
 export const doAction = (
   gs: GameState,
@@ -44,5 +71,6 @@ const act =
           Match.when("SW", () => moveEntity(gs)(crea)(UV.DownLeft)),
           Match.exhaustive
         ),
-      pickup: ({ object }) => pickupItem(gs)(crea)(some(object))
+      pickup: ({ object }) => pickupItem(gs)(crea)(some(object)),
+      pickupMulti: ({ keys }) => pickupItems(gs)(crea)(keys)
     })(action)

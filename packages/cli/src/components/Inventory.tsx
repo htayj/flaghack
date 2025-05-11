@@ -1,18 +1,26 @@
-import { Entity } from "@flaghack/domain/schemas"
+import { World } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 import React from "react"
 
+type World = typeof World.Type
 type Props = {
-  inventory: Map<string, typeof Entity>
+  inventory: World
 }
 
 export default function Inventory({ inventory }: Props) {
+  const invMap = Map(inventory)
   return (
-    <box height={22} width={15}>
-      <box top={0} height={1}>INVENTORY</box>
-      {inventory.valueSeq().toArray().map((item, i) => (
+    <box
+      bottom={0}
+      right={0}
+      border="line"
+      height={22}
+      width={15}
+      label="inventory"
+    >
+      {invMap.valueSeq().toArray().map((item, i) => (
         <box key={i}>
-          {item.name}
+          {item._tag}
         </box>
       ))}
     </box>

@@ -66,7 +66,7 @@ export const pickup =
             some({
               ...item,
               in: by.key,
-              at: { x: 0, y: 0 }
+              at: { x: 0, y: 0, z: 0 }
             }),
           onNone: none
         })(item),

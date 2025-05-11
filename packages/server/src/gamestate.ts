@@ -1,5 +1,5 @@
 import { GameState } from "@flaghack/domain/schemas"
-import { get, modify } from "effect/HashMap"
+import { filter as hfilter, get, modify } from "effect/HashMap"
 import {
   filter,
   getOrElse,
@@ -8,7 +8,8 @@ import {
   some
 } from "effect/Option"
 import { Player } from "./creatures.js"
-import { getKey } from "./entity.js"
+import { getKey, TKey } from "./entity.js"
+import { collideP } from "./position.js"
 import { Entity, isPlayer, World } from "./world.js"
 
 export type GameState = typeof GameState.Type
@@ -19,6 +20,19 @@ export const getPlayer = (gs: GameState): Option<Player> =>
   gs.world.pipe(
     get("player"),
     filter(isPlayer)
+  )
+export const getEntityById =
+  (id: TKey) => (world: World): Option<Entity> =>
+    world.pipe(
+      get(id)
+    )
+export const getLocationOf = (e: Entity) => e.in === "world" && e.at
+
+export const collideE = (a: Entity) => (b: Entity) =>
+  collideP(a.at, a.in)(b.at, b.in)
+export const getEntitiesAtEntity = (a: Entity) => (w: World): World =>
+  w.pipe(
+    hfilter((e) => collideE(a)(e))
   )
 
 export const updateWorld =

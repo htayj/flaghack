@@ -1,5 +1,5 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
-import { GameState, SAction, World } from "@flaghack/domain/schemas"
+import { GameState, Key, SAction, World } from "@flaghack/domain/schemas"
 import { Schema } from "effect"
 
 export class GameApiGroup extends HttpApiGroup.make("game")
@@ -15,6 +15,11 @@ export class GameApiGroup extends HttpApiGroup.make("game")
     HttpApiEndpoint.get("getInventory", "/inventory").addSuccess(
       World
     )
+  )
+  .add(
+    HttpApiEndpoint.get("getPickupItemsFor", "/getPickupFor").addSuccess(
+      World
+    ).setUrlParams(Schema.Struct({ key: Key }))
   )
   .add(
     HttpApiEndpoint.post("doAction", "/act")

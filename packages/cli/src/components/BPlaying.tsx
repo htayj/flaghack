@@ -1,4 +1,4 @@
-import { EAction, Entity, Pos, World } from "@flaghack/domain/schemas"
+import { EAction, Entity, Key, Pos, World } from "@flaghack/domain/schemas"
 // import blessed from "blessed"
 import { Effect, HashMap, Match } from "effect"
 import { size } from "effect/HashMap"
@@ -9,10 +9,13 @@ import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
 import { MainLive } from "../bin.js"
 import { GameClient } from "../GameClient.js"
 import BGameBoard, { Tile, Tiles } from "./BGameBoard.jsx"
+import Inventory from "./Inventory.js"
 import Messages from "./Messages.jsx"
+import PickupPopup from "./PickupPopup.js"
 
 const apiDoPlayerAction = GameClient.doPlayerAction
 const apiGetInventory = GameClient.getInventory
+const apiGetPickupItemsFor = GameClient.getPickupItemsFor
 const apiGetLogs = GameClient.getLogs
 const apiGetWorld = GameClient.getWorld
 export type Matrix<T> = List<List<T>>
@@ -24,6 +27,7 @@ export const nullMatrix = (h: number, w: number): Matrix<null> => {
   return List(filled.map(List))
 }
 type World = typeof World.Type
+type Key = typeof Key.Type
 type Entity = typeof Entity.Type
 type Pos = typeof Pos.Type
 type Props = {
@@ -123,9 +127,13 @@ type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
 export default function BPlaying({}: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
+  const pickupRef = useRef<BoxElement>(null)
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
-  const [_, setInventory] = useState<World>(HashMap.empty())
+  const [pickupContents, setPickupContents] = useState<World>(
+    HashMap.empty()
+  )
+  const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [mode, setMode] = useState<Mode>("normal")
   if (world === undefined || size(world) === 0) {
     apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
@@ -134,38 +142,72 @@ export default function BPlaying({}: Props) {
     )
   }
   const theDrawMatrix = drawWorld(world)
+  const log = (input: string) =>
+    setMessages((messages) => messages.unshift(`[debug] ${input}`))
 
   useEffect(() => {
     gameref.current?.focus()
     gameref.current?.key(
-      ["j", "k", "l", "h", "y", "u", "n", "b"],
+      ["j", "k", "l", "h", "y", "u", "n", "b", ","],
       (input: string) => {
-        const action = parseInput(input)
-        action
-          ? (
-            apiDoPlayerAction(action).pipe(
-              Effect.andThen(apiGetWorld),
-              Effect.andThen(setWorld),
-              Effect.provide(MainLive),
-              Effect.runPromise
-            )
+        setMessages((messages) => messages.unshift(`doing ${input}`))
+        if (input === ",") {
+          setMessages((messages) => messages.unshift("picking up "))
+          apiGetPickupItemsFor("player").pipe(
+            Effect.andThen(setPickupContents),
+            Effect.provide(MainLive),
+            Effect.runPromise
           )
-          : setMode(action)
-        apiGetLogs.pipe(
-          Effect.andThen((messages) => setMessages(List(messages))),
-          Effect.provide(MainLive),
-          Effect.runPromise
-        )
-        apiGetInventory.pipe(
-          Effect.andThen(setInventory),
-          Effect.provide(MainLive),
-          Effect.runPromise
-        )
+          pickupRef.current?.show()
+          pickupRef.current?.focus()
+        } else {
+          const action = parseInput(input)
+          action
+            ? (
+              apiDoPlayerAction(action).pipe(
+                Effect.andThen(apiGetWorld),
+                Effect.andThen(setWorld),
+                Effect.provide(MainLive),
+                Effect.runPromise
+              )
+            )
+            : setMode(action)
+          // apiGetLogs.pipe(
+          //   Effect.andThen((messages) => setMessages(List(messages))),
+          //   Effect.provide(MainLive),
+          //   Effect.runPromise
+          // )
+          apiGetInventory.pipe(
+            Effect.andThen(setInventory),
+            Effect.provide(MainLive),
+            Effect.runPromise
+          )
+        }
       }
     )
   }, [])
 
+  // const pickupRecursive = (pickupItems: Key[]) => {
+  // 	if( pickupItems.length > 0 )  {
+  // 		const k = pickupItems[0]
+  // 		apiDoPlayerAction(EAction.pickup({object:world.pipe(HashMap.get(k))}))
+  // 	} }
   // const GameElement = reactBlessed.render(box)
+  const onDoPickup = (pickupItems: Key[]) => {
+    apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+      Effect.andThen(() => {
+        pickupRef.current?.hide()
+        gameref.current?.focus()
+      }),
+      Effect.provide(MainLive),
+      Effect.runPromise
+    )
+  }
+  const onCancelPickup = () => {
+    setMessages((messages) => messages.unshift(`canceling pickup`))
+    pickupRef.current?.hide()
+    gameref.current?.focus()
+  }
 
   return ["normal", "picking_up"].includes(mode)
     ? (
@@ -176,6 +218,14 @@ export default function BPlaying({}: Props) {
       >
         <Messages messages={messages} />
         <BGameBoard tiles={theDrawMatrix} />
+        <PickupPopup
+          pickupRef={pickupRef}
+          items={pickupContents}
+          onSubmit={onDoPickup}
+          onCancel={onCancelPickup}
+          log={log}
+        />
+        <Inventory inventory={inventory} />
       </box>
     )
     : <box />

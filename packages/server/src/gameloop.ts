@@ -2,6 +2,7 @@ import { HashMap, Logger, LogLevel, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   andThen,
+  catchTag,
   log,
   provide,
   reduce,
@@ -21,7 +22,11 @@ import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
 import { TKey } from "./entity.js"
-import { getPlayer } from "./gamestate.js"
+import {
+  getEntitiesAtEntity,
+  getEntityById,
+  getPlayer
+} from "./gamestate.js"
 import { getLogs, logger } from "./log.js"
 import { noop } from "./util.js"
 import { initWorld } from "./world.js"
@@ -110,6 +115,22 @@ export const getInventory = (key: TKey) =>
     andThen((w) => w.pipe(filter((e) => e.in === key)))
   )
 
+export const getPickupItemsFor = (key: TKey) =>
+  pipe(
+    eGetWorld,
+    tap(() => log("doing get pickup")),
+    andThen((w) =>
+      pipe(
+        succeed(w),
+        andThen(getEntityById(key)),
+        andThen((e) => getEntitiesAtEntity(e)(w)),
+        andThen(pipe(HashMap.filter((e) => e.key !== key)))
+      )
+    ),
+    catchTag("NoSuchElementException", () => succeed(HashMap.empty()))
+  )
+export const apiGetPickupItemsFor = (k: TKey) =>
+  getPickupItemsFor(k).pipe(runPromise)
 export const apiGetLogs = () => pipe(getLogs, runPromise)
 export const apiGetWorld = () => pipe(eGetWorld, runPromise)
 export const apiDoPlayerAction = (action: Action) =>

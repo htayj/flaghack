@@ -18,7 +18,24 @@ import { Entity } from "../world.js"
 // class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 
 export type PlannedAction = { entity: Entity; action: Action }
+
+// export const distanceStupid = (a: Entity, b: Entity): TPos => ({
+//   x: a.at.x - b.at.x,
+//   y: a.at.y - b.at.y,
+//   z: a.at.z - b.at.z
+// })
+// export const sortByDistance = (a: Entity) => (b: Entity[]) =>
+//   Array.sortBy((t) => distanceStupid(a, t))
+
 const hippieAi = (_: GameState) => (e: Creature): Action => {
+  if (e.at.y < 15 && e.at.x == 50) return EAction.move({ dir: "S" })
+  if (e.at.y == 15 && e.at.x < 70) return EAction.move({ dir: "E" })
+  if (e.at.y > 5 && e.at.x == 70) return EAction.move({ dir: "N" })
+  if (e.at.y == 5 && e.at.x > 50) return EAction.move({ dir: "W" })
+  else return EAction.noop()
+}
+const acidCopAi = (_: GameState) => (e: Creature): Action => {
+  // gs.world.pipe(HashMap.filter((e) => e._tag === "flag"), sortByDistance)
   if (e.at.y < 15 && e.at.x == 50) return EAction.move({ dir: "S" })
   if (e.at.y == 15 && e.at.x < 70) return EAction.move({ dir: "E" })
   if (e.at.y > 5 && e.at.x == 70) return EAction.move({ dir: "N" })
@@ -30,6 +47,7 @@ const noAi = (_: GameState) => (_: Entity): Action => (EAction.noop())
 const ai = (gs: GameState) =>
   Match.type<Entity>().pipe(
     Match.tag("hippie", hippieAi(gs)),
+    Match.tag("acidcop", acidCopAi(gs)),
     Match.orElse(noAi(gs))
   )
 

@@ -19,7 +19,7 @@ export default function Inventory({ inventory }: Props) {
       label="inventory"
     >
       {invMap.valueSeq().toArray().map((item, i) => (
-        <box key={i}>
+        <box key={i} top={i}>
           {item._tag}
         </box>
       ))}

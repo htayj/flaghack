@@ -1,8 +1,14 @@
-import { AnyCreature, Hippie, Player } from "@flaghack/domain/schemas"
+import {
+  AcidKop,
+  AnyCreature,
+  Hippie,
+  Player
+} from "@flaghack/domain/schemas"
 import { genKey } from "./util.js"
 
 export type Player = typeof Player.Type
 export type Hippie = typeof Hippie.Type
+export type AcidKop = typeof AcidKop.Type
 export type Creature = typeof AnyCreature.Type
 
 export const player = (x: number, y: number, z: number): Player => ({
@@ -22,6 +28,19 @@ export const hippie = (
   at: { x, y, z },
   in: "world",
   _tag: "hippie",
+  name,
+  key: genKey()
+})
+
+export const acidcop = (
+  x: number,
+  y: number,
+  z: number,
+  name?: string
+): AcidKop => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "acidcop",
   name,
   key: genKey()
 })

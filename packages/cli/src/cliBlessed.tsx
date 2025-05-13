@@ -16,7 +16,7 @@ const screen = blessed.screen({
   title: "react-blessed hello world"
 })
 // Adding a way to quit the program
-screen.key(["escape", "q", "C-c"], function(ch, key) {
+screen.key(["C-c"], function(ch, key) {
   return process.exit(0)
 })
 

@@ -14,7 +14,7 @@ type Props = {
   log: (l: string) => void
 }
 
-export default function PickupPopup(
+export default function popup(
   { items, pickupRef, onCancel, onSubmit, log }: Props
 ) {
   const [marked, setMarked] = useState<Key[]>(["asdf"])

@@ -9,7 +9,7 @@ import {
 } from "@flaghack/domain/schemas"
 import { Option } from "effect"
 import { filter, findFirst } from "effect/HashMap"
-import { hippie, player } from "./creatures.js"
+import { acidcop, hippie, player } from "./creatures.js"
 import { movePosition } from "./entity.js"
 import { groundFlag, waterbottle } from "./items.js"
 // import { log } from "./log.js"
@@ -24,8 +24,13 @@ export const initWorld: Array<Entity> = [
   player(3, 3, 0),
   ...testWalls,
   groundFlag({ x: 4, y: 4, z: 0 }),
+  groundFlag({ x: 52, y: 7, z: 0 }),
+  groundFlag({ x: 52, y: 9, z: 0 }),
+  groundFlag({ x: 58, y: 9, z: 0 }),
   hippie(50, 3, 0),
-  waterbottle(0, 0, 0, "player")
+  acidcop(53, 4, 0),
+  waterbottle(0, 0, 0, "player"),
+  waterbottle(4, 4, 0, "world")
 ]
 
 export const isContainedIn = <T extends Entity, C extends Entity>(

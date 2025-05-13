@@ -16,7 +16,7 @@ import PickupPopup from "./PickupPopup.js"
 const apiDoPlayerAction = GameClient.doPlayerAction
 const apiGetInventory = GameClient.getInventory
 const apiGetPickupItemsFor = GameClient.getPickupItemsFor
-const apiGetLogs = GameClient.getLogs
+// const apiGetLogs = GameClient.getLogs
 const apiGetWorld = GameClient.getWorld
 export type Matrix<T> = List<List<T>>
 export const nullMatrix = (h: number, w: number): Matrix<null> => {
@@ -137,6 +137,7 @@ export default function BPlaying({}: Props) {
   const [mode, setMode] = useState<Mode>("normal")
   if (world === undefined || size(world) === 0) {
     apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
+      Effect.andThen(() => pickupRef.current?.hide()),
       Effect.provide(MainLive),
       Effect.runPromise
     )

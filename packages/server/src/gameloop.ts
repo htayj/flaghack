@@ -6,7 +6,6 @@ import {
   log,
   provide,
   reduce,
-  runPromise,
   succeed,
   suspend,
   withLogSpan
@@ -27,7 +26,7 @@ import {
   getEntityById,
   getPlayer
 } from "./gamestate.js"
-import { getLogs, logger } from "./log.js"
+import { logger } from "./log.js"
 import { noop } from "./util.js"
 import { initWorld } from "./world.js"
 
@@ -129,11 +128,3 @@ export const getPickupItemsFor = (key: TKey) =>
     ),
     catchTag("NoSuchElementException", () => succeed(HashMap.empty()))
   )
-export const apiGetPickupItemsFor = (k: TKey) =>
-  getPickupItemsFor(k).pipe(runPromise)
-export const apiGetLogs = () => pipe(getLogs, runPromise)
-export const apiGetWorld = () => pipe(eGetWorld, runPromise)
-export const apiDoPlayerAction = (action: Action) =>
-  actPlayerAction(action).pipe(provide(layer)).pipe(runPromise)
-export const apiGetInventory = () =>
-  pipe(getInventory("player"), runPromise)

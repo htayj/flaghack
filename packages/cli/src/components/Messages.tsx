@@ -8,7 +8,7 @@ type Props = {
 
 export default function Messages({ messages }: Props) {
   return (
-    <box border="line" top={0} left={0} height={30} width={80}>
+    <box border="line" top={0} left={0} height={12} width={82}>
       {messages.join("\n")}
     </box>
   )

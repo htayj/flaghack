@@ -11,6 +11,7 @@ import { GameClient } from "../GameClient.js"
 import BGameBoard, { Tile, Tiles } from "./BGameBoard.jsx"
 import Inventory from "./Inventory.js"
 import Messages from "./Messages.jsx"
+import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
 
 const apiDoPlayerAction = GameClient.doPlayerAction
@@ -80,6 +81,7 @@ const getTile = (e: UndefOr<Entity>): Tile => {
       ),
       Match.tag("water", () => ({ color: "cyan", char: "!" })),
       Match.tag("booze", () => ({ color: "yellow", char: "!" })),
+      Match.tag("milk", () => ({ color: "white", char: "!" })),
       Match.tag("acid", () => ({ color: "green", char: "!" })),
       Match.tag(
         "bacon",
@@ -128,6 +130,7 @@ export default function BPlaying({}: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
   const pickupRef = useRef<BoxElement>(null)
+  const dropRef = useRef<BoxElement>(null)
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
   const [pickupContents, setPickupContents] = useState<World>(
@@ -138,6 +141,7 @@ export default function BPlaying({}: Props) {
   if (world === undefined || size(world) === 0) {
     apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
       Effect.andThen(() => pickupRef.current?.hide()),
+      Effect.andThen(() => dropRef.current?.hide()),
       Effect.provide(MainLive),
       Effect.runPromise
     )
@@ -149,7 +153,7 @@ export default function BPlaying({}: Props) {
   useEffect(() => {
     gameref.current?.focus()
     gameref.current?.key(
-      ["j", "k", "l", "h", "y", "u", "n", "b", ","],
+      ["j", "k", "l", "h", "y", "d", "u", "n", "b", ","],
       (input: string) => {
         setMessages((messages) => messages.unshift(`doing ${input}`))
         if (input === ",") {
@@ -161,6 +165,10 @@ export default function BPlaying({}: Props) {
           )
           pickupRef.current?.show()
           pickupRef.current?.focus()
+        } else if (input === "d") {
+          setMessages((messages) => messages.unshift("dropping"))
+          dropRef.current?.show()
+          dropRef.current?.focus()
         } else {
           const action = parseInput(input)
           action
@@ -173,11 +181,6 @@ export default function BPlaying({}: Props) {
               )
             )
             : setMode(action)
-          // apiGetLogs.pipe(
-          //   Effect.andThen((messages) => setMessages(List(messages))),
-          //   Effect.provide(MainLive),
-          //   Effect.runPromise
-          // )
           apiGetInventory.pipe(
             Effect.andThen(setInventory),
             Effect.provide(MainLive),
@@ -188,12 +191,6 @@ export default function BPlaying({}: Props) {
     )
   }, [])
 
-  // const pickupRecursive = (pickupItems: Key[]) => {
-  // 	if( pickupItems.length > 0 )  {
-  // 		const k = pickupItems[0]
-  // 		apiDoPlayerAction(EAction.pickup({object:world.pipe(HashMap.get(k))}))
-  // 	} }
-  // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: Key[]) => {
     apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(() => {
@@ -203,6 +200,21 @@ export default function BPlaying({}: Props) {
       Effect.provide(MainLive),
       Effect.runPromise
     )
+  }
+  const onDoDrop = (dropItems: Key[]) => {
+    apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
+      Effect.andThen(() => {
+        dropRef.current?.hide()
+        gameref.current?.focus()
+      }),
+      Effect.provide(MainLive),
+      Effect.runPromise
+    )
+  }
+  const onCancelMultiDrop = () => {
+    setMessages((messages) => messages.unshift(`canceling multidrop`))
+    dropRef.current?.hide()
+    gameref.current?.focus()
   }
   const onCancelPickup = () => {
     setMessages((messages) => messages.unshift(`canceling pickup`))
@@ -225,6 +237,12 @@ export default function BPlaying({}: Props) {
           onSubmit={onDoPickup}
           onCancel={onCancelPickup}
           log={log}
+        />
+        <MultiDropPopup
+          dropRef={dropRef}
+          world={world}
+          onDrop={onDoDrop}
+          onCancel={onCancelMultiDrop}
         />
         <Inventory inventory={inventory} />
       </box>

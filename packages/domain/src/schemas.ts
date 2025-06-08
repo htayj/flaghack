@@ -83,7 +83,7 @@ export const Drink = EntityBase
 export const Water = tagas(Drink, "water")
 export const Acid = tagas(Drink, "acid")
 export const Booze = tagas(Drink, "booze")
-export const Milk = tagas(Drink, "booze")
+export const Milk = tagas(Drink, "milk")
 export const AnyDrink = oneof(
   Water,
   Acid,
@@ -214,7 +214,8 @@ const ActionOptions = [
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
   S.TaggedStruct("pickup", { object: Entity }),
-  S.TaggedStruct("pickupMulti", { keys: S.Array(Key) })
+  S.TaggedStruct("pickupMulti", { keys: S.Array(Key) }),
+  S.TaggedStruct("dropMulti", { keys: S.Array(Key) })
 ]
 export const SAction = S.Union(
   ...ActionOptions

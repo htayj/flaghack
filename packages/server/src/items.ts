@@ -3,7 +3,6 @@ import { Data, Effect } from "effect"
 import { match as omatch, Option } from "effect/Option"
 import { none } from "effect/Option"
 import { some } from "effect/Option"
-import type { Creature } from "./creatures.js"
 import { TKey } from "./entity.js"
 import type { TPos } from "./position.js"
 import { genKey } from "./util.js"
@@ -72,9 +71,21 @@ export const pickup =
         })(item),
       onNone: none
     })(by)
-
-export const drop = (item: Item, by: Creature): Item => ({
-  ...item,
-  at: by.at,
-  in: by.in
-})
+export const drop =
+  <C extends Entity>(by: Option<C>) =>
+  <I extends Entity>(
+    item: Option<I>
+  ): Option<I> =>
+    omatch({
+      onSome: (by: C) =>
+        omatch({
+          onSome: (item: I) =>
+            some({
+              ...item,
+              in: by.in,
+              at: by.at
+            }),
+          onNone: none
+        })(item),
+      onNone: none
+    })(by)

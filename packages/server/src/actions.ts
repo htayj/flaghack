@@ -4,7 +4,7 @@ import { Option, some } from "effect/Option"
 import { PlannedAction } from "./ai/ai.js"
 import { TKey } from "./entity.js"
 import { GameState, updateEntity } from "./gamestate.js"
-import { pickup } from "./items.js"
+import { drop, pickup } from "./items.js"
 import type { TPos } from "./position.js"
 import { UV } from "./position.js"
 import { actPosition, Entity } from "./world.js"
@@ -36,7 +36,28 @@ const ePickupItem =
         Effect.log("picked up item: ", item, " by ", entity)
       )
     )
+const eDropItem =
+  (gs: GameState) =>
+  <T extends Entity>(entity: Option<T>) =>
+  <I extends Entity>(item: Option<I>) =>
+    pipe(
+      Effect.succeed(entity),
+      Effect.tap(() =>
+        Effect.log("about to drop item: ", item, " by ", entity)
+      ),
+      Effect.andThen(() => updateEntity(gs)(item)((i) => drop(entity)(i))),
+      Effect.tap(() => Effect.log("dropped item: ", item, " by ", entity))
+    )
 
+const dropItems =
+  (gs: GameState) =>
+  <T extends Entity>(entity: Option<T>) =>
+  (keys: readonly TKey[]): GameState =>
+    Effect.reduce(
+      keys.map((k) => gs.world.pipe(HashMap.get(k))),
+      gs,
+      (acc, curr) => eDropItem(acc)(entity)(curr)
+    ).pipe(Effect.runSync)
 const pickupItems =
   (gs: GameState) =>
   <T extends Entity>(entity: Option<T>) =>
@@ -72,5 +93,6 @@ const act =
           Match.exhaustive
         ),
       pickup: ({ object }) => pickupItem(gs)(crea)(some(object)),
-      pickupMulti: ({ keys }) => pickupItems(gs)(crea)(keys)
+      pickupMulti: ({ keys }) => pickupItems(gs)(crea)(keys),
+      dropMulti: ({ keys }) => dropItems(gs)(crea)(keys)
     })(action)

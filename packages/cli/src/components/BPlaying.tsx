@@ -1,4 +1,11 @@
-import { EAction, Entity, Key, Pos, World } from "@flaghack/domain/schemas"
+import {
+  EAction,
+  EEntity,
+  Entity,
+  Key,
+  Pos,
+  World
+} from "@flaghack/domain/schemas"
 // import blessed from "blessed"
 import { Effect, HashMap, Match } from "effect"
 import { size } from "effect/HashMap"
@@ -61,53 +68,32 @@ const parseInput = (input: any) => {
 const getPosition = (e: Entity): UndefOr<Pos> =>
   e.in === "world" ? e.at : undefined
 
-const getTile = (e: UndefOr<Entity>): Tile => {
-  return defined(e)
-    ? Match.type<Entity>().pipe(
-      Match.tag("player", () => ({ color: "white", char: "@" })),
-      Match.tag("ranger", () => ({ color: "magenta", char: "@" })),
-      Match.tag("hippie", () => ({ color: "yellow", char: "h" })),
-      Match.tag("wook", () => ({ color: "cyan", char: "h" })),
-      Match.tag("acidcop", () => ({ color: "magenta", char: "K" })),
-      Match.tag("lesser_egregore", () => ({ color: "green", char: "e" })),
-      Match.tag("greater_egregore", () => ({ color: "green", char: "E" })),
-      Match.tag(
-        "collective_egregore",
-        () => ({ color: "green", char: "E" })
-      ),
-      Match.tag(
-        "flag",
-        () => ({ color: "yellow", bright: true, char: "F" })
-      ),
-      Match.tag("water", () => ({ color: "cyan", char: "!" })),
-      Match.tag("booze", () => ({ color: "yellow", char: "!" })),
-      Match.tag("milk", () => ({ color: "white", char: "!" })),
-      Match.tag("acid", () => ({ color: "green", char: "!" })),
-      Match.tag(
-        "bacon",
-        () => ({ color: "red", bright: true, char: "%" })
-      ),
-      Match.tag(
-        "poptart",
-        () => ({ color: "yellow", bright: true, char: "%" })
-      ),
-      Match.tag(
-        "trailmix",
-        () => ({ color: "yellow", char: "%" })
-      ),
-      Match.tag(
-        "pancake",
-        () => ({ color: "white", bright: true, char: "%" })
-      ),
-      Match.tag(
-        "soup",
-        () => ({ color: "red", char: "%" })
-      ),
-      Match.tag("wall", () => ({ color: "white", char: "#" })),
-      Match.exhaustive
-    )(e) as Tile
+const getTile = (e: UndefOr<Entity>): Tile =>
+  defined(e)
+    ? EEntity.$match({
+      player: () => ({ color: "white", char: "@" }),
+      ranger: () => ({ color: "magenta", char: "@" }),
+      hippie: () => ({ color: "yellow", char: "h" }),
+      wook: () => ({ color: "cyan", char: "h" }),
+      acidcop: () => ({ color: "magenta", char: "K" }),
+      lesser_egregore: () => ({ color: "green", char: "e" }),
+      greater_egregore: () => ({ color: "green", char: "E" }),
+      collective_egregore: () => ({ color: "green", char: "E" }),
+      flag: () => ({ color: "yellow", bright: true, char: "F" }),
+      water: () => ({ color: "cyan", char: "!" }),
+      booze: () => ({ color: "yellow", char: "!" }),
+      milk: () => ({ color: "white", char: "!" }),
+      acid: () => ({ color: "green", char: "!" }),
+      bacon: () => ({ color: "red", bright: true, char: "%" }),
+      poptart: () => ({ color: "yellow", bright: true, char: "%" }),
+      trailmix: () => ({ color: "yellow", char: "%" }),
+      pancake: () => ({ color: "white", bright: true, char: "%" }),
+      soup: () => ({ color: "red", char: "%" }),
+      wall: () => ({ color: "white", char: "#" }),
+      tunnel: () => ({ color: "black", bright: true, char: "," }),
+      floor: () => ({ color: "black", bright: true, char: "." })
+    })(e) as Tile
     : { color: "black", char: ".", bright: true }
-}
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {

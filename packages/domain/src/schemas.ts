@@ -176,8 +176,14 @@ export const AnyCreature = oneof(
 // terrains
 // ===========================
 export const Wall = tagas(TerrainBase, "wall")
+export const Floor = tagas(TerrainBase, "floor")
+export const Tunnel = tagas(TerrainBase, "tunnel")
 
-export const AnyTerrain = oneof(Wall)
+// export const AnyTerrain = oneof(Wall, Tunnel)
+// export const AnyTerrain = oneof(Wall)
+export const AnyTerrain = oneof(Wall, Floor, Tunnel)
+// type a = typeof AnyTerrain.Type
+// export const AnyTerrain = oneof(Wall, Floor, Tunnel)
 
 // ===========================
 // ===========================
@@ -243,6 +249,10 @@ export type Action = typeof SAction.Type
 //   type DataSchemaT = typeof dataSchema.Type
 //   return Data.taggedEnum<DataSchemaT>()
 // }
+
+export const SEEntity = S.Data(Entity)
+export const EEntity = Data.taggedEnum<typeof SEEntity.Type>()
+EEntity.le
 
 export const conforms = <T>(
   schema: S.Schema<any, T, never>

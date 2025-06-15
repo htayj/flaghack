@@ -1,4 +1,4 @@
-import { HashMap, Logger, LogLevel, pipe } from "effect"
+import { Array, HashMap, Logger, LogLevel, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   andThen,
@@ -17,9 +17,11 @@ import { Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { tap } from "effect/Effect"
 import { filter } from "effect/HashMap"
 import { match as omatch } from "effect/Option"
+import { List } from "immutable"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
+import { Player, player } from "./creatures.js"
 import { TKey } from "./entity.js"
 import {
   getEntitiesAtEntity,
@@ -28,17 +30,43 @@ import {
 } from "./gamestate.js"
 import { logger } from "./log.js"
 import { noop } from "./util.js"
-import { initWorld } from "./world.js"
+import { BSPGenLevel, initWorld, World } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
+// const _state: { gameState: TGameState; log: (s: string) => void } = {
+//   gameState: GameState.make({
+//     world: HashMap.fromIterable(
+//       initWorld.map((e) => [e.key, e])
+//     )
+//   }),
+//   log: noop
+// }
+const testLevel: World = BSPGenLevel(777, 0)
+const testLevelFloors = List(
+  testLevel.pipe(HashMap.filter((e) => e._tag === "floor"), HashMap.values)
+)
+// const testLevelPlayerLocation = testLevelFloors.get(Math.random()*testLevelFloors.size-1)
+const testLevelPlayerLocation = testLevelFloors.first()?.at
+  ?? { x: 0, y: 0, z: 0 }
+
+const testPlayer = player(
+  testLevelPlayerLocation.x,
+  testLevelPlayerLocation.y,
+  testLevelPlayerLocation.z
+)
+const testLevelPlayer: World = HashMap.fromIterable([[
+  "player",
+  testPlayer
+]])
+const testLevelReady: World = testLevelPlayer.pipe(
+  HashMap.union(testLevel)
+)
 const _state: { gameState: TGameState; log: (s: string) => void } = {
   gameState: GameState.make({
-    world: HashMap.fromIterable(
-      initWorld.map((e) => [e.key, e])
-    )
+    world: testLevelReady
   }),
   log: noop
 }

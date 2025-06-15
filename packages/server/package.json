@@ -25,6 +25,7 @@
     "@flaghack/domain": "workspace:^",
     "effect": "latest",
     "immutable": "^4.0.0-rc.12",
+    "pure-rand": "7.0.1",
     "ink": "^4.1.0",
     "meow": "^11.0.0",
     "react": "^18.2.0",

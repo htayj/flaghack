@@ -1,4 +1,5 @@
 import {
+  DirectionalVariant,
   EAction,
   EEntity,
   Entity,
@@ -67,6 +68,34 @@ const parseInput = (input: any) => {
 
 const getPosition = (e: Entity): UndefOr<Pos> =>
   e.in === "world" ? e.at : undefined
+const getWallVariantChar = (v: typeof DirectionalVariant.Type) => {
+  switch (v) {
+    case "vertical":
+      return "│"
+    case "horizontal":
+      return "─"
+    case "topLeft":
+      return "┌"
+    case "topRight":
+      return "┐"
+    case "bottomLeft":
+      return "└"
+    case "bottomRight":
+      return "┘"
+    case "cross":
+      return "┼"
+    case "t-up":
+      return "┴"
+    case "t-down":
+      return "┬"
+    case "t-left":
+      return "┤"
+    case "t-right":
+      return "├"
+    default:
+      return " "
+  }
+}
 
 const getTile = (e: UndefOr<Entity>): Tile =>
   defined(e)
@@ -89,9 +118,13 @@ const getTile = (e: UndefOr<Entity>): Tile =>
       trailmix: () => ({ color: "yellow", char: "%" }),
       pancake: () => ({ color: "white", bright: true, char: "%" }),
       soup: () => ({ color: "red", char: "%" }),
-      wall: () => ({ color: "white", char: "#" }),
-      tunnel: () => ({ color: "black", bright: true, char: "," }),
-      floor: () => ({ color: "black", bright: true, char: "." })
+      wall: ({ variant }) => ({
+        color: "white",
+        bright: false,
+        char: getWallVariantChar(variant)
+      }),
+      tunnel: () => ({ color: "white", bright: false, char: "#" }),
+      floor: () => ({ color: "black", bright: true, char: "·" })
     })(e) as Tile
     : { color: "black", char: ".", bright: true }
 

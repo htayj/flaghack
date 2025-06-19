@@ -1,6 +1,7 @@
 import {
   AnyTerrain,
   conforms,
+  DirectionalVariant,
   Floor,
   Tunnel,
   Wall
@@ -12,12 +13,19 @@ export type Wall = typeof Wall.Type
 export type Floor = typeof Floor.Type
 export type Tunnel = typeof Tunnel.Type
 export type Terrain = typeof AnyTerrain.Type
+export type DirectionalVariant = typeof DirectionalVariant.Type
 
 export const isTerrain = conforms(AnyTerrain)
-export const wall = (x: number, y: number, z: number): Wall => ({
+export const wall = (
+  x: number,
+  y: number,
+  z: number,
+  variant?: DirectionalVariant
+): Wall => ({
   at: { x, y, z },
   in: "world",
   _tag: "wall",
+  variant: variant ?? "none",
   key: genKey()
 })
 export const floor = (x: number, y: number, z: number): Floor => ({

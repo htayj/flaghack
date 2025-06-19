@@ -2,6 +2,7 @@ import {
   AnyCreature,
   AnyItem,
   conforms,
+  DirectionalVariant,
   EEntity,
   Entity,
   Hippie,
@@ -18,7 +19,14 @@ import { range } from "effect/Array"
 import { Set } from "immutable"
 import prand from "pure-rand"
 import { collideP, shift, TPos } from "./position.js"
-import { isTerrain, testWalls, Tunnel, tunnel, wall } from "./terrain.js"
+import {
+  floor,
+  isTerrain,
+  testWalls,
+  Tunnel,
+  tunnel,
+  wall
+} from "./terrain.js"
 import { simpleDraw } from "./testDrawUtils.js"
 import { dijkstraPath } from "./worldUtil.js"
 
@@ -224,6 +232,105 @@ const _linkLeaves = (
     rng3
   ]
 }
+
+const normalNeighbors = (e: Entity, unvisited: Array<Entity>) =>
+  unvisited.filter((entity) =>
+    entity.at.z === e.at.z && Math.abs(entity.at.x - e.at.x) < 2
+    && Math.abs(entity.at.y - e.at.y) < 2
+  ).map((entity) => ({
+    ...entity,
+    at: {
+      x: entity.at.x - e.at.x,
+      y: entity.at.y - e.at.y,
+      z: entity.at.z - e.at.z
+    }
+  })).filter((entity) => entity.key !== e.key)
+
+const wallAt = (x: number, y: number) => (w: Array<Entity>) =>
+  w.find((e) => e.at.x === x && e.at.y === y)?._tag !== "floor"
+
+const flip =
+  <A, B, C>(f: (a: A) => (b: B) => C): (b: B) => (a: A) => C =>
+  (b: B) =>
+  (a: A) => f(a)(b)
+const wallN = flip(({ at: { x, y } }: Entity) => wallAt(x, y - 1))
+const wallS = flip(({ at: { x, y } }: Entity) => wallAt(x, y + 1))
+const wallE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y))
+const wallW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y))
+const wallNE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y - 1))
+const wallSE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y + 1))
+const wallNW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y - 1))
+const wallSW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y + 1))
+
+const determineWallVariant = (
+  entity: Entity,
+  world: Array<Entity>
+): typeof DirectionalVariant.Type => {
+  // const n = normalNeighbors(e, w).filter((n) => n._tag === "wall")
+  const n = wallN(world)(entity)
+  const w = wallW(world)(entity)
+  const e = wallE(world)(entity)
+  const s = wallS(world)(entity)
+  const ne = wallNE(world)(entity)
+  const nw = wallNW(world)(entity)
+  const se = wallSE(world)(entity)
+  const sw = wallSW(world)(entity)
+  if (n && w && s && e && se && sw && nw && ne) return "none"
+
+  if (n && (!nw || !ne)) {
+    if (w && (!nw || !sw)) {
+      if (e && (!ne && !se)) {
+        if (s && !ne) {
+          return "cross"
+        } else {
+          return "t-up"
+        }
+      } else {
+        if (s && !sw) {
+          return "t-left"
+        } else {
+          return "bottomRight"
+        }
+      }
+    } else {
+      if (e && (!ne || !se)) {
+        if (s && !se) {
+          return "t-right"
+        } else {
+          return "bottomLeft"
+        }
+      } else {
+        if (s) {
+          return "vertical"
+        } else {
+          return "vertical"
+        }
+      }
+    }
+  } else if (s) {
+    if (w && !sw) {
+      if (e && !ne) {
+        return "t-down"
+      } else {
+        return "topRight"
+      }
+    } else {
+      if (e && !se) {
+        return "topLeft"
+      } else if ((e || w) && ((!ne && !nw) || (!se && !sw))) {
+        return "horizontal"
+      } else if (e && ((!ne && !n) || (!se && !s))) {
+        return "horizontal"
+      } else if (w && ((!nw && !n) || (!sw && !s))) {
+        return "horizontal"
+      } else {
+        return "vertical"
+      }
+    }
+  } else if (w || e) {
+    return "horizontal"
+  } else return "none"
+}
 const _carveRoom = (
   level: Array<Entity>,
   rng: prand.RandomGenerator,
@@ -263,8 +370,15 @@ const _carveRoom = (
   // )
   const deleteWallp = (e: Entity) =>
     e.at.x <= right && e.at.x >= left && e.at.y <= bottom && e.at.y >= top
+  const withRoom = level.map((e) =>
+    deleteWallp(e) ? floor(e.at.x, e.at.y, e.at.z) : e
+  )
   return [
-    level.map((e) => deleteWallp(e) ? { ...e, _tag: "floor" } : e),
+    withRoom.map((e) =>
+      e._tag === "wall"
+        ? { ...e, variant: determineWallVariant(e, withRoom) }
+        : e
+    ),
     rng5
   ]
 }

@@ -175,8 +175,31 @@ export const AnyCreature = oneof(
 // ===========================
 // terrains
 // ===========================
-export const Wall = tagas(TerrainBase, "wall")
-export const Floor = tagas(TerrainBase, "floor")
+export const DirectionalVariant = S.Literal(
+  "vertical",
+  "horizontal",
+  "bottomLeft",
+  "bottomRight",
+  "topLeft",
+  "topRight",
+  "cross",
+  "t-up",
+  "t-down",
+  "t-left",
+  "t-right",
+  "none"
+)
+export const WithDirectionalVariant = S.Struct({
+  variant: DirectionalVariant
+})
+export const Wall = tagas(
+  bothof(TerrainBase, WithDirectionalVariant),
+  "wall"
+)
+export const Floor = tagas(
+  TerrainBase,
+  "floor"
+)
 export const Tunnel = tagas(TerrainBase, "tunnel")
 
 // export const AnyTerrain = oneof(Wall, Tunnel)
@@ -252,7 +275,6 @@ export type Action = typeof SAction.Type
 
 export const SEEntity = S.Data(Entity)
 export const EEntity = Data.taggedEnum<typeof SEEntity.Type>()
-EEntity.le
 
 export const conforms = <T>(
   schema: S.Schema<any, T, never>

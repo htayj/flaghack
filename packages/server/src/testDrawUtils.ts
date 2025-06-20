@@ -1,9 +1,9 @@
 import { EEntity, Pos } from "@flaghack/domain/schemas"
-import { identity, Match, Option } from "effect"
+import { Option } from "effect"
 import { defined } from "effect/Match"
 import { List, Map, Set } from "immutable"
 import { nullMatrix, UndefOr } from "./util.js"
-import { BSPGenLevel, Entity, World } from "./world.js"
+import { Entity, World } from "./world.js"
 console.log("testing bsp")
 
 type Pos = typeof Pos.Type

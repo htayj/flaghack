@@ -1,22 +1,15 @@
-import {
-  DirectionalVariant,
-  EAction,
-  EEntity,
-  Entity,
-  Key,
-  Pos,
-  World
-} from "@flaghack/domain/schemas"
+import { EAction, Entity, Key, Pos, World } from "@flaghack/domain/schemas"
 // import blessed from "blessed"
-import { Effect, HashMap, Match } from "effect"
+import { getTile, Tile } from "@flaghack/domain/display"
+import { Effect, HashMap } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import React, { useEffect, useRef, useState } from "react"
 import { BoxElement } from "react-blessed"
-import { defined, map, UndefOr } from "scala-ts/UndefOr.js"
+import { map, UndefOr } from "scala-ts/UndefOr.js"
 import { MainLive } from "../bin.js"
 import { GameClient } from "../GameClient.js"
-import BGameBoard, { Tile, Tiles } from "./BGameBoard.jsx"
+import BGameBoard, { Tiles } from "./BGameBoard.jsx"
 import Inventory from "./Inventory.js"
 import Messages from "./Messages.jsx"
 import MultiDropPopup from "./MultiDropPopup.js"
@@ -42,6 +35,8 @@ type Pos = typeof Pos.Type
 type Props = {
   username: string
 }
+const getTileOrDefault = (e: Entity | undefined): Tile =>
+  e === undefined ? { color: "black", char: " " } : getTile(e)
 
 const parseInput = (input: any) => {
   switch (input) {
@@ -68,65 +63,6 @@ const parseInput = (input: any) => {
 
 const getPosition = (e: Entity): UndefOr<Pos> =>
   e.in === "world" ? e.at : undefined
-const getWallVariantChar = (v: typeof DirectionalVariant.Type) => {
-  switch (v) {
-    case "vertical":
-      return "│"
-    case "horizontal":
-      return "─"
-    case "topLeft":
-      return "┌"
-    case "topRight":
-      return "┐"
-    case "bottomLeft":
-      return "└"
-    case "bottomRight":
-      return "┘"
-    case "cross":
-      return "┼"
-    case "t-up":
-      return "┴"
-    case "t-down":
-      return "┬"
-    case "t-left":
-      return "┤"
-    case "t-right":
-      return "├"
-    default:
-      return " "
-  }
-}
-
-const getTile = (e: UndefOr<Entity>): Tile =>
-  defined(e)
-    ? EEntity.$match({
-      player: () => ({ color: "white", char: "@" }),
-      ranger: () => ({ color: "magenta", char: "@" }),
-      hippie: () => ({ color: "yellow", char: "h" }),
-      wook: () => ({ color: "cyan", char: "h" }),
-      acidcop: () => ({ color: "magenta", char: "K" }),
-      lesser_egregore: () => ({ color: "green", char: "e" }),
-      greater_egregore: () => ({ color: "green", char: "E" }),
-      collective_egregore: () => ({ color: "green", char: "E" }),
-      flag: () => ({ color: "yellow", bright: true, char: "F" }),
-      water: () => ({ color: "cyan", char: "!" }),
-      booze: () => ({ color: "yellow", char: "!" }),
-      milk: () => ({ color: "white", char: "!" }),
-      acid: () => ({ color: "green", char: "!" }),
-      bacon: () => ({ color: "red", bright: true, char: "%" }),
-      poptart: () => ({ color: "yellow", bright: true, char: "%" }),
-      trailmix: () => ({ color: "yellow", char: "%" }),
-      pancake: () => ({ color: "white", bright: true, char: "%" }),
-      soup: () => ({ color: "red", char: "%" }),
-      wall: ({ variant }) => ({
-        color: "white",
-        bright: false,
-        char: getWallVariantChar(variant)
-      }),
-      tunnel: () => ({ color: "white", bright: false, char: "#" }),
-      floor: () => ({ color: "black", bright: true, char: "·" })
-    })(e) as Tile
-    : { color: "black", char: ".", bright: true }
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
@@ -140,7 +76,7 @@ const drawWorld = (world: World): Tiles => {
       .map((_, x) => worldMap.get(posKey({ x, y })))
       .map(List)
       .map((l) => l.first())
-      .map(getTile)
+      .map(getTileOrDefault)
   )
   return fullmap.map((r) => r.toArray()).toArray()
 }
@@ -193,6 +129,7 @@ export default function BPlaying({}: Props) {
           action
             ? (
               apiDoPlayerAction(action).pipe(
+                Effect.tap((w) => Effect.log()),
                 Effect.andThen(apiGetWorld),
                 Effect.andThen(setWorld),
                 Effect.provide(MainLive),

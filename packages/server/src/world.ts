@@ -19,15 +19,7 @@ import { range } from "effect/Array"
 import { Set } from "immutable"
 import prand from "pure-rand"
 import { collideP, shift, TPos } from "./position.js"
-import {
-  floor,
-  isTerrain,
-  testWalls,
-  Tunnel,
-  tunnel,
-  wall
-} from "./terrain.js"
-import { simpleDraw } from "./testDrawUtils.js"
+import { floor, isTerrain, testWalls, tunnel, wall } from "./terrain.js"
 import { dijkstraPath } from "./worldUtil.js"
 
 export type Entity = typeof Entity.Type
@@ -143,10 +135,12 @@ const _linkLeaves = (
   // console.log("linking")
   const floorsA = a.filter(EEntity.$is("floor"))
   const floorsB = b.filter(EEntity.$is("floor"))
-  const [widthA, heightA, minXA, minYA, maxXA, maxYA, xsA, ysA] =
-    getSpatialInfo(floorsA)
-  const [widthB, heightB, minXB, minYB, maxXB, maxYB, xsB, ysB] =
-    getSpatialInfo(floorsB)
+  const [, , minXA, minYA, maxXA, maxYA, xsA, ysA] = getSpatialInfo(
+    floorsA
+  )
+  const [, , minXB, minYB, maxXB, maxYB, xsB, ysB] = getSpatialInfo(
+    floorsB
+  )
   const z = floorsB[0].at.z // fixme?
 
   // fixme replace all the rest of this with a pathfinding to link random points on edges....
@@ -232,19 +226,6 @@ const _linkLeaves = (
     rng3
   ]
 }
-
-const normalNeighbors = (e: Entity, unvisited: Array<Entity>) =>
-  unvisited.filter((entity) =>
-    entity.at.z === e.at.z && Math.abs(entity.at.x - e.at.x) < 2
-    && Math.abs(entity.at.y - e.at.y) < 2
-  ).map((entity) => ({
-    ...entity,
-    at: {
-      x: entity.at.x - e.at.x,
-      y: entity.at.y - e.at.y,
-      z: entity.at.z - e.at.z
-    }
-  })).filter((entity) => entity.key !== e.key)
 
 const wallAt = (x: number, y: number) => (w: Array<Entity>) =>
   w.find((e) => e.at.x === x && e.at.y === y)?._tag !== "floor"
@@ -446,3 +427,9 @@ export const BSPGenLevel = (seed: number, dlvl: number): World => {
     level.map((e) => [e.key, e])
   )
 }
+// const genFeatures = (world: World) => {
+// }
+// export const genLevel = (seed: number, dlvl: number) => {
+//   const map = BSPGenLevel(seed, dlvl)
+//   const withFeatures = genFeatures(map)
+// }

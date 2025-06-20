@@ -1,4 +1,4 @@
-import { Array, HashMap, Logger, LogLevel, pipe } from "effect"
+import { HashMap, Logger, LogLevel, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   andThen,
@@ -21,7 +21,7 @@ import { List } from "immutable"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
-import { Player, player } from "./creatures.js"
+import { player } from "./creatures.js"
 import { TKey } from "./entity.js"
 import {
   getEntitiesAtEntity,
@@ -30,7 +30,7 @@ import {
 } from "./gamestate.js"
 import { logger } from "./log.js"
 import { noop } from "./util.js"
-import { BSPGenLevel, initWorld, World } from "./world.js"
+import { BSPGenLevel, World } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
@@ -83,8 +83,7 @@ const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
     tap(() => log("altered gamestate")),
     andThen((gs) => eSetGameState(gs)),
     tap(() => log("set gamestate")),
-    andThen(() => eGetGameState),
-    tap(() => log("finished with gamestate")),
+    tap((w) => log("finished with gamestate", w)),
     Logger.withMinimumLogLevel(LogLevel.Debug),
     provide(layer),
     withLogSpan("with.gs")

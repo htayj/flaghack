@@ -1,5 +1,5 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
-import { GameState, Key, SAction, World } from "@flaghack/domain/schemas"
+import { Key, SAction, World } from "@flaghack/domain/schemas"
 import { Schema } from "effect"
 
 export class GameApiGroup extends HttpApiGroup.make("game")
@@ -23,7 +23,6 @@ export class GameApiGroup extends HttpApiGroup.make("game")
   )
   .add(
     HttpApiEndpoint.post("doAction", "/act")
-      .addSuccess(GameState)
       .setPayload(Schema.Struct({ action: SAction }))
   )
 {}

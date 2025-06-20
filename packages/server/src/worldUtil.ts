@@ -1,8 +1,7 @@
 import { Entity, World } from "@flaghack/domain/schemas"
-import { Array, HashMap, Option } from "effect"
+import { HashMap } from "effect"
 import { Set } from "immutable"
 import { TPos } from "./position.js"
-import { dijDraw } from "./testDrawUtils.js"
 
 export type World = typeof World.Type
 

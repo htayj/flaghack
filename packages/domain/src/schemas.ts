@@ -20,6 +20,18 @@ const tagas = <A extends S.Schema.Any, T extends string>(
     S.TaggedStruct(type, {})
   )
 
+// const display =
+//   <A extends S.Schema.Any>(schema: A) =>
+//   (color: string, char: string, bright?: boolean) =>
+//     bothof(
+//       schema,
+//       S.Struct({
+//         color,
+//         char,
+//         bright
+//       })
+//     )
+
 // const bothof = <A extends struct.Fields, B extends struct.Fields>(
 //   a: struct<A>,
 //   b: struct<B>

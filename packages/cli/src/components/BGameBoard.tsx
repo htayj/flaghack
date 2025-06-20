@@ -1,4 +1,5 @@
 // import { Match } from "effect"
+import { Color, Tile } from "@flaghack/domain/display"
 import { Map } from "immutable"
 import React from "react"
 // import blessed from "react-blessed"
@@ -8,23 +9,8 @@ import { identity } from "../util.js"
 type Props = {
   tiles: Tiles
 }
-export type Tile = {
-  char: string
-  color?: Color
-  bright?: boolean
-  bg?: boolean
-}
 export type Tiles = Tile[][]
 
-type Color =
-  | "black"
-  | "red"
-  | "green"
-  | "yellow"
-  | "blue"
-  | "magenta"
-  | "cyan"
-  | "white"
 const colorNumMap = Map<Color, number>({
   black: 0,
   red: 1,
@@ -49,58 +35,10 @@ const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
       )
     )
   )
-// const tcolor = (
-//   opening: boolean,
-//   color: Color = "white",
-//   bright?: boolean,
-//   bg?: boolean
-// ) =>
-//   `{${opening ? "" : "/"}${bright ? "bright" : ""}${color}${
-//     bg ? "-bg" : "-fg"
-//   }}`
-// const bcolor = (
-//   char: string,
-//   color: Color = "white",
-//   bright?: boolean,
-//   bg?: boolean
-// ) =>
-//   `${tcolor(true, color, bright, bg)}${char}${
-//     tcolor(false, color, bright, bg)
-//   }`
-// escColor(
-//   maybeDo(bg)(bgColor)(
-//     maybeDo(bright)(brightenColor)(
-//       fgColor(getOrElse(colorNumMap.get(color), () => 7))
-//     )
-//   )
-// )
-// const truecolor = (color: Color = "white", bright?: boolean) =>
-//   Match.value(color).pipe(
-//     Match.when("white", () => "#aaaaaa"),
-//     Match.when("black", () => "#000000"),
-//     Match.when("yellow", () => "#aaaa00")
-//     Match.orElse(() => "#aaaa00")
-//   )
 
 const tileToText = ({ color, char, bright, bg }: Tile) =>
   `${ecolor(color, bright, bg)}${char}`
 export default function({ tiles }: Props) {
-  // const tileToText = ({ color, char, bright, bg }: Tile) =>
-  //   `${bcolor(char, color, bright, bg)}`
-
-  // fg={c.color ?? "white"}
-  // const griditems = tiles.map((row, y) =>
-  //   row.map((c, x) => (
-  //     <element
-  //       left={x}
-  //       top={y}
-  //       key={`${x},${y}`}
-  //       content={`${ecolor(c.color, c.bright)}${c.char}`}
-  //     />
-  //   ))
-  // ).reduce((acc, curr) => acc.concat(curr))
-
-  // content={`${ecolor(c.color, c.bright)}${c.char}`}
   const content = tiles.map((row) => row.map(tileToText).join("")).join(
     "\n"
   )
@@ -118,4 +56,3 @@ export default function({ tiles }: Props) {
     </box>
   )
 }
-// {tiles.map((row) => row.map(tileToText).join("")).join("\n")}

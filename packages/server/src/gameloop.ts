@@ -83,7 +83,6 @@ const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
     tap(() => log("altered gamestate")),
     andThen((gs) => eSetGameState(gs)),
     tap(() => log("set gamestate")),
-    tap((w) => log("finished with gamestate", w)),
     Logger.withMinimumLogLevel(LogLevel.Debug),
     provide(layer),
     withLogSpan("with.gs")

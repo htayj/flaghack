@@ -129,7 +129,6 @@ export default function BPlaying({}: Props) {
           action
             ? (
               apiDoPlayerAction(action).pipe(
-                Effect.tap((w) => Effect.log()),
                 Effect.andThen(apiGetWorld),
                 Effect.andThen(setWorld),
                 Effect.provide(MainLive),

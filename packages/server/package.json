@@ -13,6 +13,7 @@
     "codegen": "build-utils prepare-v2",
     "build": "pnpm build-esm && pnpm build-annotate && pnpm build-cjs && build-utils pack-v2",
     "build-esm": "tsc -b tsconfig.build.json",
+    "dev": "nodemon",
     "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
     "check": "tsc -b tsconfig.json",
@@ -25,14 +26,15 @@
     "@flaghack/domain": "workspace:^",
     "effect": "latest",
     "immutable": "^4.0.0-rc.12",
-    "pure-rand": "7.0.1",
     "ink": "^4.1.0",
     "meow": "^11.0.0",
+    "pure-rand": "7.0.1",
     "react": "^18.2.0",
     "scala-ts": "^0.1.8"
   },
   "devDependencies": {
     "@types/react": "^19.1.2",
+    "nodemon": "^3.1.10",
     "scala-ts": "^0.1.8"
   },
   "effect": {

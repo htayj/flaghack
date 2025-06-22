@@ -30,7 +30,7 @@
     "@effect/platform": "latest",
     "@effect/platform-node": "latest",
     "@flaghack/domain": "workspace:^",
-    "blessed": "latest",
+    "blessed": "npm:reblessed@^0.2.1",
     "blessed-contrib": "latest",
     "effect": "latest",
     "immutable": "^4.0.0-rc.12",

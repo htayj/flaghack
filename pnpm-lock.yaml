@@ -113,8 +113,8 @@ importers:
         specifier: workspace:^
         version: link:../domain/dist
       blessed:
-        specifier: latest
-        version: 0.1.81
+        specifier: npm:reblessed@^0.2.1
+        version: reblessed@0.2.1
       blessed-contrib:
         specifier: latest
         version: 4.11.0
@@ -129,7 +129,7 @@ importers:
         version: 18.2.0
       react-blessed:
         specifier: npm:@htayj/react-blessed@^0.7.3
-        version: '@htayj/react-blessed@0.7.3(blessed@0.1.81)(react@18.2.0)'
+        version: '@htayj/react-blessed@0.7.3(react@18.2.0)(reblessed@0.2.1)'
       react-devtools:
         specifier: latest
         version: 6.1.2
@@ -1560,11 +1560,6 @@ packages:
 
   blessed-contrib@4.11.0:
     resolution: {integrity: sha512-P00Xji3xPp53+FdU9f74WpvnOAn/SS0CKLy4vLAf5Ps7FGDOTY711ruJPZb3/7dpFuP+4i7f4a/ZTZdLlKG9WA==}
-
-  blessed@0.1.81:
-    resolution: {integrity: sha512-LoF5gae+hlmfORcG1M5+5XZi4LBmvlXTzwJWzUlPryN/SJdSflZvROM2TwkT0GMpq7oqT48NRd4GS7BiVBc5OQ==}
-    engines: {node: '>= 0.8.0'}
-    hasBin: true
 
   boolean@3.2.0:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
@@ -3309,6 +3304,11 @@ packages:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
 
+  reblessed@0.2.1:
+    resolution: {integrity: sha512-L2/u0PpF18T8YKc5EiwnY8/+YNBR2DOtbb45H8AvgtxYzU64Xr7D1lI+rjZ8hNHHAK40n99lGmU3wvxat8L89Q==}
+    engines: {node: '>= 8.10'}
+    hasBin: true
+
   redent@4.0.0:
     resolution: {integrity: sha512-tYkDkVVtYkSVhuQ4zBgfvciymHaeuel+zFKXShfDnFP5SyVEP7qo70Rf1jTOTCx3vGNAbnEi/xFkcfQVMIBWag==}
     engines: {node: '>=12'}
@@ -4583,12 +4583,12 @@ snapshots:
       '@eslint/core': 0.15.0
       levn: 0.4.1
 
-  '@htayj/react-blessed@0.7.3(blessed@0.1.81)(react@18.2.0)':
+  '@htayj/react-blessed@0.7.3(react@18.2.0)(reblessed@0.2.1)':
     dependencies:
       react: 18.2.0
       react-reconciler: 0.28.0(react@18.2.0)
     optionalDependencies:
-      blessed: 0.1.81
+      blessed: reblessed@0.2.1
 
   '@humanfs/core@0.19.1': {}
 
@@ -5311,8 +5311,6 @@ snapshots:
       strip-ansi: 3.0.1
       term-canvas: 0.0.5
       x256: 0.0.2
-
-  blessed@0.1.81: {}
 
   boolean@3.2.0:
     optional: true
@@ -7288,6 +7286,8 @@ snapshots:
       picomatch: 2.3.1
 
   readdirp@4.1.2: {}
+
+  reblessed@0.2.1: {}
 
   redent@4.0.0:
     dependencies:

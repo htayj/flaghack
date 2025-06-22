@@ -67,6 +67,7 @@ const getPosition = (e: Entity): UndefOr<Pos> =>
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
+
   const worldMap = Map(world)
     .valueSeq()
     .groupBy((entity) => map(getPosition(entity), (p: Pos) => posKey(p)))

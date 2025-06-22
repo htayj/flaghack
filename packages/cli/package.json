@@ -21,6 +21,7 @@
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
     "check": "tsc -b tsconfig.json",
     "test": "vitest",
+    "play": "vite build && node dist/bin.js playB",
     "coverage": "vitest --coverage"
   },
   "dependencies": {
@@ -45,8 +46,11 @@
     "@types/blessed": "0.1.25",
     "@types/react": "^19.1.2",
     "@types/react-blessed": "latest",
+    "@vitejs/plugin-react": "^4.5.2",
+    "chokidar": "^4.0.3",
     "effect": "latest",
-    "scala-ts": "^0.1.8"
+    "scala-ts": "^0.1.8",
+    "vite": "^6.3.5"
   },
   "effect": {
     "generateExports": {

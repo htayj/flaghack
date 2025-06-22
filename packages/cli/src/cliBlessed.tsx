@@ -20,6 +20,10 @@ screen.key(["C-c"], function(ch, key) {
   return process.exit(0)
 })
 
+process.on("SIGTERM", () => {
+  screen.destroy()
+  process.exit(0)
+})
 export const startblessed = () => render(<BApp />, screen)
 // export type CliType = typeof cli
 // render(<App opts={cli} />)

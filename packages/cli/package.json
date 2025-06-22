@@ -29,13 +29,13 @@
     "@effect/platform-node": "latest",
     "@flaghack/domain": "workspace:^",
     "blessed": "latest",
-    "react-blessed": "latest",
     "blessed-contrib": "latest",
-    "react": "^17.0.2",
-    "react-devtools": "latest",
-    "scala-ts": "^0.1.8",
+    "effect": "latest",
     "immutable": "^4.0.0-rc.12",
-    "effect": "latest"
+    "react": "18.2.0",
+    "react-blessed": "npm:@htayj/react-blessed@^0.7.3",
+    "react-devtools": "latest",
+    "scala-ts": "^0.1.8"
   },
   "devDependencies": {
     "@effect/cli": "latest",
@@ -43,17 +43,21 @@
     "@effect/platform-node": "latest",
     "@flaghack/domain": "workspace:^",
     "@types/blessed": "0.1.25",
+    "@types/react": "^19.1.2",
     "@types/react-blessed": "latest",
     "effect": "latest",
-    "@types/react": "^19.1.2",
     "scala-ts": "^0.1.8"
   },
   "effect": {
     "generateExports": {
-      "include": ["**/*.ts"]
+      "include": [
+        "**/*.ts"
+      ]
     },
     "generateIndex": {
-      "include": ["**/*.ts"]
+      "include": [
+        "**/*.ts"
+      ]
     }
   }
 }

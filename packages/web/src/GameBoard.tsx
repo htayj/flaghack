@@ -50,21 +50,21 @@ const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
   )
 const hcolor =
   (color: Color = "white", bright?: boolean, bg?: boolean) =>
-  (char: string) => (
-    <span style={{ color }}>
+  (char: string, key: string) => (
+    <span style={{ color }} key={key}>
       {`${char === " " ? " " : char}`}
     </span>
   )
 
-const tileToText = ({ color, char, bright, bg }: Tile) =>
-  hcolor(color, bright, bg)(char)
+const tileToText = ({ color, char, bright, bg }: Tile, key: string) =>
+  hcolor(color, bright, bg)(char, key)
 export default function({ tiles }: Props) {
   // const content = tiles.map((row) => row.map(tileToText).join("")).join(
   //   "\n"
   // )
-  const content = tiles.map((row) =>
-    row.map(tileToText).concat([
-      <br />
+  const content = tiles.map((row, y) =>
+    row.map((t, x) => tileToText(t, `${x},${y}`)).concat([
+      <br key={`br${y}`} />
     ])
   )
   return (

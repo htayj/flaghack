@@ -13,13 +13,15 @@ export default function Inventory({ inventory }: Props) {
   return (
     <div
       style={{
+        position: "absolute",
         right: 0,
         bottom: 0,
         border: "solid",
-        height: 22,
-        width: 22
+        width: "20em",
+        height: "30em"
       }}
     >
+      INVENTORY
       {invMap.valueSeq().toArray().map((item, i) => (
         <div style={{ display: "block" }} key={i}>
           {item._tag}

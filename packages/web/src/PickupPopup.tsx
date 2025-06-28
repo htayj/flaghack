@@ -28,58 +28,13 @@ export default function PickupPopup(
         return arr
       }
     ), [marked, invMap, setMarked])
-  // useEffect(() => {
-  //   ;["q", "r", ","].forEach((key) =>
-  //     pickupRef.current?.unkey(
-  //       key,
-  //       () => undefined
-  //     )
-  //   )
-  //   pickupRef.current?.key(
-  //     ["q", "r", ","],
-  //     (input: string) => {
-  //       if (["q", "r"].includes(input)) {
-  //         setMarked([])
-  //         onCancel()
-  //       } else if ([" ", "space"].includes(input)) {
-  //         onSubmit(marked)
-  //       } else if ([","].includes(input)) markAll()
-  //       else {
-  //       }
-  //     }
-  //   )
-  // }, [invMap])
-  // useEffect(() => {
-  //   ;[" ", "space"].forEach((key) =>
-  //     pickupRef.current?.unkey(
-  //       key,
-  //       () => undefined
-  //     )
-  //   )
-  //   pickupRef.current?.key(
-  //     [" ", "space"],
-  //     (input: string) => {
-  //       if ([" ", "space"].includes(input)) {
-  //         onSubmit(marked)
-  //       }
-  //     }
-  //   )
-  // }, [marked])
+  // FIXME
   const handleKeyDown = (event: any) =>
     Match.value(event.keyCode).pipe(
       Match.when(32, () => onSubmit(marked)), // space
       Match.when(81, () => onCancel()), // q
       Match.when(188, () => markAll()) // ,
     )
-  // const handleKeyDown = (event) => {
-  // 	Match
-  //   if (event.keyCode == 32 /*space*/) {
-  //     okAction()
-  //   }
-  //   if (event.keyCode == 27 /*esc*/) {
-  //     cancelAction()
-  //   }
-  // }
   return (
     <div
       style={{

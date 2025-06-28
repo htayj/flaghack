@@ -44,6 +44,9 @@
       "@flaghack/domain": ["./packages/domain/src/index.js"],
       "@flaghack/domain/*": ["./packages/domain/src/*.js"],
       "@flaghack/domain/test/*": ["./packages/domain/test/*.js"],
+      "@flaghack/web": ["./packages/web/src/index.js"],
+      "@flaghack/web/*": ["./packages/web/src/*.js"],
+      "@flaghack/web/test/*": ["./packages/web/test/*.js"],
       "@flaghack/server": ["./packages/server/src/index.js"],
       "@flaghack/server/*": ["./packages/server/src/*.js"],
       "@flaghack/server/test/*": ["./packages/server/test/*.js"]

@@ -8,7 +8,8 @@ import { GameRepository } from "./GameRepository.js"
 const HttpLive = HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
   Layer.provide(ApiLive),
   Layer.provide(GameRepository.Default),
-  Layer.provide(NodeHttpServer.layer(createServer, { port: 3000 }))
+  Layer.provide(NodeHttpServer.layer(createServer, { port: 3000 })),
+  Layer.provide(HttpApiBuilder.middlewareCors())
 )
 
 Layer.launch(HttpLive).pipe(

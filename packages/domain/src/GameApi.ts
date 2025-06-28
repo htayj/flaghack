@@ -1,6 +1,6 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
-import { Key, SAction, World } from "@flaghack/domain/schemas"
 import { Schema } from "effect"
+import { Key, SAction, World } from "./schemas.js"
 
 export class GameApiGroup extends HttpApiGroup.make("game")
   .add(

@@ -16,7 +16,7 @@ type Props = {
 }
 
 export default function PickupPopup(
-  { items, onCancel, onSubmit }: Props
+  { items, onCancel, onSubmit, open }: Props
 ) {
   const [marked, setMarked] = useState<Key[]>(["asdf"])
   const invMap = useMemo(() => Map(items), [items])
@@ -88,7 +88,8 @@ export default function PickupPopup(
         right: "55vw",
         top: "25vh",
         bottom: "55vh",
-        border: "solid"
+        border: "solid",
+        display: open ? "inherit" : "none"
       }}
       onKeyDown={handleKeyDown}
     >

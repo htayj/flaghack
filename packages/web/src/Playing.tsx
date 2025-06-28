@@ -12,7 +12,6 @@ import type { Tiles } from "./GameBoard.tsx"
 import GameBoard from "./GameBoard.tsx"
 import {
   doPlayerAction,
-  GameClient,
   getInventory,
   getPickupItemsFor,
   getWorld
@@ -27,7 +26,6 @@ export type Matrix<T> = List<List<T>>
 export const nullMatrix = (h: number, w: number): Matrix<null> => {
   const rows = Array<Array<null>>(h)
   const filled = rows.fill(Array<null>(w).fill(null))
-  /* filled.map( row => rownull) */
 
   return List(filled.map(List))
 }
@@ -188,11 +186,10 @@ export default function BPlaying({}: Props) {
   // 	} }
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: Key[]) => {
-    DoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+    doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(() => {
         setShowPickup(false)
       }),
-      Effect.provide(MainLive),
       Effect.runPromise
     )
   }
@@ -206,6 +203,8 @@ export default function BPlaying({}: Props) {
       <div
         ref={gameref}
         onKeyDown={handleKeyDown}
+        onClick={() => console.log("clicked")}
+        tabIndex={0}
       >
         <Messages messages={messages} />
         <GameBoard tiles={theDrawMatrix} />

@@ -21,7 +21,8 @@ const tagas = (schema, type) => bothof(schema, S.TaggedStruct(type, {}));
 //   a.reduce((acc, curr) => S.compose(acc, curr)) // todo: not sure if this is right
 export const Pos = struct({
     x: S.Number,
-    y: S.Number
+    y: S.Number,
+    z: S.Number
 });
 export const Key = S.String;
 export const Keyed = prop("key", Key);
@@ -103,8 +104,15 @@ export const AnyCreature = oneof(AnyHuman, AnyHumanoid, AnyKop, AnyEgregore);
 // ===========================
 // terrains
 // ===========================
-export const Wall = tagas(TerrainBase, "wall");
-export const AnyTerrain = oneof(Wall);
+export const DirectionalVariant = S.Literal("vertical", "horizontal", "bottomLeft", "bottomRight", "topLeft", "topRight", "cross", "t-up", "t-down", "t-left", "t-right", "none");
+export const WithDirectionalVariant = S.Struct({
+    variant: DirectionalVariant
+});
+export const Wall = tagas(bothof(TerrainBase, WithDirectionalVariant), "wall");
+export const TentWall = tagas(bothof(TerrainBase, WithDirectionalVariant), "tentwall");
+export const Floor = tagas(TerrainBase, "floor");
+export const Tunnel = tagas(TerrainBase, "tunnel");
+export const AnyTerrain = oneof(Wall, TentWall, Floor, Tunnel);
 // ===========================
 // ===========================
 // ===========================

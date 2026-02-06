@@ -175,6 +175,8 @@ export default function BPlaying({}: Props) {
         return "floor"
       case "tunnel":
         return "tunnel"
+      case "tentwall":
+        return "tent wall"
       default:
         return e._tag.replace(/_/g, " ")
     }

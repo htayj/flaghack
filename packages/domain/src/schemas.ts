@@ -208,6 +208,10 @@ export const Wall = tagas(
   bothof(TerrainBase, WithDirectionalVariant),
   "wall"
 )
+export const TentWall = tagas(
+  bothof(TerrainBase, WithDirectionalVariant),
+  "tentwall"
+)
 export const Floor = tagas(
   TerrainBase,
   "floor"
@@ -216,7 +220,7 @@ export const Tunnel = tagas(TerrainBase, "tunnel")
 
 // export const AnyTerrain = oneof(Wall, Tunnel)
 // export const AnyTerrain = oneof(Wall)
-export const AnyTerrain = oneof(Wall, Floor, Tunnel)
+export const AnyTerrain = oneof(Wall, TentWall, Floor, Tunnel)
 // type a = typeof AnyTerrain.Type
 // export const AnyTerrain = oneof(Wall, Floor, Tunnel)
 

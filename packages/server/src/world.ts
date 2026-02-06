@@ -19,7 +19,7 @@ import { range } from "effect/Array"
 import { Set } from "immutable"
 import prand from "pure-rand"
 import { collideP, shift, TPos } from "./position.js"
-import { floor, isTerrain, testWalls, tunnel, wall } from "./terrain.js"
+import { floor, isTerrain, tentWall, testWalls, tunnel, wall } from "./terrain.js"
 import { dijkstraPath } from "./worldUtil.js"
 
 export type Entity = typeof Entity.Type
@@ -44,7 +44,8 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
   container: C
 ) => container.key === contained.in
 export const isCreature = conforms(AnyCreature)
-export const isImpassable = (e: Entity) => e._tag === "wall"
+export const isImpassable = (e: Entity) =>
+  e._tag === "wall" || e._tag === "tentwall"
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
 export const isHippie = conforms(Hippie)
 export const isItem = conforms(AnyItem)
@@ -118,12 +119,13 @@ const makeRectWalls = (
   y1: number,
   x2: number,
   y2: number,
-  z: number
+  z: number,
+  wallFn: (x: number, y: number, z: number) => Entity = wall
 ) => [
-  ...range(x1, x2 + 1).map((x) => wall(x, y1, z)),
-  ...range(x1, x2 + 1).map((x) => wall(x, y2, z)),
-  ...range(y1 + 1, y2).map((y) => wall(x1, y, z)),
-  ...range(y1 + 1, y2).map((y) => wall(x2, y, z))
+  ...range(x1, x2 + 1).map((x) => wallFn(x, y1, z)),
+  ...range(x1, x2 + 1).map((x) => wallFn(x, y2, z)),
+  ...range(y1 + 1, y2).map((y) => wallFn(x1, y, z)),
+  ...range(y1 + 1, y2).map((y) => wallFn(x2, y, z))
 ]
 
 const makeTent = (
@@ -137,7 +139,7 @@ const makeTent = (
   const x2 = x + width - 1
   const y2 = y + height - 1
   const entranceX = x + entranceOffset
-  return makeRectWalls(x, y, x2, y2, z).filter((e) =>
+  return makeRectWalls(x, y, x2, y2, z, tentWall).filter((e) =>
     !(e.at.x === entranceX && e.at.y === y2)
   )
 }
@@ -174,7 +176,8 @@ const getSpatialInfo = (
   const height = maxY - minY
   return [width, height, minX, minY, maxX, maxY, xs, ys]
 }
-const tunnelingDist = (e: Entity) => (e._tag === "wall" ? 1 : 0.001)
+const tunnelingDist = (e: Entity) =>
+  e._tag === "wall" || e._tag === "tentwall" ? 1 : 0.001
 const _linkLeaves = (
   a: Array<Entity>,
   b: Array<Entity>,
@@ -487,6 +490,13 @@ export const campgroundLevel = (): World => {
     ...makeTent(54, 4, 7, 4, 3, z)
   ]
   const fireRing = makeFireRing(30, 12, z)
+  const wallLike = (e: Entity) => e._tag === "wall" || e._tag === "tentwall"
+  const variantWorld = floors.concat(bounds).concat(tents).concat(fireRing)
+  const withVariants = variantWorld.map((e) =>
+    wallLike(e)
+      ? { ...e, variant: determineWallVariant(e, variantWorld) }
+      : e
+  )
   const props = [
     groundFlag({ x: 30, y: 12, z }),
     waterbottle(28, 12, z, "world"),

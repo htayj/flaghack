@@ -3,6 +3,7 @@ import {
   conforms,
   DirectionalVariant,
   Floor,
+  TentWall,
   Tunnel,
   Wall
 } from "@flaghack/domain/schemas"
@@ -10,6 +11,7 @@ import { genKey } from "./util.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof Wall.Type
+export type TentWall = typeof TentWall.Type
 export type Floor = typeof Floor.Type
 export type Tunnel = typeof Tunnel.Type
 export type Terrain = typeof AnyTerrain.Type
@@ -25,6 +27,18 @@ export const wall = (
   at: { x, y, z },
   in: "world",
   _tag: "wall",
+  variant: variant ?? "none",
+  key: genKey()
+})
+export const tentWall = (
+  x: number,
+  y: number,
+  z: number,
+  variant?: DirectionalVariant
+): TentWall => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "tentwall",
   variant: variant ?? "none",
   key: genKey()
 })

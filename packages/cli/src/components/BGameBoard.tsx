@@ -8,6 +8,8 @@ import { identity } from "../util.js"
 
 type Props = {
   tiles: Tiles
+  cursor?: { x: number; y: number }
+  showCursor?: boolean
 }
 export type Tiles = Tile[][]
 
@@ -36,18 +38,44 @@ const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
     )
   )
 
-const tileToText = ({ color, char, bright, bg }: Tile) =>
-  `${ecolor(color, bright, bg)}${char}`
-export default function({ tiles }: Props) {
-  const content = tiles.map((row) => row.map(tileToText).join("")).join(
-    "\n"
+const invertOn = "\x1b[7m"
+const invertOff = "\x1b[27m"
+const tileToText = (tile: Tile & { invert?: boolean }) => {
+  const { color, char, bright, bg } = tile
+  return `${tile.invert ? invertOn : ""}${ecolor(color, bright, bg)}${char}${
+    tile.invert ? invertOff : ""
+  }`
+}
+const applyCursor = (
+  tiles: Tiles,
+  cursor?: { x: number; y: number },
+  showCursor?: boolean
+): Tiles => {
+  if (!showCursor || !cursor) return tiles
+  const { x, y } = cursor
+  if (y < 0 || y >= tiles.length) return tiles
+  if (x < 0 || x >= (tiles[0]?.length ?? 0)) return tiles
+  return tiles.map((row, rowIdx) =>
+    rowIdx !== y
+      ? row
+      : row.map((tile, colIdx) =>
+        colIdx === x
+          ? { ...tile, invert: true }
+          : tile
+      )
   )
+}
+export default function({ tiles, cursor, showCursor }: Props) {
+  const withCursor = applyCursor(tiles, cursor, showCursor)
+  const content = withCursor.map((row) =>
+    row.map(tileToText).join("")
+  ).join("\n")
   return (
     <box
       bottom={0}
       left={0}
-      height={tiles.length + 2}
-      width={(tiles[0]?.length ?? 1) + 2}
+      height={withCursor.length + 2}
+      width={(withCursor[0]?.length ?? 1) + 2}
       border="line"
       fg={"brightblack"}
       // children={griditems}

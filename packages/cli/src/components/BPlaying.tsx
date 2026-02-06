@@ -89,12 +89,14 @@ const drawWorld = (world: World, log:(input: string) => void = console.log ): Ti
   )
   return fullmap.map((r) => r.toArray()).toArray()
 }
-type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
+type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup" | "look"
 export default function BPlaying({}: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
   const pickupRef = useRef<BoxElement>(null)
   const dropRef = useRef<BoxElement>(null)
+  const modeRef = useRef<Mode>("normal")
+  const worldRef = useRef<World>(HashMap.empty())
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
   const [pickupContents, setPickupContents] = useState<World>(
@@ -102,6 +104,7 @@ export default function BPlaying({}: Props) {
   )
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [mode, setMode] = useState<Mode>("normal")
+  const [lookCursor, setLookCursor] = useState<Pos>({ x: 0, y: 0, z: 0 })
   if (world === undefined || size(world) === 0) {
     apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
       Effect.andThen(() => pickupRef.current?.hide()),
@@ -115,11 +118,125 @@ export default function BPlaying({}: Props) {
     setMessages((messages) => messages.unshift(`[debug] ${input}`))
 
   useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+  useEffect(() => {
+    worldRef.current = world
+  }, [world])
+
+  const getPlayerPos = (w: World): Pos => {
+    const playerEntity = Map(w)
+      .valueSeq()
+      .find((e) => e._tag === "player")
+    return playerEntity?.at ?? { x: 0, y: 0, z: 0 }
+  }
+
+  const getTopEntityAt = (w: World, pos: Pos): Entity | undefined => {
+    const entities = Map(w)
+      .valueSeq()
+      .filter((e) => e.in === "world" && e.at.x === pos.x && e.at.y === pos.y)
+      .toArray()
+    if (entities.length === 0) return undefined
+    return entities
+      .sort((a, b) => zindex(a) - zindex(b))
+      .reverse()[0]
+  }
+
+  const getEntityName = (e: Entity | undefined) => {
+    if (!e) return "nothing"
+    const named = (e as { name?: string }).name
+    if (named && named.length > 0) return named
+    switch (e._tag) {
+      case "acidcop":
+        return "acid cop"
+      case "flag":
+        return "flag"
+      case "water":
+        return "water bottle"
+      case "booze":
+        return "booze"
+      case "milk":
+        return "milk"
+      case "acid":
+        return "acid"
+      case "bacon":
+        return "bacon"
+      case "poptart":
+        return "poptart"
+      case "trailmix":
+        return "trail mix"
+      case "pancake":
+        return "pancake"
+      case "soup":
+        return "soup"
+      case "wall":
+        return "wall"
+      case "floor":
+        return "floor"
+      case "tunnel":
+        return "tunnel"
+      default:
+        return e._tag.replace(/_/g, " ")
+    }
+  }
+
+  const moveLookCursor = (dx: number, dy: number) => {
+    const maxY = theDrawMatrix.length - 1
+    const maxX = (theDrawMatrix[0]?.length ?? 1) - 1
+    setLookCursor((prev) => ({
+      x: Math.max(0, Math.min(maxX, prev.x + dx)),
+      y: Math.max(0, Math.min(maxY, prev.y + dy)),
+      z: prev.z
+    }))
+  }
+
+  useEffect(() => {
     gameref.current?.focus()
     gameref.current?.key(
-      ["j", "k", "l", "h", "y", "d", "u", "n", "b", ","],
-      (input: string) => {
+      ["j", "k", "l", "h", "y", "d", "u", "n", "b", ",", ";", "escape", "J", "K", "L", "H", "Y", "U", "N", "B"],
+      (input: string, key?: { name?: string }) => {
         setMessages((messages) => messages.unshift(`doing ${input}`))
+        if (modeRef.current === "look") {
+          const keyName = (key?.name ?? input) || ""
+          const keyChar = keyName.length === 1 ? keyName : input
+          const isUpper = keyChar.length === 1 && keyChar !== keyChar.toLowerCase()
+          const step = key?.shift || isUpper ? 10 : 1
+          switch (keyChar.toLowerCase()) {
+            case "h":
+              return moveLookCursor(-1 * step, 0)
+            case "j":
+              return moveLookCursor(0, 1 * step)
+            case "k":
+              return moveLookCursor(0, -1 * step)
+            case "l":
+              return moveLookCursor(1 * step, 0)
+            case "y":
+              return moveLookCursor(-1 * step, -1 * step)
+            case "u":
+              return moveLookCursor(1 * step, -1 * step)
+            case "b":
+              return moveLookCursor(-1 * step, 1 * step)
+            case "n":
+              return moveLookCursor(1 * step, 1 * step)
+            case ";":
+              setMode("normal")
+              gameref.current?.focus()
+              return
+            default:
+              if (keyName === "escape") {
+                setMode("normal")
+                gameref.current?.focus()
+                return
+              }
+              return
+          }
+        }
+        if (input === ";") {
+          const playerPos = getPlayerPos(worldRef.current)
+          setLookCursor(playerPos)
+          setMode("look")
+          return
+        }
         if (input === ",") {
           setMessages((messages) => messages.unshift("picking up "))
           apiGetPickupItemsFor("player").pipe(
@@ -153,6 +270,45 @@ export default function BPlaying({}: Props) {
         }
       }
     )
+
+    const handleLookKeypress = (ch: string, key?: { name?: string; shift?: boolean }) => {
+      if (modeRef.current !== "look") return
+      if (!key?.shift) return
+      const keyName = (key?.name ?? ch) || ""
+      if (keyName === "escape" || keyName === ";") {
+        setMode("normal")
+        gameref.current?.focus()
+        return
+      }
+      const keyChar = keyName.length === 1 ? keyName : ch
+      if (!keyChar) return
+      const step = key?.shift ? 10 : 1
+      switch (keyChar.toLowerCase()) {
+        case "h":
+          return moveLookCursor(-1 * step, 0)
+        case "j":
+          return moveLookCursor(0, 1 * step)
+        case "k":
+          return moveLookCursor(0, -1 * step)
+        case "l":
+          return moveLookCursor(1 * step, 0)
+        case "y":
+          return moveLookCursor(-1 * step, -1 * step)
+        case "u":
+          return moveLookCursor(1 * step, -1 * step)
+        case "b":
+          return moveLookCursor(-1 * step, 1 * step)
+        case "n":
+          return moveLookCursor(1 * step, 1 * step)
+        default:
+          return
+      }
+    }
+
+    gameref.current?.on("keypress", handleLookKeypress)
+    return () => {
+      gameref.current?.removeListener("keypress", handleLookKeypress)
+    }
   }, [])
 
   const onDoPickup = (pickupItems: Key[]) => {
@@ -186,7 +342,7 @@ export default function BPlaying({}: Props) {
     gameref.current?.focus()
   }
 
-  return ["normal", "picking_up"].includes(mode)
+  return ["normal", "picking_up", "look"].includes(mode)
     ? (
       <box
         ref={gameref}
@@ -194,7 +350,23 @@ export default function BPlaying({}: Props) {
         height="100%"
       >
         <Messages messages={messages} />
-        <BGameBoard tiles={theDrawMatrix} />
+        <BGameBoard
+          tiles={theDrawMatrix}
+          showCursor={mode === "look"}
+          cursor={{ x: lookCursor.x, y: lookCursor.y }}
+        />
+        <box
+          top={0}
+          right={0}
+          width={24}
+          height={3}
+          border="line"
+          label="Look"
+          fg="yellow"
+          hidden={mode !== "look"}
+        >
+          {getEntityName(getTopEntityAt(world, lookCursor))}
+        </box>
         <PickupPopup
           pickupRef={pickupRef}
           items={pickupContents}

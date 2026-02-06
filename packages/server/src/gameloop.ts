@@ -30,7 +30,7 @@ import {
 } from "./gamestate.js"
 import { logger } from "./log.js"
 import { noop } from "./util.js"
-import { BSPGenLevel, World } from "./world.js"
+import { World, campgroundLevel } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
@@ -44,7 +44,7 @@ export type Log = (a: string) => void
 //   }),
 //   log: noop
 // }
-const testLevel: World = BSPGenLevel(777, 0)
+const testLevel: World = campgroundLevel()
 const testLevelFloors = List(
   testLevel.pipe(HashMap.filter((e) => e._tag === "floor"), HashMap.values)
 )

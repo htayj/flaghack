@@ -101,6 +101,54 @@ const filterSplit = <T>(
   fn: (a: T) => boolean
 ) => [arr.filter(fn), arr.filter((a) => !fn(a))]
 
+const makePerimeterWalls = (width: number, height: number, z: number) => [
+  ...range(0, width).map((x) => wall(x, 0, z)),
+  ...range(0, width).map((x) => wall(x, height - 1, z)),
+  ...range(0, height).map((y) => wall(0, y, z)),
+  ...range(0, height).map((y) => wall(width - 1, y, z))
+]
+
+const makeFloors = (width: number, height: number, z: number) =>
+  range(1, height - 1).flatMap((y) =>
+    range(1, width - 1).map((x) => floor(x, y, z))
+  )
+
+const makeRectWalls = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  z: number
+) => [
+  ...range(x1, x2 + 1).map((x) => wall(x, y1, z)),
+  ...range(x1, x2 + 1).map((x) => wall(x, y2, z)),
+  ...range(y1 + 1, y2).map((y) => wall(x1, y, z)),
+  ...range(y1 + 1, y2).map((y) => wall(x2, y, z))
+]
+
+const makeTent = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  entranceOffset: number,
+  z: number
+) => {
+  const x2 = x + width - 1
+  const y2 = y + height - 1
+  const entranceX = x + entranceOffset
+  return makeRectWalls(x, y, x2, y2, z).filter((e) =>
+    !(e.at.x === entranceX && e.at.y === y2)
+  )
+}
+
+const makeFireRing = (cx: number, cy: number, z: number) => [
+  ...range(cx - 1, cx + 2).map((x) => wall(x, cy - 1, z)),
+  ...range(cx - 1, cx + 2).map((x) => wall(x, cy + 1, z)),
+  wall(cx - 1, cy, z),
+  wall(cx + 1, cy, z)
+]
+
 // const getRoomStats = (chunk: Array<Entity>) => {
 
 // }
@@ -425,6 +473,37 @@ export const BSPGenLevel = (seed: number, dlvl: number): World => {
   const [level] = _BSPGenLevel(walls, rng)
   return HashMap.fromIterable(
     level.map((e) => [e.key, e])
+  )
+}
+
+export const campgroundLevel = (): World => {
+  const z = 0
+  const floors = makeFloors(SCREEN_WIDTH, SCREEN_HEIGHT, z)
+  const bounds = makePerimeterWalls(SCREEN_WIDTH, SCREEN_HEIGHT, z)
+  const tents = [
+    ...makeTent(6, 4, 6, 4, 2, z),
+    ...makeTent(20, 3, 7, 4, 3, z),
+    ...makeTent(36, 5, 6, 4, 2, z),
+    ...makeTent(54, 4, 7, 4, 3, z)
+  ]
+  const fireRing = makeFireRing(30, 12, z)
+  const props = [
+    groundFlag({ x: 30, y: 12, z }),
+    waterbottle(28, 12, z, "world"),
+    waterbottle(32, 12, z, "world"),
+    waterbottle(12, 9, z, "world")
+  ]
+  const campers = [
+    hippie(12, 12, z)
+  ]
+  return HashMap.fromIterable(
+    floors
+      .concat(bounds)
+      .concat(tents)
+      .concat(fireRing)
+      .concat(props)
+      .concat(campers)
+      .map((e) => [e.key, e])
   )
 }
 // const genFeatures = (world: World) => {

@@ -18,4 +18,18 @@ describe("domain package metadata", () => {
       "@effect/sql"
     )
   })
+
+  it("pins @effect/platform to the supported runtime version", async () => {
+    const packageJson = await readDomainPackageJson()
+
+    expect(packageJson.dependencies?.["@effect/platform"]).toBe("0.85.2")
+  })
+
+  it("does not use latest for direct runtime dependencies", async () => {
+    const packageJson = await readDomainPackageJson()
+
+    expect(Object.values(packageJson.dependencies ?? {})).not.toContain(
+      "latest"
+    )
+  })
 })

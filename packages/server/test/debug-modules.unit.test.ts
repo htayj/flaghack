@@ -55,6 +55,20 @@ describe("debug BSP modules", () => {
     ).not.toContain("BSPGenLevel(")
   })
 
+  it("requires BSP demo logging at the executable boundary", () => {
+    const bspSource = readBspSource()
+
+    expect(bspSource).toMatch(
+      /export const runBspDemo\s*=\s*\(\s*log\s*:\s*DemoLog\s*\)\s*:\s*void\s*=>/
+    )
+    expect(bspSource).not.toMatch(
+      /export const runBspDemo\s*=\s*\([^)]*=\s*console\.log/
+    )
+    expect(bspSource).toMatch(
+      /if\s*\(\s*isDirectEntry\s*\)\s*{\s*runBspDemo\s*\(\s*console\.log\s*\)\s*}/
+    )
+  })
+
   it("still renders the BSP demo on demand", async () => {
     vi.resetModules()
     const { runBspDemo } = await import(

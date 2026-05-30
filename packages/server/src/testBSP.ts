@@ -22,7 +22,7 @@ export const renderBspDemo = (
 ): string =>
   levels.map((level, i) => `\ni: ${i}\n${simpleDraw(level)}`).join("\n")
 
-export const runBspDemo = (log: DemoLog = console.log): void => {
+export const runBspDemo = (log: DemoLog): void => {
   log(renderBspDemo())
 }
 
@@ -30,5 +30,5 @@ const isDirectEntry = process.argv[1] !== undefined
   && fileURLToPath(import.meta.url) === resolve(process.argv[1])
 
 if (isDirectEntry) {
-  runBspDemo()
+  runBspDemo(console.log)
 }

@@ -74,10 +74,7 @@ const getPosition = (e: Entity): UndefOr<Pos> =>
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
 const zindex = (p: typeof Entity.Type) => isTerrain(p) ? 0 : 1
 
-const drawWorld = (
-  world: World,
-  _log: (input: string) => void = console.log
-): Tiles => {
+const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
 
   const worldMap = Map(world)

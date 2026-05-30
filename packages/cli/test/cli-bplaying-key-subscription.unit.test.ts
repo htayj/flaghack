@@ -32,6 +32,11 @@ const modeUseStateInitializer =
   /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
 const modeUseStateBinding =
   /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
+const drawWorldHelperSource =
+  /const\s+drawWorld\s*=\s*\([\s\S]*?\n}\ntype\s+Mode\b/
+const drawWorldWorldOnlySignature =
+  /const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*\)\s*:\s*Tiles\s*=>\s*{/
+const consoleLogReference = /console\s*\.\s*log/
 
 const expectedGameKeys = [
   "j",
@@ -83,5 +88,14 @@ describe("CLI BPlaying key subscription static guards", () => {
 
     expect(source).not.toMatch(modeUseStateInitializer)
     expect(source).not.toMatch(modeUseStateBinding)
+  })
+
+  it("keeps drawWorld free of default console.log debug dependencies", () => {
+    const source = readBPlayingSource()
+    const helperSource = source.match(drawWorldHelperSource)?.[0] ?? ""
+
+    expect(helperSource).not.toBe("")
+    expect(helperSource).toMatch(drawWorldWorldOnlySignature)
+    expect(helperSource).not.toMatch(consoleLogReference)
   })
 })

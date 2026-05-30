@@ -10,18 +10,18 @@ const test = Command.make("test").pipe(
   )
 )
 const inventory = Command.make("i").pipe(
-  Command.withDescription("Add a new todo"),
+  Command.withDescription("Show player inventory"),
   Command.withHandler(() => GameClient.getInventory)
 )
 const playBlessed = Command.make("playB").pipe(
   Command.withDescription("play the game"),
   Command.withHandler(() => Effect.sync(() => startblessed()))
 )
-const command = Command.make("todo").pipe(
+const command = Command.make("flag-hack").pipe(
   Command.withSubcommands([test, inventory, playBlessed])
 )
 
 export const cli = Command.run(command, {
-  name: "Todo CLI",
+  name: "Flag Hack CLI",
   version: "0.0.0"
 })

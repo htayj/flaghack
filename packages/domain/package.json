@@ -25,7 +25,6 @@
   },
   "dependencies": {
     "@effect/platform": "latest",
-    "@effect/sql": "latest",
     "effect": "3.16.8"
   },
   "effect": {

@@ -27,14 +27,10 @@
     "@flaghack/domain": "workspace:^",
     "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
-    "ink": "^4.1.0",
-    "meow": "^11.0.0",
     "pure-rand": "7.0.1",
-    "react": "^18.2.0",
     "scala-ts": "^0.1.8"
   },
   "devDependencies": {
-    "@types/react": "^19.1.2",
     "nodemon": "^3.1.10"
   },
   "effect": {

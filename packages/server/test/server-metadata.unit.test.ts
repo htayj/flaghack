@@ -64,4 +64,22 @@ describe("server package metadata", () => {
 
     expect(duplicatedDependencyNames).toEqual([])
   })
+
+  it("does not declare UI or CLI rendering dependencies", () => {
+    const serverPackageJson = readServerPackageJson()
+    const disallowedDependencyNames = [
+      "@types/react",
+      "ink",
+      "meow",
+      "react"
+    ] as const
+    const declaredDisallowedDependencies = disallowedDependencyNames
+      .filter(
+        (name) =>
+          Object.hasOwn(serverPackageJson.dependencies ?? {}, name)
+          || Object.hasOwn(serverPackageJson.devDependencies ?? {}, name)
+      )
+
+    expect(declaredDisallowedDependencies).toEqual([])
+  })
 })

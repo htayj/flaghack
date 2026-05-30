@@ -5,7 +5,6 @@ import {
   all,
   andThen,
   log,
-  promise,
   succeed,
   tap,
   withLogSpan
@@ -52,7 +51,7 @@ const ai = (gs: GameState) =>
   )
 
 const eAi = (gs: GameState) => (e: Entity) =>
-  promise(async () => ({ entity: e, action: ai(gs)(e) }))
+  succeed({ entity: e, action: ai(gs)(e) })
 const planAllAi =
   (gs: GameState) => (w: HashMap.HashMap<string, Entity>) =>
     w.pipe(map((e) => eAi(gs)(e)), values)

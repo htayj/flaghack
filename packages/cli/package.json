@@ -43,17 +43,11 @@
     "scala-ts": "^0.1.8"
   },
   "devDependencies": {
-    "@effect/cli": "0.64.2",
-    "@effect/platform": "0.85.2",
-    "@effect/platform-node": "0.86.4",
-    "@flaghack/domain": "workspace:^",
     "@types/blessed": "0.1.25",
     "@types/react": "^19.1.2",
     "@types/react-blessed": "0.7.8",
     "@vitejs/plugin-react": "^4.5.2",
     "chokidar": "^4.0.3",
-    "effect": "3.16.8",
-    "scala-ts": "^0.1.8",
     "vite": "^6.3.5"
   },
   "effect": {

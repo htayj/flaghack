@@ -141,9 +141,6 @@ describe("CLI metadata", () => {
       expect(cliPackageJson.dependencies?.[packageName]).toBe(
         expectedVersion
       )
-      expect(cliPackageJson.devDependencies?.[packageName]).toBe(
-        expectedVersion
-      )
     }
 
     for (
@@ -156,6 +153,18 @@ describe("CLI metadata", () => {
         "latest"
       )
     }
+  })
+
+  it("does not duplicate runtime dependencies in devDependencies", () => {
+    const cliPackageJson = readCliPackageJson()
+    const runtimeDependencies = cliPackageJson.dependencies ?? {}
+    const duplicateDependencyNames = Object.keys(
+      cliPackageJson.devDependencies ?? {}
+    )
+      .filter((packageName) => packageName in runtimeDependencies)
+      .sort()
+
+    expect(duplicateDependencyNames).toEqual([])
   })
 
   it("does not use latest for direct CLI dependencies", () => {

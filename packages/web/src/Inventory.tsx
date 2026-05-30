@@ -1,7 +1,7 @@
-import { World } from "@flaghack/domain/schemas"
+import type { World as WorldSchema } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 
-type World = typeof World.Type
+type World = typeof WorldSchema.Type
 type Props = {
   inventory: World
 }
@@ -20,8 +20,8 @@ export default function Inventory({ inventory }: Props) {
       }}
     >
       INVENTORY
-      {invMap.valueSeq().toArray().map((item, i) => (
-        <div style={{ display: "block" }} key={i}>
+      {invMap.valueSeq().toArray().map((item) => (
+        <div style={{ display: "block" }} key={item.key}>
           {item._tag}
         </div>
       ))}

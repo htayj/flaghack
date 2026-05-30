@@ -1,6 +1,13 @@
 import { getTile } from "@flaghack/domain/display"
 import type { Tile } from "@flaghack/domain/display"
-import { EAction, Entity, Key, Pos, World } from "@flaghack/domain/schemas"
+import { EAction } from "@flaghack/domain/schemas"
+import type {
+  Action,
+  Entity as EntitySchema,
+  Key as KeySchema,
+  Pos as PosSchema,
+  World as WorldSchema
+} from "@flaghack/domain/schemas"
 // import blessed from "blessed"
 import { Effect, HashMap } from "effect"
 import { size } from "effect/HashMap"
@@ -27,18 +34,17 @@ export const nullMatrix = (h: number, w: number): Matrix<null> => {
 
   return List(filled.map(List))
 }
-type World = typeof World.Type
-type Key = typeof Key.Type
-type Entity = typeof Entity.Type
-type Pos = typeof Pos.Type
+type World = typeof WorldSchema.Type
+type Key = typeof KeySchema.Type
+type Entity = typeof EntitySchema.Type
+type Pos = typeof PosSchema.Type
 type Props = {
   username: string
 }
 const getTileOrDefault = (e: Entity | undefined): Tile =>
   e === undefined ? { color: "black", char: " " } : getTile(e)
 
-const parseInput = (input: any) => {
-  console.log("parsing input for input of: ", input)
+export const parseInput = (input: string): Action => {
   switch (input) {
     case "j":
       return EAction.move({ dir: "S" })
@@ -111,7 +117,6 @@ export default function BPlaying(_props: Props) {
   //   )
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const input = event.key
-    console.log("in handle key down: ", event)
     if (input === ",") {
       getPickupItemsFor("player").pipe(
         Effect.andThen(setPickupContents),
@@ -179,7 +184,7 @@ export default function BPlaying(_props: Props) {
   // 		apiDoPlayerAction(EAction.pickup({object:world.pipe(HashMap.get(k))}))
   // 	} }
   // const GameElement = reactBlessed.render(box)
-  const onDoPickup = (pickupItems: Key[]) => {
+  const onDoPickup = (pickupItems: Array<Key>) => {
     doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(() => {
         setShowPickup(false)
@@ -197,7 +202,6 @@ export default function BPlaying(_props: Props) {
       <div
         ref={gameref}
         onKeyDown={handleKeyDown}
-        onClick={() => console.log("clicked")}
         tabIndex={0}
       >
         <Messages messages={messages} />

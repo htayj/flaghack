@@ -157,4 +157,25 @@ describe("CLI metadata", () => {
       )
     }
   })
+
+  it("does not use latest for direct CLI dependencies", () => {
+    const cliPackageJson = readCliPackageJson()
+    const dependencySections = [
+      ["dependencies", cliPackageJson.dependencies],
+      ["devDependencies", cliPackageJson.devDependencies]
+    ] as const
+
+    for (const [sectionName, dependencies] of dependencySections) {
+      for (
+        const [packageName, version] of Object.entries(
+          dependencies ?? {}
+        )
+      ) {
+        expect(
+          version,
+          `${sectionName}.${packageName} must not use latest`
+        ).not.toBe("latest")
+      }
+    }
+  })
 })

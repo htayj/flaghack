@@ -132,10 +132,10 @@ importers:
         specifier: workspace:^
         version: link:../domain/dist
       blessed:
-        specifier: latest
+        specifier: 0.1.81
         version: 0.1.81
       blessed-contrib:
-        specifier: latest
+        specifier: 4.11.0
         version: 4.11.0
       effect:
         specifier: 3.16.8
@@ -150,7 +150,7 @@ importers:
         specifier: npm:@htayj/react-blessed@^0.7.3
         version: '@htayj/react-blessed@0.7.3(blessed@0.1.81)(react@18.2.0)'
       react-devtools:
-        specifier: latest
+        specifier: 7.0.1
         version: 7.0.1
       scala-ts:
         specifier: ^0.1.8
@@ -163,7 +163,7 @@ importers:
         specifier: ^19.1.2
         version: 19.1.2
       '@types/react-blessed':
-        specifier: latest
+        specifier: 0.7.8
         version: 0.7.8
       '@vitejs/plugin-react':
         specifier: ^4.5.2

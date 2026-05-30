@@ -109,7 +109,7 @@ export default function BPlaying(_props: Props) {
     HashMap.empty()
   )
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const [mode] = useState<Mode>("normal")
+  const mode: Mode = "normal"
   const initialWorldFetchStarted = useRef(false)
 
   useEffect(() => {

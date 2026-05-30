@@ -10,6 +10,10 @@ const playingPath = fileURLToPath(
 const inventoryPath = fileURLToPath(
   new URL("../src/Inventory.tsx", import.meta.url)
 )
+const modeUseStateInitializer =
+  /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
+const modeUseStateBinding =
+  /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
 
 type SourceGuard = {
   file: string
@@ -82,6 +86,13 @@ describe("web input/view source guards", () => {
     expect(doActionIndex).toBeGreaterThan(guardIndex)
     expect(worldIndex).toBeGreaterThan(guardIndex)
     expect(inventoryIndex).toBeGreaterThan(guardIndex)
+  })
+
+  it("keeps the static UI mode out of React state", () => {
+    const playingSource = readFileSync(playingPath, "utf8")
+
+    expect(playingSource).not.toMatch(modeUseStateInitializer)
+    expect(playingSource).not.toMatch(modeUseStateBinding)
   })
 
   it("keeps bounded input and view cleanup regressions out", () => {

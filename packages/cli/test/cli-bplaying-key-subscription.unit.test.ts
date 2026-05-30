@@ -28,6 +28,10 @@ const unkeyAnonymousNoopCallback =
   /\.unkey\s*\([\s\S]*?\(\)\s*=>\s*undefined[\s\S]*?\)/
 const removeListenerAnonymousNoopCallback =
   /\.removeListener\s*\([\s\S]*?\(\)\s*=>\s*undefined[\s\S]*?\)/
+const modeUseStateInitializer =
+  /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
+const modeUseStateBinding =
+  /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
 
 const expectedGameKeys = [
   "j",
@@ -72,5 +76,12 @@ describe("CLI BPlaying key subscription static guards", () => {
     for (const key of expectedGameKeys) {
       expect(gameKeysInitializer).toContain(`"${key}"`)
     }
+  })
+
+  it("keeps the static UI mode out of React state", () => {
+    const source = readBPlayingSource()
+
+    expect(source).not.toMatch(modeUseStateInitializer)
+    expect(source).not.toMatch(modeUseStateBinding)
   })
 })

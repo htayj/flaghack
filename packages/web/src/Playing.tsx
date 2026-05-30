@@ -99,7 +99,7 @@ export default function BPlaying(_props: Props) {
   )
   const [showPickup, setShowPickup] = useState<boolean>(false)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const [mode] = useState<Mode>("normal")
+  const mode: Mode = "normal"
   useEffect(() => {
     if (initialWorldFetchRequestedRef.current) {
       return

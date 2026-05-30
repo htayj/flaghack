@@ -89,7 +89,7 @@ const BSP_MAX_PART_HEIGHT = 10
 const BSP_MAX_PART_WIDTH = 10
 const makeAllWalls = (width: number, height: number, dlvl: number) => [
   ...range(0, height - 1).map((y) =>
-    range(0, width).map((x) => wall(x, y, 0))
+    range(0, width).map((x) => wall(x, y, dlvl))
   ).flat()
 ]
 const randBool = (rng: prand.RandomGenerator) => {

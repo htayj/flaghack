@@ -36,11 +36,31 @@
     "generateExports": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     },
     "generateIndex": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     }
   }

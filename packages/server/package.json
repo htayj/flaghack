@@ -27,8 +27,7 @@
     "@flaghack/domain": "workspace:^",
     "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
-    "pure-rand": "7.0.1",
-    "scala-ts": "^0.1.8"
+    "pure-rand": "7.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

@@ -9,13 +9,25 @@ const serverPackagePath = join(
 )
 const serverPackageJsonPath = join(serverPackagePath, "package.json")
 
-type ServerPackageJson = {
-  readonly name?: unknown
-  readonly private?: unknown
-  readonly publishConfig?: unknown
-  readonly dependencies?: Readonly<Record<string, unknown>>
-  readonly devDependencies?: Readonly<Record<string, unknown>>
-}
+const directDependencySectionNames = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies"
+] as const
+
+type DirectDependencySectionName =
+  typeof directDependencySectionNames[number]
+
+type ServerPackageJson =
+  & Partial<
+    Record<DirectDependencySectionName, Readonly<Record<string, unknown>>>
+  >
+  & {
+    readonly name?: unknown
+    readonly private?: unknown
+    readonly publishConfig?: unknown
+  }
 
 const readServerPackageJson = (): ServerPackageJson =>
   JSON.parse(
@@ -81,5 +93,15 @@ describe("server package metadata", () => {
       )
 
     expect(declaredDisallowedDependencies).toEqual([])
+  })
+
+  it("does not declare scala-ts in any direct dependency section", () => {
+    const serverPackageJson = readServerPackageJson()
+    const scalaTsDependencySections = directDependencySectionNames.filter(
+      (sectionName) =>
+        Object.hasOwn(serverPackageJson[sectionName] ?? {}, "scala-ts")
+    )
+
+    expect(scalaTsDependencySections).toEqual([])
   })
 })

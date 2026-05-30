@@ -135,44 +135,51 @@ export default function BPlaying(_props: Props) {
     setMessages((messages) => messages.unshift(`[debug] ${input}`))
 
   useEffect(() => {
-    gameref.current?.focus()
-    gameref.current?.key(
-      ["j", "k", "l", "h", "y", "d", "u", "n", "b", ","],
-      (input: string) => {
-        setMessages((messages) => messages.unshift(`doing ${input}`))
-        if (input === ",") {
-          setMessages((messages) => messages.unshift("picking up "))
-          apiGetPickupItemsFor("player").pipe(
-            Effect.andThen(setPickupContents),
+    const gameBox = gameref.current
+    const gameKeys = ["j", "k", "l", "h", "y", "d", "u", "n", "b", ","]
+    const handleGameKey = (input: string) => {
+      setMessages((messages) => messages.unshift(`doing ${input}`))
+      if (input === ",") {
+        setMessages((messages) => messages.unshift("picking up "))
+        apiGetPickupItemsFor("player").pipe(
+          Effect.andThen(setPickupContents),
+          Effect.provide(MainLive),
+          Effect.runPromise
+        )
+        pickupRef.current?.show()
+        pickupRef.current?.focus()
+      } else if (input === "d") {
+        setMessages((messages) => messages.unshift("dropping"))
+        dropRef.current?.show()
+        dropRef.current?.focus()
+      } else {
+        const action = parseInput(input)
+        if (action) {
+          apiDoPlayerAction(action).pipe(
+            Effect.andThen(apiGetWorld),
+            Effect.andThen(setWorld),
             Effect.provide(MainLive),
             Effect.runPromise
           )
-          pickupRef.current?.show()
-          pickupRef.current?.focus()
-        } else if (input === "d") {
-          setMessages((messages) => messages.unshift("dropping"))
-          dropRef.current?.show()
-          dropRef.current?.focus()
         } else {
-          const action = parseInput(input)
-          if (action) {
-            apiDoPlayerAction(action).pipe(
-              Effect.andThen(apiGetWorld),
-              Effect.andThen(setWorld),
-              Effect.provide(MainLive),
-              Effect.runPromise
-            )
-          } else {
-            setMode(action)
-          }
-          apiGetInventory.pipe(
-            Effect.andThen(setInventory),
-            Effect.provide(MainLive),
-            Effect.runPromise
-          )
+          setMode(action)
         }
+        apiGetInventory.pipe(
+          Effect.andThen(setInventory),
+          Effect.provide(MainLive),
+          Effect.runPromise
+        )
       }
-    )
+    }
+
+    gameBox?.focus()
+    gameBox?.key(gameKeys, handleGameKey)
+
+    return () => {
+      for (const key of gameKeys) {
+        gameBox?.removeListener(`key ${key}`, handleGameKey)
+      }
+    }
   }, [])
 
   const onDoPickup = (pickupItems: Key[]) => {

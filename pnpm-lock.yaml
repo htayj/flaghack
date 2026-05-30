@@ -255,9 +255,6 @@ importers:
       scala-ts:
         specifier: ^0.1.8
         version: 0.1.8(immutable@4.3.7)
-      typescript-language-server:
-        specifier: ^4.3.4
-        version: 4.3.4
     devDependencies:
       '@eslint/js':
         specifier: ^9.25.0
@@ -289,6 +286,9 @@ importers:
       typescript-eslint:
         specifier: ^8.30.1
         version: 8.34.1(eslint@9.29.0)(typescript@5.8.3)
+      typescript-language-server:
+        specifier: ^4.3.4
+        version: 4.3.4
       vite:
         specifier: ^6.3.5
         version: 6.3.5(@types/node@24.0.3)(tsx@4.20.3)(yaml@2.7.1)

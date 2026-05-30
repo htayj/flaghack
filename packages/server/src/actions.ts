@@ -1,13 +1,13 @@
-import { Action, EAction } from "@flaghack/domain/schemas"
-import { Effect, HashMap, Match, pipe } from "effect"
-import { Option, some } from "effect/Option"
-import { PlannedAction } from "./ai/ai.js"
-import { TKey } from "./entity.js"
-import { GameState, updateEntity } from "./gamestate.js"
+import { type Action, EAction } from "@flaghack/domain/schemas"
+import { Effect, HashMap, Match } from "effect"
+import { type Option, some } from "effect/Option"
+import type { PlannedAction } from "./ai/ai.js"
+import type { TKey } from "./entity.js"
+import { type GameState, updateEntity } from "./gamestate.js"
 import { drop, pickup } from "./items.js"
 import type { TPos } from "./position.js"
 import { UV } from "./position.js"
-import { actPosition, Entity } from "./world.js"
+import { actPosition, type Entity } from "./world.js"
 
 const moveEntity =
   (gs: GameState) =>
@@ -20,53 +20,28 @@ const pickupItem =
   <T extends Entity>(entity: Option<T>) =>
   <I extends Entity>(item: Option<I>): GameState =>
     updateEntity(gs)(item)((i) => pickup(entity)(i))
-const ePickupItem =
-  (gs: GameState) =>
-  <T extends Entity>(entity: Option<T>) =>
-  <I extends Entity>(item: Option<I>) =>
-    pipe(
-      Effect.succeed(entity),
-      Effect.tap(() =>
-        Effect.log("about to pick up item: ", item, " by ", entity)
-      ),
-      Effect.andThen(() =>
-        updateEntity(gs)(item)((i) => pickup(entity)(i))
-      ),
-      Effect.tap(() =>
-        Effect.log("picked up item: ", item, " by ", entity)
-      )
-    )
-const eDropItem =
-  (gs: GameState) =>
-  <T extends Entity>(entity: Option<T>) =>
-  <I extends Entity>(item: Option<I>) =>
-    pipe(
-      Effect.succeed(entity),
-      Effect.tap(() =>
-        Effect.log("about to drop item: ", item, " by ", entity)
-      ),
-      Effect.andThen(() => updateEntity(gs)(item)((i) => drop(entity)(i))),
-      Effect.tap(() => Effect.log("dropped item: ", item, " by ", entity))
-    )
-
 const dropItems =
   (gs: GameState) =>
   <T extends Entity>(entity: Option<T>) =>
-  (keys: readonly TKey[]): GameState =>
-    Effect.reduce(
-      keys.map((k) => gs.world.pipe(HashMap.get(k))),
-      gs,
-      (acc, curr) => eDropItem(acc)(entity)(curr)
-    ).pipe(Effect.runSync)
+  (keys: ReadonlyArray<TKey>): GameState =>
+    keys.reduce(
+      (acc, key) =>
+        updateEntity(acc)(acc.world.pipe(HashMap.get(key)))((item) =>
+          drop(entity)(item)
+        ),
+      gs
+    )
 const pickupItems =
   (gs: GameState) =>
   <T extends Entity>(entity: Option<T>) =>
-  (keys: readonly TKey[]): GameState =>
-    Effect.reduce(
-      keys.map((k) => gs.world.pipe(HashMap.get(k))),
-      gs,
-      (acc, curr) => ePickupItem(acc)(entity)(curr)
-    ).pipe(Effect.runSync)
+  (keys: ReadonlyArray<TKey>): GameState =>
+    keys.reduce(
+      (acc, key) =>
+        updateEntity(acc)(acc.world.pipe(HashMap.get(key)))((item) =>
+          pickup(entity)(item)
+        ),
+      gs
+    )
 
 export const doAction = (
   gs: GameState,

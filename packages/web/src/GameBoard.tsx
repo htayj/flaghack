@@ -1,6 +1,3 @@
-// @ts-ignore
-import React from "react"
-
 type Props = {
   tiles: Tiles
 }
@@ -27,7 +24,7 @@ const hcolor = (color: Color = "white") => (char: string, key: string) => (
   </span>
 )
 
-const tileToText = ({ color, char }: Tile, key: string) =>
+const tileToText = ({ char, color }: Tile, key: string) =>
   hcolor(color)(char, key)
 export default function({ tiles }: Props) {
   // const content = tiles.map((row) => row.map(tileToText).join("")).join(

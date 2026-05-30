@@ -19,8 +19,6 @@ import {
 import Inventory from "./Inventory.tsx"
 import Messages from "./Messages.tsx"
 import PickupPopup from "./PickupPopup.tsx"
-// @ts-ignore
-import React from "react"
 
 export type Matrix<T> = List<List<T>>
 export const nullMatrix = (h: number, w: number): Matrix<null> => {
@@ -84,7 +82,7 @@ const drawWorld = (world: World): Tiles => {
   return fullmap.map((r) => r.toArray()).toArray()
 }
 type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
-export default function BPlaying({}: Props) {
+export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<HTMLDivElement>(null)
   const pickupRef = useRef<HTMLDivElement>(null)
@@ -95,7 +93,7 @@ export default function BPlaying({}: Props) {
   )
   const [showPickup, setShowPickup] = useState<boolean>(false)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const [mode, setMode] = useState<Mode>("normal")
+  const [mode] = useState<Mode>("normal")
   if (world === undefined || size(world) === 0) {
     getWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
       Effect.runPromise
@@ -122,15 +120,11 @@ export default function BPlaying({}: Props) {
       setShowPickup(true)
     } else {
       const action = parseInput(input)
-      action
-        ? (
-          doPlayerAction(action).pipe(
-            Effect.andThen(getWorld),
-            Effect.andThen(setWorld),
-            Effect.runPromise
-          )
-        )
-        : setMode(action)
+      doPlayerAction(action).pipe(
+        Effect.andThen(getWorld),
+        Effect.andThen(setWorld),
+        Effect.runPromise
+      )
       getInventory.pipe(
         Effect.andThen(setInventory),
         Effect.runPromise

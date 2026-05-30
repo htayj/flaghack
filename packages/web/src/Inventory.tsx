@@ -1,7 +1,5 @@
 import { World } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
-// @ts-ignore
-import React from "react"
 
 type World = typeof World.Type
 type Props = {

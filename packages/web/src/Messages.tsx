@@ -1,6 +1,4 @@
 import { List } from "immutable"
-// @ts-ignore
-import React from "react"
 
 type Props = {
   messages: List<string>

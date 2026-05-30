@@ -44,7 +44,7 @@ type Props = {
 const getTileOrDefault = (e: Entity | undefined): Tile =>
   e === undefined ? { color: "black", char: " " } : getTile(e)
 
-export const parseInput = (input: string): Action => {
+export const parseInput = (input: string): Action | undefined => {
   switch (input) {
     case "j":
       return EAction.move({ dir: "S" })
@@ -63,7 +63,7 @@ export const parseInput = (input: string): Action => {
     case "n":
       return EAction.move({ dir: "SE" })
     default:
-      return EAction.noop()
+      return undefined
   }
 }
 
@@ -135,6 +135,10 @@ export default function BPlaying(_props: Props) {
       setShowPickup(true)
     } else {
       const action = parseInput(input)
+      if (action === undefined) {
+        return
+      }
+
       doPlayerAction(action).pipe(
         Effect.andThen(getWorld),
         Effect.andThen(setWorld),

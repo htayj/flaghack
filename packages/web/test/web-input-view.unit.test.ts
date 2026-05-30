@@ -36,17 +36,54 @@ const findForbiddenSource = (
     )
   )
 
+const extractHandleKeyDownSource = (source: string): string => {
+  const start = source.indexOf("const handleKeyDown =")
+  const end = source.indexOf("\n  // useEffect", start)
+
+  if (start === -1 || end === -1) {
+    throw new Error("Unable to locate handleKeyDown source")
+  }
+
+  return source.slice(start, end)
+}
+
 describe("web input parsing", () => {
   it("maps vi movement keys to domain actions", () => {
     expect(parseInput("j")).toEqual(EAction.move({ dir: "S" }))
   })
 
-  it("maps unknown keys to noop", () => {
-    expect(parseInput("?")).toEqual(EAction.noop())
+  it("maps unknown keys to no action", () => {
+    const action = parseInput("?")
+
+    expect(action).toBeUndefined()
+    expect(action).not.toEqual(EAction.noop())
   })
 })
 
 describe("web input/view source guards", () => {
+  it("gates player actions behind a parsed-input no-action guard", () => {
+    const handleKeyDownSource = extractHandleKeyDownSource(
+      readFileSync(playingPath, "utf8")
+    )
+    const parseIndex = handleKeyDownSource.indexOf(
+      "const action = parseInput(input)"
+    )
+    const guardIndex = handleKeyDownSource.search(
+      /if\s*\(\s*action\s*===\s*undefined\s*\)\s*\{\s*return\s*\}/
+    )
+    const doActionIndex = handleKeyDownSource.indexOf(
+      "doPlayerAction(action)"
+    )
+    const worldIndex = handleKeyDownSource.indexOf("getWorld")
+    const inventoryIndex = handleKeyDownSource.indexOf("getInventory")
+
+    expect(parseIndex).toBeGreaterThanOrEqual(0)
+    expect(guardIndex).toBeGreaterThan(parseIndex)
+    expect(doActionIndex).toBeGreaterThan(guardIndex)
+    expect(worldIndex).toBeGreaterThan(guardIndex)
+    expect(inventoryIndex).toBeGreaterThan(guardIndex)
+  })
+
   it("keeps bounded input and view cleanup regressions out", () => {
     const playingSource = readFileSync(playingPath, "utf8")
     const inventorySource = readFileSync(inventoryPath, "utf8")

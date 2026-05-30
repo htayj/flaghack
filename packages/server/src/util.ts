@@ -1,4 +1,5 @@
 import { List } from "immutable"
+import { randomUUID } from "node:crypto"
 
 export type Matrix<T> = List<List<T>>
 
@@ -50,4 +51,4 @@ export const cmap = <
 ) =>
 (collection: T) => collection.filter(fn)
 
-export const genKey = () => (Math.random() * 2 ** 8).toString(16)
+export const genKey = (): string => randomUUID()

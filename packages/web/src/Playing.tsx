@@ -28,12 +28,11 @@ import Messages from "./Messages.tsx"
 import PickupPopup from "./PickupPopup.tsx"
 
 export type Matrix<T> = List<List<T>>
-export const nullMatrix = (h: number, w: number): Matrix<null> => {
-  const rows = Array<Array<null>>(h)
-  const filled = rows.fill(Array<null>(w).fill(null))
-
-  return List(filled.map(List))
-}
+export const nullMatrix = (h: number, w: number): Matrix<null> =>
+  List(
+    Array.from({ length: h }, () =>
+      List(Array.from({ length: w }, () => null)))
+  )
 type World = typeof WorldSchema.Type
 type Key = typeof KeySchema.Type
 type Entity = typeof EntitySchema.Type

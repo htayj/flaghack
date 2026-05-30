@@ -29,13 +29,11 @@ const apiGetPickupItemsFor = GameClient.getPickupItemsFor
 // const apiGetLogs = GameClient.getLogs
 const apiGetWorld = GameClient.getWorld
 export type Matrix<T> = List<List<T>>
-export const nullMatrix = (h: number, w: number): Matrix<null> => {
-  const rows = Array<Array<null>>(h)
-  const filled = rows.fill(Array<null>(w).fill(null))
-  /* filled.map( row => rownull) */
-
-  return List(filled.map(List))
-}
+export const nullMatrix = (h: number, w: number): Matrix<null> =>
+  List(
+    Array.from({ length: h }, () =>
+      List(Array.from({ length: w }, () => null)))
+  )
 export const isTerrain = conforms(AnyTerrain)
 type World = typeof World.Type
 type Key = typeof Key.Type

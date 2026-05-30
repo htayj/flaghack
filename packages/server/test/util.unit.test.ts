@@ -1,25 +1,50 @@
 import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { genKey } from "../src/util.js"
+import { genKey, nullMatrix } from "../src/util.js"
 
 const utilSourcePath = fileURLToPath(
   new URL("../src/util.ts", import.meta.url)
 )
 
-const genKeySource = () => {
+const exportedConstSource = (name: string) => {
   const source = readFileSync(utilSourcePath, "utf8")
-  const startIndex = source.indexOf("export const genKey")
+  const exportStart = source.indexOf(`export const ${name}`)
 
-  expect(startIndex).toBeGreaterThanOrEqual(0)
+  expect(exportStart).toBeGreaterThanOrEqual(0)
 
-  const sourceFromGenKey = source.slice(startIndex)
-  const nextExportIndex = sourceFromGenKey.indexOf("\nexport ", 1)
+  const sourceFromExport = source.slice(exportStart)
+  const nextExportIndex = sourceFromExport.indexOf("\nexport ", 1)
 
   return nextExportIndex === -1
-    ? sourceFromGenKey
-    : sourceFromGenKey.slice(0, nextExportIndex)
+    ? sourceFromExport
+    : sourceFromExport.slice(0, nextExportIndex)
 }
+
+const expectNoAliasedRowFill = (source: string) => {
+  expect(source).not.toContain("rows.fill(Array")
+  expect(source).not.toContain(".fill(Array<null>")
+}
+
+const genKeySource = () => exportedConstSource("genKey")
+const nullMatrixSource = () => exportedConstSource("nullMatrix")
+
+describe("nullMatrix", () => {
+  it("returns the requested immutable matrix dimensions", () => {
+    const matrix = nullMatrix(2, 3)
+
+    expect(matrix.size).toBe(2)
+    expect(matrix.every((row) => row.size === 3)).toBe(true)
+    expect(matrix.toJS()).toEqual([
+      [null, null, null],
+      [null, null, null]
+    ])
+  })
+
+  it("does not construct rows with aliased mutable array fill", () => {
+    expectNoAliasedRowFill(nullMatrixSource())
+  })
+})
 
 describe("genKey", () => {
   it("does not use bounded Math.random entropy", () => {

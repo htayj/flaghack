@@ -8,6 +8,10 @@ const repositoryRoot = join(
   "../../.."
 )
 const rootPackageJsonPath = join(repositoryRoot, "package.json")
+const rootTsconfigBuildJsonPath = join(
+  repositoryRoot,
+  "tsconfig.build.json"
+)
 
 type RootPackageJson = {
   readonly devDependencies?: Readonly<Record<string, unknown>>
@@ -16,8 +20,19 @@ type RootPackageJson = {
   }
 }
 
+type RootTsconfigBuildJson = {
+  readonly references?: ReadonlyArray<{
+    readonly path?: unknown
+  }>
+}
+
 const readRootPackageJson = (): RootPackageJson =>
   JSON.parse(readFileSync(rootPackageJsonPath, "utf8")) as RootPackageJson
+
+const readRootTsconfigBuildJson = (): RootTsconfigBuildJson =>
+  JSON.parse(
+    readFileSync(rootTsconfigBuildJsonPath, "utf8")
+  ) as RootTsconfigBuildJson
 
 describe("root package metadata", () => {
   it("pins @effect/vitest consistently", () => {
@@ -44,5 +59,16 @@ describe("root package metadata", () => {
       .map(([name]) => name)
 
     expect(latestEffectFamilyDevDependencies).toEqual([])
+  })
+})
+
+describe("root TypeScript build metadata", () => {
+  it("includes the web package in build references", () => {
+    const rootTsconfigBuildJson = readRootTsconfigBuildJson()
+    const referencePaths = (rootTsconfigBuildJson.references ?? []).map(
+      (reference) => reference.path
+    )
+
+    expect(referencePaths).toContain("packages/web")
   })
 })

@@ -42,7 +42,7 @@
     "@effect/language-service": "^0.2.0",
     "@effect/platform": "^0.85.2",
     "@effect/platform-node": "^0.86.4",
-    "@effect/vitest": "latest",
+    "@effect/vitest": "0.23.8",
     "@eslint/compat": "1.2.2",
     "@eslint/eslintrc": "3.1.0",
     "@eslint/js": "9.13.0",

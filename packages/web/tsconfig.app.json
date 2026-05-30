@@ -8,7 +8,6 @@
     "skipLibCheck": true,
     "baseUrl": "../..",
     "paths": {
-      "@flaghack/domain": ["packages/domain/src/index.ts"],
       "@flaghack/domain/*": ["packages/domain/src/*"]
     },
 

@@ -1,14 +1,28 @@
 import { describe, expect, it } from "@effect/vitest"
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import * as ts from "typescript"
 import type { UserConfig } from "vite"
 import webConfig from "../vite.config"
 
 const domainSchemasImport = "@flaghack/domain/schemas"
+const webTsconfigPath = fileURLToPath(
+  new URL("../tsconfig.app.json", import.meta.url)
+)
 
 type RollupExternalOption = NonNullable<
   NonNullable<
     NonNullable<UserConfig["build"]>["rollupOptions"]
   >["external"]
 >
+
+type WebTsconfig = {
+  readonly compilerOptions?: {
+    readonly baseUrl?: string
+    readonly paths?: Record<string, ReadonlyArray<string>>
+  }
+}
 
 const externalizesImport = (
   external: RollupExternalOption | undefined,
@@ -33,6 +47,28 @@ const externalizesImport = (
   return external(importId, undefined, false) === true
 }
 
+const readWebTsconfig = (): WebTsconfig => {
+  const parsed = ts.parseConfigFileTextToJson(
+    webTsconfigPath,
+    readFileSync(webTsconfigPath, "utf8")
+  )
+
+  if (parsed.error !== undefined) {
+    throw new Error(String(parsed.error.messageText))
+  }
+
+  return parsed.config as WebTsconfig
+}
+
+const isBarePackageAlias = (alias: string): boolean =>
+  !alias.includes("*")
+  && (alias.startsWith("@")
+    ? alias.split("/").length === 2
+    : !alias.includes("/"))
+
+const isSourcePackageIndexTarget = (target: string): boolean =>
+  /(?:^|\/)src\/index\.[cm]?[tj]sx?$/.test(target)
+
 describe("web Vite config", () => {
   it("bundles domain schemas for browser builds", () => {
     expect(
@@ -41,5 +77,27 @@ describe("web Vite config", () => {
         domainSchemasImport
       )
     ).toBe(false)
+  })
+
+  it("does not alias bare packages to missing source indexes", () => {
+    const tsconfig = readWebTsconfig()
+    const pathAliases = tsconfig.compilerOptions?.paths ?? {}
+    const pathAliasBase = resolve(
+      dirname(webTsconfigPath),
+      tsconfig.compilerOptions?.baseUrl ?? "."
+    )
+    const missingBareSourceIndexes = Object.entries(pathAliases).flatMap(
+      ([alias, targets]) =>
+        isBarePackageAlias(alias)
+          ? targets
+            .filter(isSourcePackageIndexTarget)
+            .filter((target) =>
+              !existsSync(resolve(pathAliasBase, target))
+            )
+            .map((target) => `${alias} -> ${target}`)
+          : []
+    )
+
+    expect(missingBareSourceIndexes).toEqual([])
   })
 })

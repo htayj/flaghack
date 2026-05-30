@@ -14,6 +14,7 @@ type ServerPackageJson = {
   readonly private?: unknown
   readonly publishConfig?: unknown
   readonly dependencies?: Readonly<Record<string, unknown>>
+  readonly devDependencies?: Readonly<Record<string, unknown>>
 }
 
 const readServerPackageJson = (): ServerPackageJson =>
@@ -50,5 +51,17 @@ describe("server package metadata", () => {
       .map(([name]) => name)
 
     expect(latestRuntimeDependencies).toEqual([])
+  })
+
+  it("does not duplicate runtime dependencies in devDependencies", () => {
+    const serverPackageJson = readServerPackageJson()
+    const runtimeDependencyNames = new Set(
+      Object.keys(serverPackageJson.dependencies ?? {})
+    )
+    const duplicatedDependencyNames = Object.keys(
+      serverPackageJson.devDependencies ?? {}
+    ).filter((name) => runtimeDependencyNames.has(name))
+
+    expect(duplicatedDependencyNames).toEqual([])
   })
 })

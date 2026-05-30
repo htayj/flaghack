@@ -1,7 +1,7 @@
 # Effect-TS opportunities audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: `packages/domain`, `packages/server`, `packages/cli`, `packages/web`, root build/lint/test/package configuration.
 
 This is a read-only audit of places where the project can use Effect/Effect-TS more, or use it in more canonical ways. The project already has a good Effect foundation: shared `HttpApi` contracts, `Effect.Service` clients, `HttpApiBuilder` on the server, `Layer.launch` / `NodeRuntime.runMain` at entrypoints, `@effect/language-service`, `@effect/eslint-plugin`, and `@effect/vitest` are present. The main opportunities are to make runtime boundaries explicit, remove hidden globals, make schema/codegen deterministic, and keep React/blessed side effects at managed boundaries.

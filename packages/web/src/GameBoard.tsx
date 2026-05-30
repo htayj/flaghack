@@ -21,12 +21,11 @@ type Color =
   | "magenta"
   | "cyan"
   | "white"
-const hcolor = (color: Color = "white") =>
-  (char: string, key: string) => (
-    <span style={{ color }} key={key}>
-      {`${char === " " ? " " : char}`}
-    </span>
-  )
+const hcolor = (color: Color = "white") => (char: string, key: string) => (
+  <span style={{ color }} key={key}>
+    {`${char === " " ? " " : char}`}
+  </span>
+)
 
 const tileToText = ({ color, char }: Tile, key: string) =>
   hcolor(color)(char, key)

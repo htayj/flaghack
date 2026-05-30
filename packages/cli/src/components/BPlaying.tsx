@@ -1,4 +1,12 @@
-import { AnyTerrain, conforms, EAction, Entity, Key, Pos, World } from "@flaghack/domain/schemas"
+import {
+  AnyTerrain,
+  conforms,
+  EAction,
+  Entity,
+  Key,
+  Pos,
+  World
+} from "@flaghack/domain/schemas"
 // import blessed from "blessed"
 import { getTile, Tile } from "@flaghack/domain/display"
 import { Effect, HashMap } from "effect"
@@ -9,9 +17,9 @@ import { BoxElement } from "react-blessed"
 import { map, UndefOr } from "scala-ts/UndefOr.js"
 import { MainLive } from "../bin.js"
 import { GameClient } from "../GameClient.js"
-import BGameBoard, { Tiles } from "./BGameBoard.jsx"
+import BGameBoard, { Tiles } from "./BGameBoard.js"
 import Inventory from "./Inventory.js"
-import Messages from "./Messages.jsx"
+import Messages from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
 
@@ -66,9 +74,12 @@ const getPosition = (e: Entity): UndefOr<Pos> =>
   e.in === "world" ? e.at : undefined
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
-const zindex = (p: typeof Entity.Type) =>  isTerrain(p) ? 0 : 1
+const zindex = (p: typeof Entity.Type) => isTerrain(p) ? 0 : 1
 
-const drawWorld = (world: World, log:(input: string) => void = console.log ): Tiles => {
+const drawWorld = (
+  world: World,
+  log: (input: string) => void = console.log
+): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
 
   const worldMap = Map(world)
@@ -80,11 +91,10 @@ const drawWorld = (world: World, log:(input: string) => void = console.log ): Ti
       .map((_, x) => worldMap.get(posKey({ x, y })))
       .map(List)
       .map((l) => {
-			const sorted = l.sortBy(zindex).reverse()
-			// if(l.size > 1) log(sorted.valueSeq().map(t => t._tag).join(","))
-			return sorted.first()
-		}
-			)
+        const sorted = l.sortBy(zindex).reverse()
+        // if(l.size > 1) log(sorted.valueSeq().map(t => t._tag).join(","))
+        return sorted.first()
+      })
       .map(getTileOrDefault)
   )
   return fullmap.map((r) => r.toArray()).toArray()

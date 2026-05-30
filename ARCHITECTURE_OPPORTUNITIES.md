@@ -1,7 +1,7 @@
 # General architecture audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: package layout, build/release architecture, domain/application/server boundaries, API/client contracts, UI architecture, testing/tooling/docs/dependency hygiene.
 
 This complements `EFFECT_TS_OPPORTUNITIES.md` and `FP_IMMUTABILITY_OPPORTUNITIES.md`. Some issues appear in all three reports because they are foundational architectural concerns: stale generated artifacts, unclear state ownership, and UI components doing runtime work.

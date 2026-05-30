@@ -1,7 +1,7 @@
 # Functional programming / immutability cleanup audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: repo-wide TypeScript/React/server code, beyond Effect-specific idioms.
 
 This complements `EFFECT_TS_OPPORTUNITIES.md`. Some findings overlap because hidden mutable state, stale generated code, and render-time side effects are both Effect problems and general functional-programming problems. The emphasis here is pure reducers, immutable data ownership, total functions, explicit validation boundaries, typed state machines, deterministic generation, and stricter TypeScript guardrails.

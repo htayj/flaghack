@@ -62,7 +62,8 @@ export default [
       "sort-imports": "off",
 
       "no-restricted-syntax": ["error", {
-        selector: "CallExpression[callee.property.name='push'] > SpreadElement.arguments",
+        selector:
+          "CallExpression[callee.property.name='push'] > SpreadElement.arguments",
         message: "Do not use spread arguments in Array.push"
       }],
 
@@ -112,7 +113,7 @@ export default [
           quoteStyle: "alwaysDouble",
           trailingCommas: "never",
           operatorPosition: "nextLine",
-    			spaceAround: false,
+          spaceAround: false,
           "arrowFunction.useParentheses": "force"
         }
       }]

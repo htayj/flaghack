@@ -41,6 +41,10 @@ const FORBIDDEN_PATTERNS = [
     pattern: /^\.pi\/dev-suite\/task-graph\/current\.json$/u
   },
   {
+    label: "task graph local artifacts",
+    pattern: /^\.pi\/task-graph-artifacts\//u
+  },
+  {
     label: "dev-suite edit tracker",
     pattern: /^\.pi\/dev-suite\/edited-files\.log$/u
   }

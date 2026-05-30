@@ -1,7 +1,7 @@
 # Build system / generated files audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: pnpm workspace/build lifecycle, Effect build-utils/codegen, TypeScript project references, package publish artifacts, Vite/Vitest, lint/format/CI/docs, and agent guardrails.
 
 This report is intentionally focused on the build system because it is currently fragile and confusing to agents. The recurring root problem is that generated files, source files, package outputs, and workspace links are not clearly separated. As a result, agents can see stale generated files, edit the wrong artifacts, run the wrong command order, and get misleading results.
@@ -130,7 +130,7 @@ Adjust names as desired, but the key is: one command, one order, fail-fast, docu
 - **Recommended fix/guardrail:** Choose release shape:
   - build-utils package with generated `dist/package.json` and `bin`, or
   - Vite single-file CLI package with generated `dist/package.json`, dependencies, and `bin`.
-  Add pack dry-run assertion that tarball contains `package.json` and bin target.
+    Add pack dry-run assertion that tarball contains `package.json` and bin target.
 - **Rationale:** Publish/build artifacts should be installable and executable.
 
 ### 12. Server appears publishable but lacks clear publish intent

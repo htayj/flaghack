@@ -1,7 +1,8 @@
 import { HttpApiClient } from "@effect/platform"
 import { GameApi } from "@flaghack/domain/GameApi"
-import { Action, Key } from "@flaghack/domain/schemas"
+import type { Action, Key } from "@flaghack/domain/schemas"
 import { Effect } from "effect"
+import { resolveCliApiBaseUrl } from "./config.js"
 
 type Key = typeof Key.Type
 
@@ -10,7 +11,7 @@ export class GameClient
     accessors: true,
     effect: Effect.gen(function*() {
       const client = yield* HttpApiClient.make(GameApi, {
-        baseUrl: "http://localhost:3000"
+        baseUrl: resolveCliApiBaseUrl(process.env)
       })
 
       const getLogs = client.game.getLogs()

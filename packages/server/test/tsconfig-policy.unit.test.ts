@@ -9,6 +9,15 @@ const repositoryRoot = join(
 )
 const rootTsConfigPath = join(repositoryRoot, "tsconfig.base.json")
 
+const packageTsConfigPaths = [
+  "packages/cli/tsconfig.src.json",
+  "packages/cli/tsconfig.test.json",
+  "packages/server/tsconfig.src.json",
+  "packages/server/tsconfig.test.json"
+] as const
+
+const expectedDomainSourceReference = "../domain/tsconfig.src.json"
+
 type RootTsConfig = {
   readonly compilerOptions?: {
     readonly noEmitOnError?: unknown
@@ -16,8 +25,32 @@ type RootTsConfig = {
   }
 }
 
-const readRootTsConfig = (): RootTsConfig =>
-  JSON.parse(readFileSync(rootTsConfigPath, "utf8")) as RootTsConfig
+type ProjectTsConfig = {
+  readonly references?: ReadonlyArray<{
+    readonly path?: unknown
+  }>
+}
+
+const readJsonFile = <A>(path: string): A =>
+  JSON.parse(readFileSync(path, "utf8")) as A
+
+const readRootTsConfig = (): RootTsConfig => readJsonFile(rootTsConfigPath)
+
+const readProjectTsConfig = (relativePath: string): ProjectTsConfig =>
+  readJsonFile(join(repositoryRoot, relativePath))
+
+const domainReferencePaths = (
+  relativePath: string
+): ReadonlyArray<string> => {
+  const references = readProjectTsConfig(relativePath).references ?? []
+
+  return references.flatMap((reference) =>
+    typeof reference.path === "string"
+      && reference.path.startsWith("../domain")
+      ? [reference.path]
+      : []
+  )
+}
 
 const sourceExistsForPathTarget = (target: string): boolean =>
   existsSync(join(repositoryRoot, target))
@@ -49,5 +82,21 @@ describe("root TypeScript config policy", () => {
     )
 
     expect(missingIndexAliases).toEqual([])
+  })
+
+  it("uses the domain source project from CLI and server source/test configs", () => {
+    const domainReferencesByConfig = Object.fromEntries(
+      packageTsConfigPaths.map((configPath) => [
+        configPath,
+        domainReferencePaths(configPath)
+      ])
+    )
+
+    expect(domainReferencesByConfig).toEqual({
+      "packages/cli/tsconfig.src.json": [expectedDomainSourceReference],
+      "packages/cli/tsconfig.test.json": [expectedDomainSourceReference],
+      "packages/server/tsconfig.src.json": [expectedDomainSourceReference],
+      "packages/server/tsconfig.test.json": [expectedDomainSourceReference]
+    })
   })
 })

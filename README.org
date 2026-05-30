@@ -1,25 +1,42 @@
-
 * WORK IN PROGRESS
 
 ** description
 rewrite of the famous game flaghack
 
+** Validation gates
+
+Audit-remediation work should use the project gates documented in [[file:docs/testing-gates.md][docs/testing-gates.md]]. The short version is:
+
+#+BEGIN_SRC bash
+  pnpm generated:guard
+  pnpm format:check
+  pnpm check
+  pnpm test:unit
+  pnpm test:perf
+  pnpm test:api
+  pnpm test:e2e:tmux
+#+END_SRC
+
+For the current passing smoke aggregate, run =pnpm verify:smoke=. The stricter =pnpm verify:gates= also runs =pnpm check=, which still reports known pre-existing web TypeScript issues.
+
+The full build/codegen lifecycle is still known to be fragile; this setup does not claim that =pnpm run build= is fixed. Do not edit generated =build/=, =dist/=, declaration, map, backup, or generated schema JavaScript files by hand.
+
 ** Running the game
 
-*** downloading and building
-download package and its dependencies:
+*** downloading and installing
 #+BEGIN_SRC bash
   git clone git@github.com:htayj/flaghack.git
   cd flaghack
-  pnpm i
-  pnpm run build
+  corepack enable
+  corepack prepare pnpm@9.10.0 --activate
+  pnpm install
 #+END_SRC
 
-build (note: building is optional and doesnt really do anything for now, and it will probably fail at the moment):
+For the Nix development shell, run:
+
 #+BEGIN_SRC bash
-  pnpm run build
+  nix develop
 #+END_SRC
-
 
 *** to run the game
 in one terminal run (this starts the server):
@@ -35,7 +52,5 @@ to start the client
 
 *** TODO:  hotreloading
 
-
-
 ** exiting the game
-press ^C (control-c) 
+press ^C (control-c)

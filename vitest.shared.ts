@@ -1,12 +1,31 @@
 import * as path from "node:path"
+import { fileURLToPath } from "node:url"
 import type { UserConfig } from "vitest/config"
 
-const alias = (name: string) => {
-  const target = process.env.TEST_DIST !== undefined ? "dist/dist/esm" : "src"
-  return ({
-    [`${name}/test`]: path.join(__dirname, "packages", name, "test"),
-    [`${name}`]: path.join(__dirname, "packages", name, target)
-  })
+const rootDir = path.dirname(fileURLToPath(import.meta.url))
+const sourceTarget = process.env.TEST_DIST !== undefined
+  ? "dist/dist/esm"
+  : "src"
+
+const packageAlias = (workspaceName: string, importName: string) => ({
+  [`${importName}/test`]: path.join(
+    rootDir,
+    "packages",
+    workspaceName,
+    "test"
+  ),
+  [importName]: path.join(rootDir, "packages", workspaceName, sourceTarget)
+})
+
+const aliases = {
+  ...packageAlias("cli", "cli"),
+  ...packageAlias("cli", "@flaghack/cli"),
+  ...packageAlias("domain", "domain"),
+  ...packageAlias("domain", "@flaghack/domain"),
+  ...packageAlias("server", "server"),
+  ...packageAlias("server", "@flaghack/server"),
+  ...packageAlias("web", "web"),
+  ...packageAlias("web", "@flaghack/web")
 }
 
 // This is a workaround, see https://github.com/vitest-dev/vitest/issues/4744
@@ -18,7 +37,7 @@ const config: UserConfig = {
     exclude: ["bun:sqlite"]
   },
   test: {
-    setupFiles: [path.join(__dirname, "setupTests.ts")],
+    setupFiles: [path.join(rootDir, "setupTests.ts")],
     fakeTimers: {
       toFake: undefined
     },
@@ -26,11 +45,7 @@ const config: UserConfig = {
       concurrent: true
     },
     include: ["test/**/*.test.ts"],
-    alias: {
-      ...alias("cli"),
-      ...alias("domain"),
-      ...alias("server")
-    }
+    alias: aliases
   }
 }
 

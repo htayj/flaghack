@@ -1,0 +1,391 @@
+{
+  "defaultGraph": "flag-hack-audit-gated",
+  "agentInstructions": {
+    "all": [
+      "Audit-remediation work must read ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md before choosing fixes.",
+      "Do not edit generated artifacts: packages/**/build/**, packages/**/dist/**, generated *.d.ts, *.d.ts.map, *.js.map, editor backups, or packages/domain/src/schemas/*.js.",
+      "Use pnpm/corepack when available. Do not run build/codegen commands that write build/ or dist/ artifacts unless a stage explicitly approves it.",
+      "Run audit gates serially because API and tmux E2E use the hard-coded local server port 3000."
+    ]
+  },
+  "routing": {
+    "maxParallel": 1,
+    "defaultSubagentContext": "fresh",
+    "failureRoutes": {
+      "COMPILE": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 2
+      },
+      "UNIT_TEST": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 2
+      },
+      "PERF_TEST": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 2
+      },
+      "API_TEST": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 2
+      },
+      "E2E_TEST": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 2
+      },
+      "CODE_REVIEW": {
+        "onFailure": "route_to_implement",
+        "maxCodeIterations": 3,
+        "maxEnvironmentalRetries": 1
+      }
+    },
+    "lockConflictGroups": {
+      "IMPLEMENT": "workspace-write",
+      "API_TEST": "dev-server-3000",
+      "E2E_TEST": "dev-server-3000"
+    }
+  },
+  "graphs": {
+    "flag-hack-audit-gated": {
+      "description": "Flag Hack audit remediation workflow with generated-file guardrails and unit, performance, Effect API, and tmux CLI E2E gates.",
+      "stages": [
+        {
+          "id": "plan-audit",
+          "kind": "PLAN",
+          "title": "Plan audit finding remediation",
+          "description": "Read the four audit docs, choose bounded findings, name touched source files, and identify required gates before editing.",
+          "runnerKind": "chain",
+          "runnerName": "general-dev-plan",
+          "sideEffects": "read",
+          "skills": [
+            "build-test-procedures",
+            "tdd"
+          ],
+          "promptInstructions": [
+            "Read ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md.",
+            "Plan only source/config/docs/test changes. Do not edit packages/**/build/**, packages/**/dist/**, generated declarations/maps, editor backups, or packages/domain/src/schemas/*.js.",
+            "Name the expected gates: pnpm generated:guard, pnpm check, pnpm test:unit, pnpm test:perf, pnpm test:api, and pnpm test:e2e:tmux."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.plan-audit",
+          "purpose": "Plan bounded remediation for selected audit findings before editing.",
+          "inputs": [
+            "Original remediation request",
+            "ARCHITECTURE_OPPORTUNITIES.md",
+            "BUILD_SYSTEM_OPPORTUNITIES.md",
+            "EFFECT_TS_OPPORTUNITIES.md",
+            "FP_IMMUTABILITY_OPPORTUNITIES.md"
+          ],
+          "outputs": [
+            "Bounded implementation plan",
+            "Expected validation gates"
+          ],
+          "acceptanceChecks": [
+            "Four audit docs are referenced",
+            "Generated-file policy is part of the plan"
+          ],
+          "writeScope": [
+            "read-only planning notes"
+          ],
+          "isolationBoundary": [
+            "Do not edit implementation files during planning",
+            "Do not broaden beyond the selected audit findings"
+          ],
+          "order": 1
+        },
+        {
+          "id": "implement",
+          "kind": "IMPLEMENT",
+          "title": "Implement bounded audit remediation",
+          "description": "Make the smallest source/config/docs/test change for the planned audit finding while preserving generated-file guardrails.",
+          "dependsOn": ["plan-audit"],
+          "subagentType": "implementer",
+          "sideEffects": "write",
+          "skills": [
+            "build-test-procedures",
+            "tdd",
+            "implementer"
+          ],
+          "expectedWritePaths": [
+            "AGENTS.md",
+            "dprint.json",
+            "package.json",
+            "pnpm-workspace.yaml",
+            "pnpm-lock.yaml",
+            "flake.nix",
+            "vitest.shared.ts",
+            "vitest.workspace.ts",
+            "vitest.bench.ts",
+            "README.org",
+            "docs/**",
+            "scripts/**",
+            "packages/*/src/**",
+            "packages/*/test/**",
+            "packages/*/vitest.config.ts",
+            "packages/*/package.json",
+            ".pi/dev-suite/task-graph/settings.json"
+          ],
+          "promptInstructions": [
+            "Use TDD for observable behavior changes. Add or update focused tests first when a harness exists.",
+            "Do not edit packages/**/build/**, packages/**/dist/**, *.d.ts, *.d.ts.map, *.js.map, editor backups, or packages/domain/src/schemas/*.js.",
+            "Use pnpm/corepack if available. If install or lockfile update cannot run, make source/config changes and report the blocker exactly."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.implement",
+          "purpose": "Implement the selected audit remediation within the approved write scope.",
+          "inputs": [
+            "Audit plan",
+            "Current source/config/docs/tests"
+          ],
+          "outputs": [
+            "Implementation diff",
+            "Focused tests or smoke checks"
+          ],
+          "acceptanceChecks": [
+            "Generated artifacts are untouched",
+            "Gate commands are added or updated when needed"
+          ],
+          "writeScope": [
+            "source/config/docs/tests only",
+            "pnpm-lock.yaml only via pnpm install"
+          ],
+          "isolationBoundary": [
+            "Do not commit or push",
+            "Do not run build/codegen that writes build/dist artifacts"
+          ],
+          "order": 2
+        },
+        {
+          "id": "guardrails",
+          "kind": "COMPILE",
+          "title": "Run generated guardrails and typecheck",
+          "description": "Run pnpm generated:guard and pnpm check, then classify failures as code, pre-existing, or environmental.",
+          "dependsOn": ["implement"],
+          "subagentType": "compile-verifier",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "compile-verifier"
+          ],
+          "promptInstructions": [
+            "Run pnpm generated:guard && pnpm check.",
+            "Do not run codegen/build commands that write packages/**/build/** or packages/**/dist/**.",
+            "If pnpm is unavailable, run node --check for guard scripts and report the exact blocker."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.guardrails",
+          "purpose": "Verify generated-file guardrails and TypeScript health.",
+          "inputs": [
+            "Implementation diff"
+          ],
+          "outputs": [
+            "Guardrail and typecheck evidence"
+          ],
+          "acceptanceChecks": [
+            "pnpm generated:guard is attempted",
+            "pnpm check is attempted or blocked with exact reason"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during verification"
+          ],
+          "order": 3
+        },
+        {
+          "id": "unit",
+          "kind": "UNIT_TEST",
+          "title": "Run unit gate",
+          "description": "Run pnpm test:unit for package smoke/unit coverage.",
+          "dependsOn": ["guardrails"],
+          "subagentType": "unit-tester",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "unit-tester"
+          ],
+          "promptInstructions": [
+            "Run pnpm test:unit and report exact test files or failures.",
+            "Do not edit generated artifacts while diagnosing failures."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.unit",
+          "purpose": "Verify unit smoke coverage for audit remediation.",
+          "inputs": [
+            "Implementation diff",
+            "Guardrails result"
+          ],
+          "outputs": [
+            "Unit test evidence"
+          ],
+          "acceptanceChecks": [
+            "pnpm test:unit is attempted"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during verification"
+          ],
+          "order": 4
+        },
+        {
+          "id": "performance",
+          "kind": "PERF_TEST",
+          "title": "Run performance smoke gate",
+          "description": "Run pnpm test:perf and capture benchmark smoke output.",
+          "dependsOn": ["unit"],
+          "subagentType": "perf-tester",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "perf-tester"
+          ],
+          "promptInstructions": [
+            "Run pnpm test:perf. Treat it as a smoke benchmark until baselines are explicitly added.",
+            "Do not edit generated artifacts while diagnosing failures."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.performance",
+          "purpose": "Verify benchmark smoke coverage exists and runs.",
+          "inputs": [
+            "Implementation diff",
+            "Unit test result"
+          ],
+          "outputs": [
+            "Benchmark output evidence"
+          ],
+          "acceptanceChecks": [
+            "pnpm test:perf is attempted"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during verification"
+          ],
+          "order": 5
+        },
+        {
+          "id": "api",
+          "kind": "API_TEST",
+          "title": "Run Effect API smoke gate",
+          "description": "Run pnpm test:api against a disposable server and validate getWorld/getLogs/getInventory/noop action.",
+          "dependsOn": ["performance"],
+          "subagentType": "api-tester",
+          "sideEffects": "network",
+          "skills": [
+            "build-test-procedures",
+            "api-testing",
+            "api-tester"
+          ],
+          "promptInstructions": [
+            "Run pnpm test:api. It owns localhost:3000 for the duration of the gate and must clean up the server child process.",
+            "If port 3000 is already occupied, report it as an environmental blocker rather than using the existing process."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.api",
+          "purpose": "Verify the Effect HttpApi smoke runner against a disposable server.",
+          "inputs": [
+            "Implementation diff",
+            "Performance result"
+          ],
+          "outputs": [
+            "API smoke evidence"
+          ],
+          "acceptanceChecks": [
+            "pnpm test:api is attempted",
+            "Disposable server cleanup is reported"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not reuse unrelated local servers",
+            "Do not edit files during verification"
+          ],
+          "order": 6
+        },
+        {
+          "id": "tmux-e2e",
+          "kind": "E2E_TEST",
+          "title": "Run tmux CLI E2E smoke gate",
+          "description": "Run pnpm test:e2e:tmux, capture terminal output, and clean up the tmux session.",
+          "dependsOn": ["api"],
+          "subagentType": "e2e-tester",
+          "sideEffects": "network",
+          "skills": [
+            "build-test-procedures",
+            "e2e-test",
+            "e2e-tester"
+          ],
+          "promptInstructions": [
+            "Run pnpm test:e2e:tmux. It requires tmux and owns localhost:3000 while running.",
+            "Report the terminal capture path and whether the unique tmux session was cleaned up.",
+            "If tmux is unavailable, run tmux -V when possible and report the exact blocker."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.tmux-e2e",
+          "purpose": "Verify terminal CLI smoke behavior through tmux automation.",
+          "inputs": [
+            "Implementation diff",
+            "API smoke result"
+          ],
+          "outputs": [
+            "tmux E2E evidence and capture path"
+          ],
+          "acceptanceChecks": [
+            "pnpm test:e2e:tmux is attempted",
+            "Terminal capture path is reported when tmux runs"
+          ],
+          "writeScope": [
+            "temporary artifacts outside the repo",
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Clean up tmux sessions on success and failure",
+            "Do not edit files during verification"
+          ],
+          "order": 7
+        },
+        {
+          "id": "review",
+          "kind": "CODE_REVIEW",
+          "title": "Review audit remediation and gate evidence",
+          "description": "Review the diff, generated-file guardrails, four audit-doc alignment, and unit/perf/API/tmux evidence.",
+          "dependsOn": ["tmux-e2e"],
+          "subagentType": "code-review-enforcer",
+          "sideEffects": "read",
+          "skills": [
+            "code-review",
+            "build-test-procedures"
+          ],
+          "promptInstructions": [
+            "Review changed files against ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md.",
+            "Confirm generated artifacts were not edited and pnpm generated:guard evidence is present.",
+            "Confirm unit, performance, API, and tmux E2E gate evidence is present or blockers are exact. Do not commit or push."
+          ],
+          "stableKey": "custom.flag-hack-audit-gated.review",
+          "purpose": "Review the audit remediation diff and validation evidence.",
+          "inputs": [
+            "Implementation diff",
+            "All gate results"
+          ],
+          "outputs": [
+            "Prioritized review findings or PASS report"
+          ],
+          "acceptanceChecks": [
+            "Generated-file policy is reviewed",
+            "All four requested gate types are reviewed"
+          ],
+          "writeScope": [
+            "review report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during review",
+            "Do not commit or push"
+          ],
+          "order": 8
+        }
+      ]
+    }
+  }
+}

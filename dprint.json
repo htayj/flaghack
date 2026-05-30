@@ -15,7 +15,22 @@
   "malva": {},
   "markup": {},
   "yaml": {},
-  "excludes": ["**/node_modules", "**/*-lock.json"],
+  "excludes": [
+    "**/node_modules",
+    "**/*-lock.json",
+    ".pi/dev-suite/task-graph/runs/**",
+    ".pi/dev-suite/task-graph/artifacts/**",
+    "packages/**/build/**",
+    "packages/**/dist/**",
+    "**/*.d.ts",
+    "**/*.d.ts.map",
+    "**/*.js.map",
+    "packages/domain/src/schemas/*.js",
+    "pnpm-lock.yaml",
+    "**/*~",
+    "**/#*#",
+    "**/.#*"
+  ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.95.0.wasm",
     "https://plugins.dprint.dev/json-0.20.0.wasm",

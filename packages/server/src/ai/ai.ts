@@ -63,7 +63,7 @@ export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
     tap(() => log("narrowed to creatures")),
     andThen(planAllAi(gs)),
     tap(() => log("setup planned all ai")),
-    andThen(all), // todo: set concurrency
+    andThen((plannedEffects) => all(plannedEffects, { concurrency: 1 })),
     tap(() => log("executed planning all ai")),
     withLogSpan(`planning`)
   )

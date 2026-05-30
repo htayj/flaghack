@@ -1,5 +1,4 @@
 import { Key, World } from "@flaghack/domain/schemas"
-import { Match } from "effect"
 // import { HashMap } from "effect"
 import { Map } from "immutable"
 import React, { useCallback, useMemo, useState } from "react"
@@ -18,23 +17,30 @@ type Props = {
 export default function PickupPopup(
   { items, onCancel, onSubmit, open }: Props
 ) {
-  const [marked, setMarked] = useState<Key[]>(["asdf"])
+  const [marked, setMarked] = useState<ReadonlySet<Key>>(
+    () => new Set<Key>()
+  )
   const invMap = useMemo(() => Map(items), [items])
   const markAll = useCallback(() =>
     setMarked(
-      () => {
-        const values = invMap.valueSeq()
-        const arr = values.toArray().map((e) => e.key)
-        return arr
-      }
-    ), [marked, invMap, setMarked])
-  // FIXME
-  const handleKeyDown = (event: any) =>
-    Match.value(event.keyCode).pipe(
-      Match.when(32, () => onSubmit(marked)), // space
-      Match.when(81, () => onCancel()), // q
-      Match.when(188, () => markAll()) // ,
-    )
+      () =>
+        new Set<Key>(
+          invMap.valueSeq().toArray().map((e) => e.key)
+        )
+    ), [invMap])
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === " ") {
+      onSubmit(Array.from(marked))
+      return
+    }
+    if (event.key.toLowerCase() === "q") {
+      onCancel()
+      return
+    }
+    if (event.key === ",") {
+      markAll()
+    }
+  }
   return (
     <div
       style={{
@@ -48,19 +54,20 @@ export default function PickupPopup(
       }}
       onKeyDown={handleKeyDown}
     >
-      {invMap.valueSeq().toArray().map((item, i) => (
+      {invMap.valueSeq().toArray().map((item) => (
         <div
-          key={i}
+          key={item.key}
           style={{
             position: "absolute",
             top: 0,
             left: 0,
             height: "100%",
             width: "100%",
-            background: marked?.includes(item.key) ? "#aaa" : "#000"
+            background: marked.has(item.key) ? "#aaa" : "#000"
           }}
-          content={item._tag}
-        />
+        >
+          {item._tag}
+        </div>
       ))}
     </div>
   )

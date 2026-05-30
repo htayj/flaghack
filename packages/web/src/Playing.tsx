@@ -13,8 +13,6 @@ import { Effect, HashMap } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import { type KeyboardEvent, useEffect, useRef, useState } from "react"
-import { map } from "scala-ts/UndefOr.js"
-import type { UndefOr } from "scala-ts/UndefOr.js"
 import type { Tiles } from "./GameBoard.tsx"
 import GameBoard from "./GameBoard.tsx"
 import {
@@ -66,7 +64,7 @@ export const parseInput = (input: string): Action | undefined => {
   }
 }
 
-const getPosition = (e: Entity): UndefOr<Pos> =>
+const getPosition = (e: Entity): Pos | undefined =>
   e.in === "world" ? e.at : undefined
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
@@ -75,7 +73,10 @@ const drawWorld = (world: World): Tiles => {
 
   const worldMap = Map(world)
     .valueSeq()
-    .groupBy((entity) => map(getPosition(entity), (p: Pos) => posKey(p)))
+    .groupBy((entity) => {
+      const position = getPosition(entity)
+      return position === undefined ? undefined : posKey(position)
+    })
     .map((v) => v.valueSeq().toArray())
   const fullmap = emptyMatrix.map((row, y) =>
     row

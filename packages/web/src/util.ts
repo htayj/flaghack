@@ -1,5 +1,4 @@
 import { List, Map } from "immutable"
-import { getOrElse } from "scala-ts/UndefOr.js"
 
 export type Matrix<T> = List<List<T>>
 
@@ -92,7 +91,7 @@ export const ecolor = (
   escColor(
     maybeDo(bg)(bgColor)(
       maybeDo(bright)(brightenColor)(
-        fgColor(getOrElse(colorNumMap.get(color), () => 7))
+        fgColor(colorNumMap.get(color) ?? 7)
       )
     )
   )

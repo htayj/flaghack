@@ -7,6 +7,8 @@ type PackageJson = {
   readonly private?: boolean
   readonly dependencies?: Readonly<Record<string, string>>
   readonly devDependencies?: Readonly<Record<string, string>>
+  readonly optionalDependencies?: Readonly<Record<string, string>>
+  readonly peerDependencies?: Readonly<Record<string, string>>
 }
 
 const packageJsonUrl = new URL("../package.json", import.meta.url)
@@ -72,6 +74,21 @@ describe("web package metadata", () => {
     const packageJson = await readWebPackageJson()
 
     expect(findDuplicatedDependencyNames(packageJson)).toEqual([])
+  })
+
+  it("does not depend on scala-ts directly", async () => {
+    const packageJson = await readWebPackageJson()
+
+    expect(packageJson.dependencies ?? {}).not.toHaveProperty("scala-ts")
+    expect(packageJson.devDependencies ?? {}).not.toHaveProperty(
+      "scala-ts"
+    )
+    expect(packageJson.optionalDependencies ?? {}).not.toHaveProperty(
+      "scala-ts"
+    )
+    expect(packageJson.peerDependencies ?? {}).not.toHaveProperty(
+      "scala-ts"
+    )
   })
 
   it("does not use latest as a direct package specifier", async () => {

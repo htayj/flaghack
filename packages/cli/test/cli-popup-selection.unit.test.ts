@@ -1,0 +1,64 @@
+import { describe, expect, it } from "@effect/vitest"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const testDirectory = dirname(fileURLToPath(import.meta.url))
+const componentDirectory = join(testDirectory, "../src/components")
+
+const popupComponentPaths = [
+  join(componentDirectory, "PickupPopup.tsx"),
+  join(componentDirectory, "popup.tsx")
+] as const
+
+const listComponentPaths = [
+  ...popupComponentPaths,
+  join(componentDirectory, "Inventory.tsx")
+] as const
+
+const readSource = (path: string) => readFileSync(path, "utf8")
+
+const unkeyAnonymousNoopCallback =
+  /\.unkey\s*\([\s\S]*?\(\)\s*=>\s*undefined[\s\S]*?\)/
+const splitStringKeyCleanup = /\.unkey\s*\(\s*key\s*,/
+const exactControlKeyCleanup =
+  /\.removeListener\s*\(\s*`key \$\{key\}`\s*,\s*handleControlKey\s*\)/
+const exactSubmitKeyCleanup =
+  /\.removeListener\s*\(\s*`key \$\{key\}`\s*,\s*handleSubmitKey\s*\)/
+const emptyElseBranch = /else\s*{\s*}/
+
+describe("CLI popup selection static guards", () => {
+  it("does not seed popup selection with an invalid placeholder key", () => {
+    for (const path of popupComponentPaths) {
+      expect(readSource(path)).not.toContain("[\"asdf\"]")
+    }
+  })
+
+  it("does not unregister blessed keys with an anonymous noop callback", () => {
+    for (const path of popupComponentPaths) {
+      expect(readSource(path)).not.toMatch(unkeyAnonymousNoopCallback)
+    }
+  })
+
+  it("unregisters blessed key handlers with exact event names and callback identity", () => {
+    for (const path of popupComponentPaths) {
+      const source = readSource(path)
+
+      expect(source).not.toMatch(splitStringKeyCleanup)
+      expect(source).toMatch(exactControlKeyCleanup)
+      expect(source).toMatch(exactSubmitKeyCleanup)
+    }
+  })
+
+  it("uses stable item keys for rendered popup and inventory list rows", () => {
+    for (const path of listComponentPaths) {
+      expect(readSource(path)).not.toContain("key={i}")
+    }
+  })
+
+  it("does not keep empty else branches in popup keyboard handlers", () => {
+    for (const path of popupComponentPaths) {
+      expect(readSource(path)).not.toMatch(emptyElseBranch)
+    }
+  })
+})

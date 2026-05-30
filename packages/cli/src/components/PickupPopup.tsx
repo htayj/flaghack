@@ -1,69 +1,83 @@
-import { Key, World } from "@flaghack/domain/schemas"
-// import { HashMap } from "effect"
+import type {
+  Key as KeySchema,
+  World as WorldSchema
+} from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { BoxElement } from "react-blessed"
+import type { BoxElement } from "react-blessed"
 
-type Key = typeof Key.Type
-type World = typeof World.Type
+type Key = typeof KeySchema.Type
+type World = typeof WorldSchema.Type
 type Props = {
   items: World
-  onSubmit: (keys: Key[]) => void
+  onSubmit: (keys: Array<Key>) => void
   onCancel: () => void
   pickupRef: React.RefObject<BoxElement | null>
   log: (l: string) => void
 }
 
+const controlKeys: Array<string> = ["q", "r", ","]
+const submitKeys: Array<string> = [" ", "space"]
+
 export default function PickupPopup(
-  { items, pickupRef, onCancel, onSubmit, log }: Props
+  { items, log: _log, onCancel, onSubmit, pickupRef }: Props
 ) {
-  const [marked, setMarked] = useState<Key[]>(["asdf"])
+  const [marked, setMarked] = useState<ReadonlySet<Key>>(() => new Set())
   const invMap = useMemo(() => Map(items), [items])
-  const markAll = useCallback(() =>
+  const markAll = useCallback(() => {
     setMarked(
-      () => {
-        const values = invMap.valueSeq()
-        const arr = values.toArray().map((e) => e.key)
-        return arr
-      }
-    ), [marked, invMap, setMarked])
-  useEffect(() => {
-    ;["q", "r", ","].forEach((key) =>
-      pickupRef.current?.unkey(
-        key,
-        () => undefined
-      )
-    )
-    pickupRef.current?.key(
-      ["q", "r", ","],
-      (input: string) => {
-        if (["q", "r"].includes(input)) {
-          setMarked([])
-          onCancel()
-        } else if ([" ", "space"].includes(input)) {
-          onSubmit(marked)
-        } else if ([","].includes(input)) markAll()
-        else {
-        }
-      }
+      new Set(invMap.valueSeq().toArray().map((item) => item.key))
     )
   }, [invMap])
+
   useEffect(() => {
-    ;[" ", "space"].forEach((key) =>
-      pickupRef.current?.unkey(
-        key,
-        () => undefined
-      )
-    )
-    pickupRef.current?.key(
-      [" ", "space"],
-      (input: string) => {
-        if ([" ", "space"].includes(input)) {
-          onSubmit(marked)
-        }
+    const popup = pickupRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleControlKey = (input: string) => {
+      if (input === "q" || input === "r") {
+        setMarked(new Set())
+        onCancel()
+        return
       }
-    )
-  }, [marked])
+
+      if (input === ",") {
+        markAll()
+      }
+    }
+
+    popup.key(controlKeys, handleControlKey)
+
+    return () => {
+      for (const key of controlKeys) {
+        popup.removeListener(`key ${key}`, handleControlKey)
+      }
+    }
+  }, [markAll, onCancel, pickupRef])
+
+  useEffect(() => {
+    const popup = pickupRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleSubmitKey = (input: string) => {
+      if (input === " " || input === "space") {
+        onSubmit(Array.from(marked))
+      }
+    }
+
+    popup.key(submitKeys, handleSubmitKey)
+
+    return () => {
+      for (const key of submitKeys) {
+        popup.removeListener(`key ${key}`, handleSubmitKey)
+      }
+    }
+  }, [marked, onSubmit, pickupRef])
+
   return (
     <box
       ref={pickupRef}
@@ -76,11 +90,11 @@ export default function PickupPopup(
     >
       {invMap.valueSeq().toArray().map((item, i) => (
         <box
-          key={i}
+          key={item.key}
           top={i}
           height={1}
           style={{
-            inverse: marked?.includes(item.key)
+            inverse: marked.has(item.key)
           }}
           left={1}
           width={27}

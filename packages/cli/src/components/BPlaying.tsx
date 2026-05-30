@@ -47,7 +47,7 @@ type Props = {
 const getTileOrDefault = (e: Entity | undefined): Tile =>
   e === undefined ? { color: "black", char: " " } : getTile(e)
 
-const parseInput = (input: any) => {
+const parseInput = (input: string) => {
   switch (input) {
     case "j":
       return EAction.move({ dir: "S" })
@@ -66,7 +66,7 @@ const parseInput = (input: any) => {
     case "n":
       return EAction.move({ dir: "SE" })
     default:
-      return EAction.noop()
+      return undefined
   }
 }
 
@@ -111,7 +111,7 @@ export default function BPlaying(_props: Props) {
     HashMap.empty()
   )
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const [mode, setMode] = useState<Mode>("normal")
+  const [mode] = useState<Mode>("normal")
   const initialWorldFetchStarted = useRef(false)
 
   useEffect(() => {
@@ -154,16 +154,15 @@ export default function BPlaying(_props: Props) {
         dropRef.current?.focus()
       } else {
         const action = parseInput(input)
-        if (action) {
-          apiDoPlayerAction(action).pipe(
-            Effect.andThen(apiGetWorld),
-            Effect.andThen(setWorld),
-            Effect.provide(MainLive),
-            Effect.runPromise
-          )
-        } else {
-          setMode(action)
+        if (action === undefined) {
+          return
         }
+        apiDoPlayerAction(action).pipe(
+          Effect.andThen(apiGetWorld),
+          Effect.andThen(setWorld),
+          Effect.provide(MainLive),
+          Effect.runPromise
+        )
         apiGetInventory.pipe(
           Effect.andThen(setInventory),
           Effect.provide(MainLive),

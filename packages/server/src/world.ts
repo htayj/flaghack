@@ -54,7 +54,7 @@ export const isItem = conforms(AnyItem)
 export const notPlayerFrom = <T extends World>(w: T) =>
   w.pipe(filter((o) => !isPlayer(o)))
 export const isAt = (p: TPos) => <T extends Entity>(e: T) =>
-  e.in === "world" && e.at === p
+  e.in === "world" && collideP(p)(e.at)
 export const itemsAt = (world: World) => (pos: TPos) =>
   world.pipe(filter(isItem), filter(isAt(pos)))
 

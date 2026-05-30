@@ -14,7 +14,7 @@ export const UV = {
 } as const
 export const collideP =
   (a: TPos, ain: TKey = "world") => (b: TPos, bin: TKey = "world") =>
-    ain === bin && a.x === b.x && a.y === b.y
+    ain === bin && a.x === b.x && a.y === b.y && a.z === b.z
 export const shift = (pos: TPos, by: TPos): TPos => ({
   x: pos.x + by.x,
   y: pos.y + by.y,

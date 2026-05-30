@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "@effect/vitest"
 
 type PackageJson = {
+  readonly name?: string
+  readonly private?: boolean
   readonly dependencies?: Readonly<Record<string, string>>
   readonly devDependencies?: Readonly<Record<string, string>>
 }
@@ -26,6 +28,15 @@ const findDuplicatedDependencyNames = ({
 }
 
 describe("web package metadata", () => {
+  it("uses the scoped private workspace package name", async () => {
+    const packageJson = await readWebPackageJson()
+
+    expect(packageJson).toMatchObject({
+      name: "@flaghack/web",
+      private: true
+    })
+  })
+
   it("classifies typescript-language-server as development-only tooling", async () => {
     const packageJson = await readWebPackageJson()
 

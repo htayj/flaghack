@@ -1,5 +1,4 @@
-import { List } from "immutable"
-import { Map } from "immutable"
+import { List, Map } from "immutable"
 import { getOrElse } from "scala-ts/UndefOr.js"
 
 export type Matrix<T> = List<List<T>>
@@ -51,7 +50,7 @@ export const cmap = <
 ) =>
 (collection: T) => collection.filter(fn)
 
-export const genKey = () => (Math.random() * 2 ** 8).toString(16)
+export const genKey = () => crypto.randomUUID()
 
 export type Tile = {
   char: string
@@ -59,7 +58,7 @@ export type Tile = {
   bright?: boolean
   bg?: boolean
 }
-export type Tiles = Tile[][]
+export type Tiles = Array<Array<Tile>>
 
 export type Color =
   | "black"
@@ -80,8 +79,8 @@ export const colorNumMap = Map<Color, number>({
   cyan: 6,
   white: 7
 })
-export const maybeDo = (doP?: boolean) => <T extends Function>(fn: T) =>
-  !!doP ? fn : identity
+export const maybeDo = (doP?: boolean) => <T>(fn: (value: T) => T) =>
+  doP ? fn : identity
 export const fgColor = (num: number) => num + 30
 export const bgColor = (num: number) => num + 10
 export const brightenColor = (num: number) => num + 60
@@ -99,7 +98,7 @@ export const ecolor = (
     )
   )
 
-export const tileToText = ({ color, char, bright, bg }: Tile) =>
+export const tileToText = ({ bg, bright, char, color }: Tile) =>
   `${ecolor(color, bright, bg)}${char}`
 export const tilesToText = (tiles: Tiles) =>
   tiles.map((row) => row.map(tileToText).join("")).join("\n")

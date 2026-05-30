@@ -1,18 +1,53 @@
 import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
+import type { UserConfig } from "vite"
 
-const cliSourcePath = join(
+const cliPackagePath = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../src/Cli.ts"
+  ".."
 )
+const cliSourcePath = join(cliPackagePath, "src/Cli.ts")
+const cliPackageJsonPath = join(cliPackagePath, "package.json")
+const cliViteConfigPath = join(cliPackagePath, "vite.config.js")
 
 const deprecatedTemplateMetadata = [
   "Command.make(\"todo\")",
   "Todo CLI",
   "Add a new todo"
 ] as const
+
+type PackageJsonWithEngines = {
+  readonly engines?: {
+    readonly node?: string
+  }
+}
+
+const readCliPackageJson = (): PackageJsonWithEngines =>
+  JSON.parse(
+    readFileSync(cliPackageJsonPath, "utf8")
+  ) as PackageJsonWithEngines
+
+const readCliViteBuildTarget = async (): Promise<string> => {
+  const viteConfigModule = await import(
+    pathToFileURL(cliViteConfigPath).href
+  )
+  const viteConfig = viteConfigModule.default as UserConfig
+  const buildTarget = viteConfig.build?.target
+
+  expect(typeof buildTarget).toBe("string")
+
+  return buildTarget as string
+}
+
+const nodeEngineRangeFromViteTarget = (target: string): string => {
+  const majorVersion = /^node(\d+)$/.exec(target)?.[1]
+
+  expect(majorVersion).toBeDefined()
+
+  return `>=${majorVersion}`
+}
 
 describe("CLI metadata", () => {
   it("does not use template Todo CLI metadata", () => {
@@ -21,5 +56,15 @@ describe("CLI metadata", () => {
     for (const metadata of deprecatedTemplateMetadata) {
       expect(cliSource).not.toContain(metadata)
     }
+  })
+
+  it("declares a Node engine matching the Vite SSR target", async () => {
+    const cliPackageJson = readCliPackageJson()
+    const viteBuildTarget = await readCliViteBuildTarget()
+    const expectedNodeEngine = nodeEngineRangeFromViteTarget(
+      viteBuildTarget
+    )
+
+    expect(cliPackageJson.engines?.node).toBe(expectedNodeEngine)
   })
 })

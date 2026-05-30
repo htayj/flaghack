@@ -1,21 +1,12 @@
 #!/usr/bin/env node
 
-import {
-  NodeContext,
-  NodeHttpClient,
-  NodeRuntime
-} from "@effect/platform-node"
+import { NodeRuntime } from "@effect/platform-node"
 // import { EAction } from "@flaghack/domain/schemas"
 // import blessed from "blessed"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { cli } from "./Cli.js"
-import { GameClient } from "./GameClient.js"
+import { MainLive } from "./runtime.js"
 // var blessed = require("reblessed")
-
-export const MainLive = GameClient.Default.pipe(
-  Layer.provide(NodeHttpClient.layerUndici),
-  Layer.merge(NodeContext.layer)
-)
 
 // >> blessed vanilla
 // const drawResult = (res: string) =>

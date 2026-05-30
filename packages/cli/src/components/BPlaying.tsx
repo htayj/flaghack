@@ -78,7 +78,7 @@ const zindex = (p: typeof Entity.Type) => isTerrain(p) ? 0 : 1
 
 const drawWorld = (
   world: World,
-  log: (input: string) => void = console.log
+  _log: (input: string) => void = console.log
 ): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
 
@@ -100,7 +100,7 @@ const drawWorld = (
   return fullmap.map((r) => r.toArray()).toArray()
 }
 type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
-export default function BPlaying({}: Props) {
+export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
   const pickupRef = useRef<BoxElement>(null)
@@ -112,14 +112,24 @@ export default function BPlaying({}: Props) {
   )
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [mode, setMode] = useState<Mode>("normal")
-  if (world === undefined || size(world) === 0) {
+  const initialWorldFetchStarted = useRef(false)
+
+  useEffect(() => {
+    if (
+      initialWorldFetchStarted.current
+      || (world !== undefined && size(world) !== 0)
+    ) {
+      return
+    }
+
+    initialWorldFetchStarted.current = true
     apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
       Effect.andThen(() => pickupRef.current?.hide()),
       Effect.andThen(() => dropRef.current?.hide()),
       Effect.provide(MainLive),
       Effect.runPromise
     )
-  }
+  }, [world])
   const theDrawMatrix = drawWorld(world)
   const log = (input: string) =>
     setMessages((messages) => messages.unshift(`[debug] ${input}`))
@@ -145,16 +155,16 @@ export default function BPlaying({}: Props) {
           dropRef.current?.focus()
         } else {
           const action = parseInput(input)
-          action
-            ? (
-              apiDoPlayerAction(action).pipe(
-                Effect.andThen(apiGetWorld),
-                Effect.andThen(setWorld),
-                Effect.provide(MainLive),
-                Effect.runPromise
-              )
+          if (action) {
+            apiDoPlayerAction(action).pipe(
+              Effect.andThen(apiGetWorld),
+              Effect.andThen(setWorld),
+              Effect.provide(MainLive),
+              Effect.runPromise
             )
-            : setMode(action)
+          } else {
+            setMode(action)
+          }
           apiGetInventory.pipe(
             Effect.andThen(setInventory),
             Effect.provide(MainLive),

@@ -12,7 +12,7 @@ import type {
 import { Effect, HashMap } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
-import { type KeyboardEvent, useRef, useState } from "react"
+import { type KeyboardEvent, useEffect, useRef, useState } from "react"
 import { map } from "scala-ts/UndefOr.js"
 import type { UndefOr } from "scala-ts/UndefOr.js"
 import type { Tiles } from "./GameBoard.tsx"
@@ -92,6 +92,7 @@ export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<HTMLDivElement>(null)
   const pickupRef = useRef<HTMLDivElement>(null)
+  const initialWorldFetchRequestedRef = useRef(false)
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
   const [pickupContents, setPickupContents] = useState<World>(
@@ -100,11 +101,20 @@ export default function BPlaying(_props: Props) {
   const [showPickup, setShowPickup] = useState<boolean>(false)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [mode] = useState<Mode>("normal")
-  if (world === undefined || size(world) === 0) {
+  useEffect(() => {
+    if (initialWorldFetchRequestedRef.current) {
+      return
+    }
+
+    if (world === undefined || size(world) !== 0) {
+      return
+    }
+
+    initialWorldFetchRequestedRef.current = true
     getWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
       Effect.runPromise
     )
-  }
+  }, [world])
   const theDrawMatrix = drawWorld(world)
   const log = (input: string) =>
     setMessages((messages) => messages.unshift(`[debug] ${input}`))

@@ -21,7 +21,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "noEmitOnError": false,
+    "noEmitOnError": true,
     "jsx": "react",
     "noErrorTruncation": false,
     "allowJs": false,

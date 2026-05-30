@@ -1,5 +1,10 @@
-import { DirectionalVariant, EEntity, Entity } from "./schemas.js"
-type Entity = typeof Entity.Type
+import {
+  type DirectionalVariant,
+  EEntity,
+  type Entity as EntitySchema
+} from "./schemas.js"
+
+type Entity = typeof EntitySchema.Type
 const getWallVariantChar = (v: typeof DirectionalVariant.Type) => {
   switch (v) {
     case "vertical":
@@ -63,6 +68,8 @@ export const getTile = (e: Entity): Tile =>
     trailmix: () => ({ color: "yellow", char: "%" }),
     pancake: () => ({ color: "white", bright: true, char: "%" }),
     soup: () => ({ color: "red", char: "%" }),
+    hammer: () => ({ color: "white", bright: true, char: "T" }),
+    nails: () => ({ color: "cyan", bright: true, char: ":" }),
     wall: ({ variant }) => ({
       color: "white",
       bright: false,

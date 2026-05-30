@@ -137,7 +137,7 @@ export const AnyTool = oneof(
 
 // <<<<<<
 
-export const AnyItem = oneof(Flag, AnyFood, AnyDrink)
+export const AnyItem = oneof(Flag, AnyFood, AnyDrink, AnyTool)
 // ===========================
 // Creatures
 // ===========================

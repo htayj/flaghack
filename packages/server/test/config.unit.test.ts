@@ -51,9 +51,7 @@ describe("server runtime config", () => {
   it("wires server startup through runtime config instead of a hard-coded port", () => {
     const serverSource = readFileSync(serverSourcePath, "utf8")
 
-    expect(serverSource).toMatch(
-      /resolveServerConfig\s*\(\s*process\.env\s*\)/
-    )
+    expect(serverSource).toMatch(/resolveServerConfig\s*\(\s*env\s*\)/)
     expect(serverSource).not.toContain("port: 3000")
   })
 })

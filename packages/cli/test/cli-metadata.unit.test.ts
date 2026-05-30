@@ -38,16 +38,36 @@ const expectedInventoryOutputMetadata = [
   "Inventory: "
 ] as const
 
-type PackageJsonWithEngines = {
+type PackageDependencyMap = Readonly<Record<string, string>>
+
+type PackageJsonWithMetadata = {
+  readonly dependencies?: PackageDependencyMap
+  readonly devDependencies?: PackageDependencyMap
   readonly engines?: {
     readonly node?: string
   }
 }
 
-const readCliPackageJson = (): PackageJsonWithEngines =>
+const expectedPinnedEffectPackageVersions = {
+  "@effect/cli": "0.64.2",
+  "@effect/platform": "0.85.2",
+  "@effect/platform-node": "0.86.4"
+} as const
+
+const readCliPackageJson = (): PackageJsonWithMetadata =>
   JSON.parse(
     readFileSync(cliPackageJsonPath, "utf8")
-  ) as PackageJsonWithEngines
+  ) as PackageJsonWithMetadata
+
+const isEffectFamilyPackageName = (packageName: string): boolean =>
+  packageName === "effect" || packageName.startsWith("@effect/")
+
+const effectFamilyDependencyEntries = (
+  dependencies: PackageDependencyMap | undefined
+): ReadonlyArray<readonly [string, string]> =>
+  Object.entries(dependencies ?? {}).filter(([packageName]) =>
+    isEffectFamilyPackageName(packageName)
+  )
 
 const readCliViteBuildTarget = async (): Promise<string> => {
   const viteConfigModule = await import(
@@ -108,5 +128,33 @@ describe("CLI metadata", () => {
     )
 
     expect(cliPackageJson.engines?.node).toBe(expectedNodeEngine)
+  })
+
+  it("pins direct CLI Effect-family dependencies to concrete versions", () => {
+    const cliPackageJson = readCliPackageJson()
+
+    for (
+      const [packageName, expectedVersion] of Object.entries(
+        expectedPinnedEffectPackageVersions
+      )
+    ) {
+      expect(cliPackageJson.dependencies?.[packageName]).toBe(
+        expectedVersion
+      )
+      expect(cliPackageJson.devDependencies?.[packageName]).toBe(
+        expectedVersion
+      )
+    }
+
+    for (
+      const [packageName, version] of [
+        ...effectFamilyDependencyEntries(cliPackageJson.dependencies),
+        ...effectFamilyDependencyEntries(cliPackageJson.devDependencies)
+      ]
+    ) {
+      expect(version, `${packageName} must not use latest`).not.toBe(
+        "latest"
+      )
+    }
   })
 })

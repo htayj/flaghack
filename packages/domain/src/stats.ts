@@ -9,7 +9,7 @@ const Strength = prop("strength", AttributeGeneric)
 const Intelligence = prop("intelligence", AttributeGeneric)
 const Dexterity = prop("dexterity", AttributeGeneric)
 const Constitution = prop("constitution", AttributeGeneric)
-const Wisdom = prop("charisma", AttributeGeneric)
+const Wisdom = prop("wisdom", AttributeGeneric)
 
 export const [AllAttributes, AnyAttribute] = collect(
   Charisma,
@@ -47,7 +47,9 @@ There can be multiple phases in a state. And an item must be in one of each stat
 export const State = Schema.Literal
 export const Phase = State("solid", "gas", "liquid")
 export const BUC = State("blessed", "uncursed", "cursed")
-export const [AllStates, AnyState] = collect(Fixed, Wet)
+export const PhaseState = prop("phase", Phase)
+export const BUCState = prop("buc", BUC)
+export const [AllStates, AnyState] = collect(PhaseState, BUCState)
 
 /** things used to keep track of numerical state. Like hit points
 We are currently keeping track of how much has been lost, the amount total is calculated based on other things
@@ -56,4 +58,4 @@ We are currently keeping track of how much has been lost, the amount total is ca
 export const Points = Schema.Number
 export const HitP = prop("dhp", Points) // the amount of damage TAKEN
 export const VrilP = prop("dvp", Points) // the amount of magic LOST
-export const HungerP = prop("dhp", Points) // the amount of magic LOST
+export const HungerP = prop("dhunger", Points) // the amount of hunger LOST

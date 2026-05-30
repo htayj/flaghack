@@ -29,6 +29,15 @@ const expectedMoveSouthCommandMetadata = [
   "Submit a debug move-south action to the game server"
 ] as const
 
+const deprecatedInventoryNoOutputHandler =
+  "Command.withHandler(() => GameClient.getInventory)"
+
+const expectedInventoryOutputMetadata = [
+  "Console.log",
+  "Inventory is empty.",
+  "Inventory: "
+] as const
+
 type PackageJsonWithEngines = {
   readonly engines?: {
     readonly node?: string
@@ -77,6 +86,16 @@ describe("CLI metadata", () => {
     }
 
     for (const metadata of expectedMoveSouthCommandMetadata) {
+      expect(cliSource).toContain(metadata)
+    }
+  })
+
+  it("prints formatted inventory output instead of returning the inventory API call directly", () => {
+    const cliSource = readFileSync(cliSourcePath, "utf8")
+
+    expect(cliSource).not.toContain(deprecatedInventoryNoOutputHandler)
+
+    for (const metadata of expectedInventoryOutputMetadata) {
       expect(cliSource).toContain(metadata)
     }
   })

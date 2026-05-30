@@ -1,5 +1,6 @@
 import { Command } from "@effect/cli"
-import { Effect } from "effect"
+import type { World as WorldSchema } from "@flaghack/domain/schemas"
+import { Console, Effect, HashMap } from "effect"
 import { startblessed } from "./cliBlessed.js"
 import { GameClient } from "./GameClient.js"
 
@@ -11,9 +12,27 @@ const moveSouth = Command.make("move-south").pipe(
     GameClient.doPlayerAction({ _tag: "move", dir: "S" })
   )
 )
+type Inventory = typeof WorldSchema.Type
+
+const formatInventory = (inventory: Inventory): string => {
+  const items = Array.from(inventory.pipe(HashMap.values))
+
+  if (items.length === 0) {
+    return "Inventory is empty."
+  }
+
+  return `Inventory: ${items.map(({ _tag }) => _tag).join(", ")}`
+}
+
 const inventory = Command.make("i").pipe(
   Command.withDescription("Show player inventory"),
-  Command.withHandler(() => GameClient.getInventory)
+  Command.withHandler(() =>
+    Effect.gen(function*() {
+      const currentInventory = yield* GameClient.getInventory
+
+      yield* Console.log(formatInventory(currentInventory))
+    })
+  )
 )
 const playBlessed = Command.make("playB").pipe(
   Command.withDescription("play the game"),

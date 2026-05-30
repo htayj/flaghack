@@ -18,6 +18,17 @@ const deprecatedTemplateMetadata = [
   "Add a new todo"
 ] as const
 
+const deprecatedDevelopmentCommandMetadata = [
+  "const test = Command.make(\"test\")",
+  "Command.make(\"test\")",
+  "test getting a world"
+] as const
+
+const expectedMoveSouthCommandMetadata = [
+  "const moveSouth = Command.make(\"move-south\")",
+  "Submit a debug move-south action to the game server"
+] as const
+
 type PackageJsonWithEngines = {
   readonly engines?: {
     readonly node?: string
@@ -55,6 +66,18 @@ describe("CLI metadata", () => {
 
     for (const metadata of deprecatedTemplateMetadata) {
       expect(cliSource).not.toContain(metadata)
+    }
+  })
+
+  it("uses explicit game-oriented metadata for the debug move command", () => {
+    const cliSource = readFileSync(cliSourcePath, "utf8")
+
+    for (const metadata of deprecatedDevelopmentCommandMetadata) {
+      expect(cliSource).not.toContain(metadata)
+    }
+
+    for (const metadata of expectedMoveSouthCommandMetadata) {
+      expect(cliSource).toContain(metadata)
     }
   })
 

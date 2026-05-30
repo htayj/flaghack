@@ -1,12 +1,11 @@
-import { EEntity, Pos } from "@flaghack/domain/schemas"
+import { EEntity, type Pos as PosSchema } from "@flaghack/domain/schemas"
 import { Option } from "effect"
 import { defined } from "effect/Match"
-import { List, Map, Set } from "immutable"
-import { nullMatrix, UndefOr } from "./util.js"
-import { Entity, World } from "./world.js"
-console.log("testing bsp")
+import { List, Map, type Set } from "immutable"
+import { nullMatrix, type UndefOr } from "./util.js"
+import type { Entity, World } from "./world.js"
 
-type Pos = typeof Pos.Type
+type Pos = typeof PosSchema.Type
 type Color =
   | "black"
   | "red"
@@ -24,7 +23,7 @@ type Tile = {
 }
 
 type VEntity = { dist: number; entity: Entity }
-export type Tiles = Tile[][]
+export type Tiles = Array<Array<Tile>>
 const getTile = (e: UndefOr<Entity>): Tile =>
   defined(e)
     ? EEntity.$match({
@@ -52,7 +51,7 @@ const getTile = (e: UndefOr<Entity>): Tile =>
     })(e) as Tile
     : { color: "black", char: ".", bright: true }
 
-const tileToText = ({ color, char, bright, bg }: Tile) => `${char}`
+const tileToText = ({ char }: Tile) => `${char}`
 
 const getPosition = (e: Entity): Option.Option<Pos> =>
   e.in === "world" ? Option.some(e.at) : Option.none()

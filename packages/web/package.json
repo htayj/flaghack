@@ -15,7 +15,7 @@
     "@effect/platform": "latest",
     "@effect/platform-browser": "latest",
     "@flaghack/domain": "workspace:^",
-    "effect": "^3.16.8",
+    "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
     "scala-ts": "^0.1.8",
     "react": "^19.1.0",

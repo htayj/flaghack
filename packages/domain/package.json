@@ -26,7 +26,7 @@
   "dependencies": {
     "@effect/platform": "latest",
     "@effect/sql": "latest",
-    "effect": "latest"
+    "effect": "3.16.8"
   },
   "effect": {
     "generateExports": {

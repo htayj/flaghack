@@ -1,9 +1,9 @@
-import { HttpApiBuilder, HttpApiClient } from "@effect/platform"
+import { HttpApiClient } from "@effect/platform"
 import { BrowserHttpClient } from "@effect/platform-browser"
 import { GameApi } from "@flaghack/domain/GameApi"
 import { Key } from "@flaghack/domain/schemas"
 import type { Action } from "@flaghack/domain/schemas"
-import { Effect, Layer, ManagedRuntime, pipe } from "effect"
+import { Effect, Layer, ManagedRuntime } from "effect"
 
 type Key = typeof Key.Type
 
@@ -37,8 +37,7 @@ export class GameClient
 {}
 
 export const MainLive = GameClient.Default.pipe(
-  Layer.provide(BrowserHttpClient.layerXMLHttpRequest),
-  Layer.provide(HttpApiBuilder.middlewareCors())
+  Layer.provide(BrowserHttpClient.layerXMLHttpRequest)
 )
 export const LiveRuntime = ManagedRuntime.make(MainLive)
 

@@ -17,7 +17,7 @@ Audit-remediation work should use the project gates documented in [[file:docs/te
   pnpm test:e2e:tmux
 #+END_SRC
 
-For the current passing smoke aggregate, run =pnpm verify:smoke=. The stricter =pnpm verify:gates= also runs =pnpm check=, which still reports known pre-existing web TypeScript issues.
+For the smoke aggregate, run =pnpm verify:smoke=. For the stricter readiness gate that also runs =pnpm check=, run =pnpm verify:gates=.
 
 The full build/codegen lifecycle is still known to be fragile; this setup does not claim that =pnpm run build= is fixed. Do not edit generated =build/=, =dist/=, declaration, map, backup, or generated schema JavaScript files by hand.
 

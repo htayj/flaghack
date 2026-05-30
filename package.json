@@ -73,7 +73,8 @@
       "@effect/platform-node": "0.86.4",
       "@effect/sql": "0.38.2",
       "@effect/vitest": "0.23.8",
-      "vitest": "^2.0.5"
+      "vitest": "^2.0.5",
+      "effect": "3.16.8"
     },
     "patchedDependencies": {
       "babel-plugin-annotate-pure-calls@0.4.0": "patches/babel-plugin-annotate-pure-calls@0.4.0.patch"

@@ -32,7 +32,7 @@
     "@flaghack/domain": "workspace:^",
     "blessed": "latest",
     "blessed-contrib": "latest",
-    "effect": "latest",
+    "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
     "react": "18.2.0",
     "react-blessed": "npm:@htayj/react-blessed@^0.7.3",
@@ -49,7 +49,7 @@
     "@types/react-blessed": "latest",
     "@vitejs/plugin-react": "^4.5.2",
     "chokidar": "^4.0.3",
-    "effect": "latest",
+    "effect": "3.16.8",
     "scala-ts": "^0.1.8",
     "vite": "^6.3.5"
   },

@@ -35,6 +35,6 @@ pnpm test:api
 pnpm test:e2e:tmux
 ```
 
-`pnpm verify:smoke` runs the generated-file guard plus the unit, performance, API, and tmux E2E smoke gates that are expected to pass in the current tree. `pnpm verify:gates` additionally runs `pnpm check`, which still exposes known pre-existing web TypeScript issues.
+`pnpm verify:smoke` runs the generated-file guard plus the unit, performance, API, and tmux E2E smoke gates. `pnpm verify:gates` additionally runs `pnpm check` as the stricter readiness gate.
 
 `pnpm test:api` and `pnpm test:e2e:tmux` use the hard-coded development server port `3000`, so run them serially and stop any other local Flag Hack server first.

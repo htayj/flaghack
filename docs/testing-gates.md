@@ -58,13 +58,13 @@ pnpm test:api
 pnpm test:e2e:tmux
 ```
 
-`pnpm verify:smoke` runs the generated-file guard plus the four smoke gates that are expected to pass in the current tree:
+`pnpm verify:smoke` runs the generated-file guard plus the four smoke gates:
 
 ```sh
 pnpm verify:smoke
 ```
 
-`pnpm verify:gates` additionally runs `pnpm check`. At the time this gate was added, `pnpm check` still exposes pre-existing `packages/web` TypeScript errors from the build-system audit, so `verify:gates` is the stricter readiness target rather than the current passing smoke aggregate.
+`pnpm verify:gates` is the stricter readiness gate and additionally runs `pnpm check` before the smoke gates:
 
 ```sh
 pnpm verify:gates

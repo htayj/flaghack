@@ -6,8 +6,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
-      input: "src/main.tsx",
-      external: "@flaghack/domain/schemas"
+      input: "src/main.tsx"
     }
   }
 })

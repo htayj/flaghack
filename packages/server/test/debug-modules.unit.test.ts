@@ -69,6 +69,12 @@ describe("debug BSP modules", () => {
     )
   })
 
+  it("keeps draw utils tile mappings statically typed", () => {
+    const legacyTileCast = ["as", "Tile"].join(" ")
+
+    expect(readDrawUtilsSource()).not.toContain(legacyTileCast)
+  })
+
   it("still renders the BSP demo on demand", async () => {
     vi.resetModules()
     const { runBspDemo } = await import(

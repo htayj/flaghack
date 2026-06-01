@@ -22,33 +22,35 @@ type Tile = {
   bg?: boolean
 }
 
+const tile = (value: Tile): Tile => value
+
 type VEntity = { dist: number; entity: Entity }
 export type Tiles = Array<Array<Tile>>
 const getTile = (e: Entity | undefined): Tile =>
   defined(e)
     ? EEntity.$match({
-      player: () => ({ color: "white", char: "@" }),
-      ranger: () => ({ color: "magenta", char: "@" }),
-      hippie: () => ({ color: "yellow", char: "h" }),
-      wook: () => ({ color: "cyan", char: "h" }),
-      acidcop: () => ({ color: "magenta", char: "K" }),
-      lesser_egregore: () => ({ color: "green", char: "e" }),
-      greater_egregore: () => ({ color: "green", char: "E" }),
-      collective_egregore: () => ({ color: "green", char: "E" }),
-      flag: () => ({ color: "yellow", bright: true, char: "F" }),
-      water: () => ({ color: "cyan", char: "!" }),
-      booze: () => ({ color: "yellow", char: "!" }),
-      milk: () => ({ color: "white", char: "!" }),
-      acid: () => ({ color: "green", char: "!" }),
-      bacon: () => ({ color: "red", bright: true, char: "%" }),
-      poptart: () => ({ color: "yellow", bright: true, char: "%" }),
-      trailmix: () => ({ color: "yellow", char: "%" }),
-      pancake: () => ({ color: "white", bright: true, char: "%" }),
-      soup: () => ({ color: "red", char: "%" }),
-      wall: () => ({ color: "white", char: "#" }),
-      tunnel: () => ({ color: "black", bright: true, char: "," }),
-      floor: () => ({ color: "black", bright: true, char: "." })
-    })(e) as Tile
+      player: () => tile({ color: "white", char: "@" }),
+      ranger: () => tile({ color: "magenta", char: "@" }),
+      hippie: () => tile({ color: "yellow", char: "h" }),
+      wook: () => tile({ color: "cyan", char: "h" }),
+      acidcop: () => tile({ color: "magenta", char: "K" }),
+      lesser_egregore: () => tile({ color: "green", char: "e" }),
+      greater_egregore: () => tile({ color: "green", char: "E" }),
+      collective_egregore: () => tile({ color: "green", char: "E" }),
+      flag: () => tile({ color: "yellow", bright: true, char: "F" }),
+      water: () => tile({ color: "cyan", char: "!" }),
+      booze: () => tile({ color: "yellow", char: "!" }),
+      milk: () => tile({ color: "white", char: "!" }),
+      acid: () => tile({ color: "green", char: "!" }),
+      bacon: () => tile({ color: "red", bright: true, char: "%" }),
+      poptart: () => tile({ color: "yellow", bright: true, char: "%" }),
+      trailmix: () => tile({ color: "yellow", char: "%" }),
+      pancake: () => tile({ color: "white", bright: true, char: "%" }),
+      soup: () => tile({ color: "red", char: "%" }),
+      wall: () => tile({ color: "white", char: "#" }),
+      tunnel: () => tile({ color: "black", bright: true, char: "," }),
+      floor: () => tile({ color: "black", bright: true, char: "." })
+    })(e)
     : { color: "black", char: ".", bright: true }
 
 const tileToText = ({ char }: Tile) => `${char}`
@@ -90,11 +92,11 @@ const drawDij = (world: Set<VEntity>): Tiles => {
       .map((_, x) => worldMap.get(posKey({ x, y })))
       .map(List)
       .map((l) => l.first())
-      .map(
-        (v) => ({
+      .map((v) =>
+        tile({
           color: "white",
           char: v?.dist === Infinity ? "i" : v?.dist.toString() ?? "?"
-        } as Tile)
+        })
       )
   )
   return fullmap.map((r) => r.toArray()).toArray()

@@ -26,6 +26,12 @@ const expectNoAliasedRowFill = (source: string) => {
   expect(source).not.toContain(".fill(Array<null>")
 }
 
+const legacyUndefinedAliasName = ["Undef", "Or"].join("")
+
+const expectNoLocalUndefinedAlias = (source: string) => {
+  expect(source).not.toContain(legacyUndefinedAliasName)
+}
+
 const withRandomUUID = (test: () => void) => {
   if (globalThis.crypto?.randomUUID !== undefined) {
     test()
@@ -56,6 +62,12 @@ const withRandomUUID = (test: () => void) => {
     }
   }
 }
+
+describe("web util source hygiene", () => {
+  it("does not use the local undefined union alias", () => {
+    expectNoLocalUndefinedAlias(readFileSync(utilSourcePath, "utf8"))
+  })
+})
 
 describe("web nullMatrix", () => {
   it("returns the requested immutable matrix dimensions", () => {

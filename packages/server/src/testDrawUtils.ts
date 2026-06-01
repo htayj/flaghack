@@ -2,7 +2,7 @@ import { EEntity, type Pos as PosSchema } from "@flaghack/domain/schemas"
 import { Option } from "effect"
 import { defined } from "effect/Match"
 import { List, Map, type Set } from "immutable"
-import { nullMatrix, type UndefOr } from "./util.js"
+import { nullMatrix } from "./util.js"
 import type { Entity, World } from "./world.js"
 
 type Pos = typeof PosSchema.Type
@@ -24,7 +24,7 @@ type Tile = {
 
 type VEntity = { dist: number; entity: Entity }
 export type Tiles = Array<Array<Tile>>
-const getTile = (e: UndefOr<Entity>): Tile =>
+const getTile = (e: Entity | undefined): Tile =>
   defined(e)
     ? EEntity.$match({
       player: () => ({ color: "white", char: "@" }),

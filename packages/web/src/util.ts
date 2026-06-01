@@ -2,8 +2,7 @@ import { List, Map } from "immutable"
 
 export type Matrix<T> = List<List<T>>
 
-export type UndefOr<T> = T | undefined
-export const defined = <T>(a: UndefOr<T>) => a !== undefined
+export const defined = <T>(a: T | undefined): a is T => a !== undefined
 
 export const nullMatrix = (h: number, w: number): Matrix<null> =>
   List(
@@ -14,7 +13,7 @@ export const nullMatrix = (h: number, w: number): Matrix<null> =>
 export const filterIs = <T, R extends T>(
   u: T,
   f: (a: T) => a is R
-): UndefOr<R> => (f(u) ? u : undefined)
+): R | undefined => (f(u) ? u : undefined)
 
 export const identity = <T>(a: T) => a
 export const noop = <T>(_: T) => undefined

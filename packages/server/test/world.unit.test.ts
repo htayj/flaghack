@@ -50,6 +50,21 @@ describe("BSPGenLevel", () => {
     }
   })
 
+  it("uses long-form array types in world helper signatures", () => {
+    const worldSource = readFileSync(
+      new URL("../src/world.ts", import.meta.url),
+      "utf8"
+    )
+    const legacyArrayShorthandSnippets = [
+      ["arr: ", "T", "[]"].join(""),
+      ["number", "[]"].join("")
+    ]
+
+    for (const snippet of legacyArrayShorthandSnippets) {
+      expect(worldSource).not.toContain(snippet)
+    }
+  })
+
   it("places every generated entity on the requested dungeon level", () => {
     const dlvl = 7
     const world = BSPGenLevel(777, dlvl)

@@ -2,12 +2,14 @@ import {
   AnyCreature,
   AnyItem,
   conforms,
-  DirectionalVariant,
   EEntity,
-  Entity,
-  Hippie,
-  Player,
-  World
+  Hippie
+} from "@flaghack/domain/schemas"
+import type {
+  DirectionalVariant as DirectionalVariantSchema,
+  Entity as EntitySchema,
+  Player as PlayerSchema,
+  World as WorldSchema
 } from "@flaghack/domain/schemas"
 import { HashMap, Option } from "effect"
 import { filter, findFirst } from "effect/HashMap"
@@ -18,13 +20,14 @@ import { groundFlag, waterbottle } from "./items.js"
 import { range } from "effect/Array"
 import { Set } from "immutable"
 import prand from "pure-rand"
-import { collideP, shift, TPos } from "./position.js"
+import { collideP, shift } from "./position.js"
+import type { TPos } from "./position.js"
 import { floor, isTerrain, testWalls, tunnel, wall } from "./terrain.js"
 import { dijkstraPath } from "./worldUtil.js"
 
-export type Entity = typeof Entity.Type
-type Player = typeof Player.Type
-export type World = typeof World.Type
+export type Entity = typeof EntitySchema.Type
+type Player = typeof PlayerSchema.Type
+export type World = typeof WorldSchema.Type
 
 export const initWorld: Array<Entity> = [
   player(3, 3, 0),
@@ -99,7 +102,7 @@ const randBool = (
   return [num === 1, rng2]
 }
 const filterSplit = <T>(
-  arr: T[],
+  arr: Array<T>,
   fn: (a: T) => boolean
 ) => [arr.filter(fn), arr.filter((a) => !fn(a))]
 const getRequiredAt = <T>(
@@ -126,8 +129,8 @@ const getSpatialInfo = (
   number,
   number,
   number,
-  number[],
-  number[]
+  Array<number>,
+  Array<number>
 ] => {
   const xs = level.map((e) => e.at.x)
   const ys = level.map((e) => e.at.y)
@@ -267,7 +270,7 @@ const wallSW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y + 1))
 const determineWallVariant = (
   entity: Entity,
   world: Array<Entity>
-): typeof DirectionalVariant.Type => {
+): typeof DirectionalVariantSchema.Type => {
   // const n = normalNeighbors(e, w).filter((n) => n._tag === "wall")
   const n = wallN(world)(entity)
   const w = wallW(world)(entity)

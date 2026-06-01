@@ -35,6 +35,21 @@ describe("BSPGenLevel", () => {
     }
   })
 
+  it("uses Array.some for leaf-linking existence checks", () => {
+    const worldSource = readFileSync(
+      new URL("../src/world.ts", import.meta.url),
+      "utf8"
+    )
+    const legacyFindSnippets = [
+      ["!!floorsA.", "find("].join(""),
+      ["!!floorsB.", "find("].join("")
+    ]
+
+    for (const snippet of legacyFindSnippets) {
+      expect(worldSource).not.toContain(snippet)
+    }
+  })
+
   it("places every generated entity on the requested dungeon level", () => {
     const dlvl = 7
     const world = BSPGenLevel(777, dlvl)

@@ -158,8 +158,8 @@ const _linkLeaves = (
 
   // fixme replace all the rest of this with a pathfinding to link random points on edges....
   const yIntersectValues = Set(ysB).intersect(Set(ysA)).filter((y) =>
-    !!floorsA.find((f) => f.at.y === y && (maxXA === f.at.x))
-    && !!floorsB.find((f) => f.at.y === y && (minXB === f.at.x))
+    floorsA.some((f) => f.at.y === y && maxXA === f.at.x)
+    && floorsB.some((f) => f.at.y === y && minXB === f.at.x)
   ).toArray()
   if (yIntersectValues.length > 0) {
     // console.log(
@@ -190,8 +190,8 @@ const _linkLeaves = (
     return [merged, rng2]
   }
   const xIntersectValues = Set(xsB).intersect(Set(xsA)).filter((x) =>
-    !!floorsA.find((f) => f.at.x === x && maxYA === f.at.y)
-    && !!floorsB.find((f) => f.at.x === x && maxYB === f.at.y)
+    floorsA.some((f) => f.at.x === x && maxYA === f.at.y)
+    && floorsB.some((f) => f.at.x === x && maxYB === f.at.y)
   ).toArray()
   if (xIntersectValues.length > 0) {
     // console.log(

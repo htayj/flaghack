@@ -2,22 +2,21 @@ import {
   AnyTerrain,
   conforms,
   EAction,
-  Entity,
-  Key,
-  Pos,
-  World
+  type Entity as EntitySchema,
+  type Key as KeySchema,
+  type Pos as PosSchema,
+  type World as WorldSchema
 } from "@flaghack/domain/schemas"
 // import blessed from "blessed"
-import { getTile, Tile } from "@flaghack/domain/display"
+import { getTile, type Tile } from "@flaghack/domain/display"
 import { Effect, HashMap } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import React, { useEffect, useRef, useState } from "react"
-import { BoxElement } from "react-blessed"
-import { map, UndefOr } from "scala-ts/UndefOr.js"
+import type { BoxElement } from "react-blessed"
 import { GameClient } from "../GameClient.js"
 import { MainLive } from "../runtime.js"
-import BGameBoard, { Tiles } from "./BGameBoard.js"
+import BGameBoard, { type Tiles } from "./BGameBoard.js"
 import Inventory from "./Inventory.js"
 import Messages from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
@@ -35,10 +34,10 @@ export const nullMatrix = (h: number, w: number): Matrix<null> =>
       List(Array.from({ length: w }, () => null)))
   )
 export const isTerrain = conforms(AnyTerrain)
-type World = typeof World.Type
-type Key = typeof Key.Type
-type Entity = typeof Entity.Type
-type Pos = typeof Pos.Type
+type World = typeof WorldSchema.Type
+type Key = typeof KeySchema.Type
+type Entity = typeof EntitySchema.Type
+type Pos = typeof PosSchema.Type
 type Props = {
   username: string
 }
@@ -68,18 +67,21 @@ const parseInput = (input: string) => {
   }
 }
 
-const getPosition = (e: Entity): UndefOr<Pos> =>
+const getPosition = (e: Entity): Pos | undefined =>
   e.in === "world" ? e.at : undefined
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
-const zindex = (p: typeof Entity.Type) => isTerrain(p) ? 0 : 1
+const zindex = (p: Entity) => isTerrain(p) ? 0 : 1
 
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
 
   const worldMap = Map(world)
     .valueSeq()
-    .groupBy((entity) => map(getPosition(entity), (p: Pos) => posKey(p)))
+    .groupBy((entity) => {
+      const position = getPosition(entity)
+      return position === undefined ? undefined : posKey(position)
+    })
     .map((v) => v.valueSeq().toArray())
   const fullmap = emptyMatrix.map((row, y) =>
     row
@@ -176,7 +178,7 @@ export default function BPlaying(_props: Props) {
     }
   }, [])
 
-  const onDoPickup = (pickupItems: Key[]) => {
+  const onDoPickup = (pickupItems: Array<Key>) => {
     apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(() => {
         pickupRef.current?.hide()
@@ -186,7 +188,7 @@ export default function BPlaying(_props: Props) {
       Effect.runPromise
     )
   }
-  const onDoDrop = (dropItems: Key[]) => {
+  const onDoDrop = (dropItems: Array<Key>) => {
     apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
       Effect.andThen(() => {
         dropRef.current?.hide()

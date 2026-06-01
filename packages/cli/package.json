@@ -39,8 +39,7 @@
     "immutable": "^4.0.0-rc.12",
     "react": "18.2.0",
     "react-blessed": "npm:@htayj/react-blessed@^0.7.3",
-    "react-devtools": "7.0.1",
-    "scala-ts": "^0.1.8"
+    "react-devtools": "7.0.1"
   },
   "devDependencies": {
     "@types/blessed": "0.1.25",

@@ -152,9 +152,6 @@ importers:
       react-devtools:
         specifier: 7.0.1
         version: 7.0.1
-      scala-ts:
-        specifier: ^0.1.8
-        version: 0.1.8(immutable@4.3.7)
     devDependencies:
       '@types/blessed':
         specifier: 0.1.25
@@ -3389,12 +3386,6 @@ packages:
 
   sax@1.4.1:
     resolution: {integrity: sha512-+aWOz7yVScEGoKNd4PA10LZ8sk0A/z5+nXQG5giUO5rprX9jgYsTdov9qCchZiPIZezbZH+jRut8nPodFAX4Jg==}
-
-  scala-ts@0.1.8:
-    resolution: {integrity: sha512-Vvnq7inF0uRDVCYcuLW/YZrJ/YimIMoQDg6CZGOqMJBW7bDSvaJs/R3zhf4s5wJ/EQgdff9p6ZDRpnsPjlXzJg==}
-    engines: {node: '>=6.0.0'}
-    peerDependencies:
-      immutable: ^4.0.0-rc.12
 
   scheduler@0.22.0:
     resolution: {integrity: sha512-6QAm1BgQI88NPYymgGQLCZgvep4FyePDWFpXVK+zNSUgHwlqpJy8VEh8Et0KxTACS4VWwMousBElAZOH9nkkoQ==}
@@ -7283,10 +7274,6 @@ snapshots:
       is-regex: 1.2.1
 
   sax@1.4.1: {}
-
-  scala-ts@0.1.8(immutable@4.3.7):
-    dependencies:
-      immutable: 4.3.7
 
   scheduler@0.22.0:
     dependencies:

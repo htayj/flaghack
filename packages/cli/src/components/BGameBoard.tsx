@@ -1,15 +1,14 @@
 // import { Match } from "effect"
-import { Color, Tile } from "@flaghack/domain/display"
+import type { Color, Tile } from "@flaghack/domain/display"
 import { Map } from "immutable"
 import React from "react"
 // import blessed from "react-blessed"
-import { getOrElse } from "scala-ts/UndefOr.js"
 import { identity } from "../util.js"
 
 type Props = {
   tiles: Tiles
 }
-export type Tiles = Tile[][]
+export type Tiles = Array<Array<Tile>>
 
 const colorNumMap = Map<Color, number>({
   black: 0,
@@ -21,8 +20,8 @@ const colorNumMap = Map<Color, number>({
   cyan: 6,
   white: 7
 })
-const maybeDo = (doP?: boolean) => <T extends Function>(fn: T) =>
-  !!doP ? fn : identity
+const maybeDo = (doP?: boolean) => (fn: (value: number) => number) =>
+  doP ? fn : identity
 const fgColor = (num: number) => num + 30
 const bgColor = (num: number) => num + 10
 const brightenColor = (num: number) => num + 60
@@ -31,12 +30,12 @@ const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
   escColor(
     maybeDo(bg)(bgColor)(
       maybeDo(bright)(brightenColor)(
-        fgColor(getOrElse(colorNumMap.get(color), () => 7))
+        fgColor(colorNumMap.get(color) ?? 7)
       )
     )
   )
 
-const tileToText = ({ color, char, bright, bg }: Tile) =>
+const tileToText = ({ bg, bright, char, color }: Tile) =>
   `${ecolor(color, bright, bg)}${char}`
 export default function({ tiles }: Props) {
   const content = tiles.map((row) => row.map(tileToText).join("")).join(

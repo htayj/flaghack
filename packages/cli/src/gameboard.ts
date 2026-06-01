@@ -2,9 +2,8 @@ import blessed from "blessed"
 // import { Map } from "immutable"
 // import { Box, Text } from "ink"
 // import React from "react"
-// import { getOrElse } from "scala-ts/UndefOr.js"
 // import { identity } from "./util.js"
-import { Tiles, tilesToText } from "./util.js"
+import { type Tiles, tilesToText } from "./util.js"
 
 // const identity = <T>(a: T) => a
 

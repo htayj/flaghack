@@ -40,9 +40,17 @@ const expectedInventoryOutputMetadata = [
 
 type PackageDependencyMap = Readonly<Record<string, string>>
 
+type PackageDependencySectionName =
+  | "dependencies"
+  | "devDependencies"
+  | "optionalDependencies"
+  | "peerDependencies"
+
 type PackageJsonWithMetadata = {
   readonly dependencies?: PackageDependencyMap
   readonly devDependencies?: PackageDependencyMap
+  readonly optionalDependencies?: PackageDependencyMap
+  readonly peerDependencies?: PackageDependencyMap
   readonly engines?: {
     readonly node?: string
   }
@@ -68,6 +76,18 @@ const effectFamilyDependencyEntries = (
   Object.entries(dependencies ?? {}).filter(([packageName]) =>
     isEffectFamilyPackageName(packageName)
   )
+
+const packageDependencySections = (
+  cliPackageJson: PackageJsonWithMetadata
+): ReadonlyArray<
+  readonly [PackageDependencySectionName, PackageDependencyMap | undefined]
+> =>
+  [
+    ["dependencies", cliPackageJson.dependencies],
+    ["devDependencies", cliPackageJson.devDependencies],
+    ["optionalDependencies", cliPackageJson.optionalDependencies],
+    ["peerDependencies", cliPackageJson.peerDependencies]
+  ] as const
 
 const readCliViteBuildTarget = async (): Promise<string> => {
   const viteConfigModule = await import(
@@ -167,14 +187,28 @@ describe("CLI metadata", () => {
     expect(duplicateDependencyNames).toEqual([])
   })
 
+  it("does not declare scala-ts in direct CLI dependency metadata", () => {
+    const cliPackageJson = readCliPackageJson()
+
+    for (
+      const [sectionName, dependencies] of packageDependencySections(
+        cliPackageJson
+      )
+    ) {
+      expect(
+        dependencies ?? {},
+        `${sectionName} must not declare scala-ts`
+      ).not.toHaveProperty("scala-ts")
+    }
+  })
+
   it("does not use latest for direct CLI dependencies", () => {
     const cliPackageJson = readCliPackageJson()
-    const dependencySections = [
-      ["dependencies", cliPackageJson.dependencies],
-      ["devDependencies", cliPackageJson.devDependencies]
-    ] as const
-
-    for (const [sectionName, dependencies] of dependencySections) {
+    for (
+      const [sectionName, dependencies] of packageDependencySections(
+        cliPackageJson
+      )
+    ) {
       for (
         const [packageName, version] of Object.entries(
           dependencies ?? {}

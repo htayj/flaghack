@@ -92,9 +92,11 @@ const makeAllWalls = (width: number, height: number, dlvl: number) => [
     range(0, width).map((x) => wall(x, y, dlvl))
   ).flat()
 ]
-const randBool = (rng: prand.RandomGenerator) => {
+const randBool = (
+  rng: prand.RandomGenerator
+): [boolean, prand.RandomGenerator] => {
   const [num, rng2] = prand.uniformIntDistribution(0, 1, rng)
-  return [!!num, rng2] as [boolean, prand.RandomGenerator]
+  return [num === 1, rng2]
 }
 const filterSplit = <T>(
   arr: T[],

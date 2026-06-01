@@ -91,6 +91,14 @@ describe("root package metadata", () => {
     )
   })
 
+  it("does not pin unused @effect/sql", () => {
+    const rootPackageJson = readRootPackageJson()
+
+    expect(rootPackageJson.pnpm?.overrides ?? {}).not.toHaveProperty(
+      "@effect/sql"
+    )
+  })
+
   it("does not use latest for direct Effect-family dev dependencies", () => {
     const rootPackageJson = readRootPackageJson()
     const latestEffectFamilyDevDependencies = Object.entries(

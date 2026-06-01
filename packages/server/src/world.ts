@@ -102,6 +102,17 @@ const filterSplit = <T>(
   arr: T[],
   fn: (a: T) => boolean
 ) => [arr.filter(fn), arr.filter((a) => !fn(a))]
+const getRequiredAt = <T>(
+  values: ReadonlyArray<T>,
+  index: number,
+  description: string
+): T => {
+  const value = values.at(index)
+  if (value === undefined) {
+    throw new Error(`${description} missing item at index ${index}`)
+  }
+  return value
+}
 
 // const getRoomStats = (chunk: Array<Entity>) => {
 
@@ -143,24 +154,28 @@ const _linkLeaves = (
   const [, , minXB, minYB, maxXB, maxYB, xsB, ysB] = getSpatialInfo(
     floorsB
   )
-  const z = floorsB[0].at.z // fixme?
+  const z = getRequiredAt(floorsB, 0, "right leaf floor").at.z
 
   // fixme replace all the rest of this with a pathfinding to link random points on edges....
-  const yIntersect = Set(ysB).intersect(Set(ysA)).filter((y) =>
+  const yIntersectValues = Set(ysB).intersect(Set(ysA)).filter((y) =>
     !!floorsA.find((f) => f.at.y === y && (maxXA === f.at.x))
     && !!floorsB.find((f) => f.at.y === y && (minXB === f.at.x))
-  )
-  if (yIntersect.size > 0) {
+  ).toArray()
+  if (yIntersectValues.length > 0) {
     // console.log(
     //   "able to link on y intersection",
-    //   JSON.stringify(yIntersect.toArray())
+    //   JSON.stringify(yIntersectValues)
     // )
     const [i, rng2] = prand.uniformIntDistribution(
       0,
-      yIntersect.size - 1,
+      yIntersectValues.length - 1,
       rng
     )
-    const linkLineY = yIntersect.toArray()[i]
+    const linkLineY = getRequiredAt(
+      yIntersectValues,
+      i,
+      "y intersection"
+    )
 
     const tunnels = (minXA < minXB
       ? range(maxXA + 1, minXB - 1)
@@ -174,21 +189,25 @@ const _linkLeaves = (
     // )
     return [merged, rng2]
   }
-  const xIntersect = Set(xsB).intersect(Set(xsA)).filter((x) =>
+  const xIntersectValues = Set(xsB).intersect(Set(xsA)).filter((x) =>
     !!floorsA.find((f) => f.at.x === x && maxYA === f.at.y)
     && !!floorsB.find((f) => f.at.x === x && maxYB === f.at.y)
-  )
-  if (xIntersect.size > 0) {
+  ).toArray()
+  if (xIntersectValues.length > 0) {
     // console.log(
     //   "able to link on x intersection: ",
-    //   JSON.stringify(xIntersect.toArray())
+    //   JSON.stringify(xIntersectValues)
     // )
     const [i, rng2] = prand.uniformIntDistribution(
       0,
-      xIntersect.size - 1,
+      xIntersectValues.length - 1,
       rng
     )
-    const linkLineX = xIntersect.toArray()[i]
+    const linkLineX = getRequiredAt(
+      xIntersectValues,
+      i,
+      "x intersection"
+    )
 
     const tunnels = (minYA < minYB
       ? range(maxYA + 1, minYB - 1)
@@ -212,8 +231,8 @@ const _linkLeaves = (
     floorsB.length - 1,
     rng2
   )
-  const fa = floorsA[ia]
-  const fb = floorsB[ib]
+  const fa = getRequiredAt(floorsA, ia, "left leaf floor")
+  const fb = getRequiredAt(floorsB, ib, "right leaf floor")
   const world = HashMap.fromIterable(a.concat(b).map((e) => [e.key, e]))
 
   const tunnels = dijkstraPath(fa.at, fb.at, tunnelingDist, world, true)

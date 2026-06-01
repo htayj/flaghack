@@ -17,6 +17,24 @@ describe("BSPGenLevel", () => {
     expect(worldSource).not.toContain(legacyTupleAssertion)
   })
 
+  it("uses checked indexing in leaf linking", () => {
+    const worldSource = readFileSync(
+      new URL("../src/world.ts", import.meta.url),
+      "utf8"
+    )
+    const legacyIndexingSnippets = [
+      "floorsB[0]",
+      "yIntersect.toArray()[i]",
+      "xIntersect.toArray()[i]",
+      "floorsA[ia]",
+      "floorsB[ib]"
+    ]
+
+    for (const snippet of legacyIndexingSnippets) {
+      expect(worldSource).not.toContain(snippet)
+    }
+  })
+
   it("places every generated entity on the requested dungeon level", () => {
     const dlvl = 7
     const world = BSPGenLevel(777, dlvl)

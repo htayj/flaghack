@@ -1,4 +1,4 @@
-import { Data, Either, Schema as S } from "effect"
+import { Data, Schema as S } from "effect"
 import { allof, bothof, oneof, prop, struct } from "./util.js"
 
 // using extend and union - cant use .make?
@@ -288,13 +288,9 @@ export type Action = typeof SAction.Type
 export const SEEntity = S.Data(Entity)
 export const EEntity = Data.taggedEnum<typeof SEEntity.Type>()
 
-export const conforms = <T>(
-  schema: S.Schema<any, T, never>
-) =>
-(u: unknown): u is T =>
-  S.validateEither(schema)(u).pipe(
-    Either.match({ onLeft: () => false, onRight: () => true })
-  )
+export const conforms = <A, I>(
+  schema: S.Schema<A, I, never>
+): (u: unknown) => u is A => S.is(schema)
 
 export const World = S.HashMap({ key: S.String, value: Entity })
 export const GameState = S.Struct({ world: World })

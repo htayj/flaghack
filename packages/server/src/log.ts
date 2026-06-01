@@ -1,13 +1,13 @@
 import { Effect, Logger } from "effect"
 import { succeed, suspend } from "effect/Effect"
 
-const _log: Array<string> = []
+let logEntries: ReadonlyArray<string> = []
 // export const log = (...m: Array<string>) => {
-//   _log.unshift(m.join(" "))
+//   logEntries = [m.join(" "), ...logEntries]
 // }
 export const log = Effect.log
 export const logger = Logger.make(({ message }) => {
-  _log.push(`${message}`)
+  logEntries = [...logEntries, `${message}`]
 })
 
-export const getLogs = suspend(() => succeed([..._log]))
+export const getLogs = suspend(() => succeed([...logEntries]))

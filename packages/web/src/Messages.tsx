@@ -1,10 +1,14 @@
 import type { List } from "immutable"
 
+export const MAX_VISIBLE_MESSAGES = 50
+
 type Props = {
   messages: List<string>
 }
 
 export default function Messages({ messages }: Props) {
+  const visibleMessages = messages.take(MAX_VISIBLE_MESSAGES)
+
   return (
     <div
       role="log"
@@ -20,7 +24,16 @@ export default function Messages({ messages }: Props) {
         overflow: "hidden"
       }}
     >
-      {messages.join("\n")}
+      <ul
+        role="list"
+        style={{ margin: 0, padding: 0, listStyle: "none" }}
+      >
+        {visibleMessages.map((message, index) => (
+          <li role="listitem" key={`${index}:${message}`}>
+            {message}
+          </li>
+        )).toArray()}
+      </ul>
     </div>
   )
 }

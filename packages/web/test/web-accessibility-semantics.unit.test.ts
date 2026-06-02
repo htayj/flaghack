@@ -8,7 +8,7 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import GameBoard, { type Tiles } from "../src/GameBoard.tsx"
 import Inventory from "../src/Inventory.tsx"
-import Messages from "../src/Messages.tsx"
+import Messages, { MAX_VISIBLE_MESSAGES } from "../src/Messages.tsx"
 import PickupPopup from "../src/PickupPopup.tsx"
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
@@ -51,6 +51,10 @@ describe("web accessibility semantics", () => {
     expect(messagesSource).toContain("role=\"log\"")
     expect(messagesSource).toContain("aria-live=\"polite\"")
     expect(messagesSource).toContain("aria-label=\"Messages\"")
+    expect(messagesSource).toContain("role=\"list\"")
+    expect(messagesSource).toContain("role=\"listitem\"")
+    expect(messagesSource).toContain("MAX_VISIBLE_MESSAGES")
+    expect(messagesSource).not.toContain("messages.join(")
 
     expect(inventorySource).toContain("<section")
     expect(inventorySource).toContain(
@@ -88,7 +92,7 @@ describe("web accessibility semantics", () => {
     expect(markup).toContain(".")
   })
 
-  it("renders messages as a polite log without changing message text", () => {
+  it("renders messages as bounded list entries inside a polite log", () => {
     const markup = renderToStaticMarkup(
       React.createElement(Messages, { messages: List(["hello", "world"]) })
     )
@@ -96,7 +100,34 @@ describe("web accessibility semantics", () => {
     expect(markup).toContain("role=\"log\"")
     expect(markup).toContain("aria-live=\"polite\"")
     expect(markup).toContain("aria-label=\"Messages\"")
-    expect(markup).toContain("hello\nworld")
+    expect(markup).toContain("role=\"list\"")
+    expect(markup).toContain("role=\"listitem\"")
+    expect(markup).toContain("hello")
+    expect(markup).toContain("world")
+    expect(markup).not.toContain("hello\nworld")
+  })
+
+  it("renders only the newest visible messages first", () => {
+    const messages = List(
+      Array.from(
+        { length: MAX_VISIBLE_MESSAGES + 2 },
+        (_, index) => `newest-${index}`
+      )
+    )
+    const markup = renderToStaticMarkup(
+      React.createElement(Messages, { messages })
+    )
+
+    const listItemCount = markup.match(/role="listitem"/g)?.length ?? 0
+    expect(listItemCount).toBe(MAX_VISIBLE_MESSAGES)
+    expect(markup).toContain("newest-0")
+    expect(markup).toContain("newest-1")
+    expect(markup).toContain(`newest-${MAX_VISIBLE_MESSAGES - 1}`)
+    expect(markup.indexOf(">newest-0<")).toBeLessThan(
+      markup.indexOf(">newest-1<")
+    )
+    expect(markup).not.toContain(`newest-${MAX_VISIBLE_MESSAGES}`)
+    expect(markup).not.toContain(`newest-${MAX_VISIBLE_MESSAGES + 1}`)
   })
 
   it("renders inventory as a named region with list semantics", () => {

@@ -29,7 +29,7 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": true,
     "strictNullChecks": true,
     "baseUrl": ".",
     "target": "ES2022",

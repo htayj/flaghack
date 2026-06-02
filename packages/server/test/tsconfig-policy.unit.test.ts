@@ -21,6 +21,7 @@ const expectedDomainSourceReference = "../domain/tsconfig.src.json"
 type RootTsConfig = {
   readonly compilerOptions?: {
     readonly noEmitOnError?: unknown
+    readonly noUncheckedIndexedAccess?: unknown
     readonly paths?: Readonly<Record<string, ReadonlyArray<string>>>
   }
 }
@@ -66,6 +67,13 @@ const isPackageRootIndexAliasTarget = (target: string): boolean =>
 describe("root TypeScript config policy", () => {
   it("refuses to emit build artifacts when type errors are present", () => {
     expect(readRootTsConfig().compilerOptions?.noEmitOnError).toBe(true)
+  })
+
+  it("uses strict indexed access checks", () => {
+    expect(readRootTsConfig().compilerOptions?.noUncheckedIndexedAccess)
+      .toBe(
+        true
+      )
   })
 
   it("does not point package root aliases at missing source indexes", () => {

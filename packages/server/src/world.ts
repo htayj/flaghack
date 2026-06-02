@@ -104,7 +104,7 @@ const randBool = (
 const filterSplit = <T>(
   arr: Array<T>,
   fn: (a: T) => boolean
-) => [arr.filter(fn), arr.filter((a) => !fn(a))]
+): [Array<T>, Array<T>] => [arr.filter(fn), arr.filter((a) => !fn(a))]
 const getRequiredAt = <T>(
   values: ReadonlyArray<T>,
   index: number,

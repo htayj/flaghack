@@ -103,10 +103,10 @@ export default function BPlaying(_props: Props) {
     world: getWorld,
     inventory: getInventory
   }).pipe(
-    Effect.andThen(({ inventory, world }) => {
-      setWorld(world)
-      setInventory(inventory)
-    })
+    Effect.tap(({ world }) => Effect.sync(() => setWorld(world))),
+    Effect.tap(({ inventory }) =>
+      Effect.sync(() => setInventory(inventory))
+    )
   )
 
   useEffect(() => {
@@ -119,7 +119,8 @@ export default function BPlaying(_props: Props) {
     }
 
     initialWorldFetchRequestedRef.current = true
-    getWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
+    getWorld.pipe(
+      Effect.tap((world) => Effect.sync(() => setWorld(world))),
       Effect.runPromise
     )
   }, [world])
@@ -137,7 +138,9 @@ export default function BPlaying(_props: Props) {
     const input = event.key
     if (input === ",") {
       getPickupItemsFor("player").pipe(
-        Effect.andThen(setPickupContents),
+        Effect.tap((contents) =>
+          Effect.sync(() => setPickupContents(contents))
+        ),
         Effect.runPromise
       )
       setShowPickup(true)
@@ -204,9 +207,7 @@ export default function BPlaying(_props: Props) {
   const onDoPickup = (pickupItems: Array<Key>) => {
     doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
-      Effect.andThen(() => {
-        setShowPickup(false)
-      }),
+      Effect.tap(() => Effect.sync(() => setShowPickup(false))),
       Effect.runPromise
     )
   }

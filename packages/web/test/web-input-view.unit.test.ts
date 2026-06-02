@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { EAction } from "@flaghack/domain/schemas"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import * as ts from "typescript"
 import { parseInput } from "../src/Playing.tsx"
 
 const playingPath = fileURLToPath(
@@ -42,6 +43,113 @@ const findForbiddenSource = (
         : []
     )
   )
+
+const parsePlayingSource = (source: string): ts.SourceFile =>
+  ts.createSourceFile(
+    "Playing.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  )
+
+const sourceLine = (sourceFile: ts.SourceFile, node: ts.Node): number =>
+  sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
+  + 1
+
+const nodeLineText = (sourceFile: ts.SourceFile, node: ts.Node): string =>
+  node.getText(sourceFile).split(/\r?\n/, 1)[0]?.trim() ?? ""
+
+const isEffectAndThenCall = (
+  sourceFile: ts.SourceFile,
+  node: ts.Node
+): node is ts.CallExpression =>
+  ts.isCallExpression(node)
+  && node.expression.getText(sourceFile) === "Effect.andThen"
+
+const findForbiddenUiBoundarySetterReferences = (
+  sourceFile: ts.SourceFile,
+  root: ts.Node,
+  forbiddenSetters: ReadonlySet<string>
+): Array<SourceFinding> => {
+  const findings: Array<SourceFinding> = []
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && forbiddenSetters.has(node.expression.text)
+    ) {
+      findings.push({
+        file: "Playing.tsx",
+        line: sourceLine(sourceFile, node),
+        snippet: node.expression.text,
+        text: nodeLineText(sourceFile, node)
+      })
+      return
+    }
+
+    if (ts.isIdentifier(node) && forbiddenSetters.has(node.text)) {
+      findings.push({
+        file: "Playing.tsx",
+        line: sourceLine(sourceFile, node),
+        snippet: node.text,
+        text: nodeLineText(sourceFile, node)
+      })
+      return
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(root)
+  return findings
+}
+
+const findForbiddenEffectAndThenUiBoundaries = (
+  source: string
+): Array<SourceFinding> => {
+  const sourceFile = parsePlayingSource(source)
+  const forbiddenSetters = new Set([
+    "setWorld",
+    "setInventory",
+    "setPickupContents",
+    "setShowPickup"
+  ])
+  const findings: Array<SourceFinding> = []
+
+  const visit = (node: ts.Node) => {
+    if (isEffectAndThenCall(sourceFile, node)) {
+      for (const argument of node.arguments) {
+        if (
+          ts.isIdentifier(argument)
+          && forbiddenSetters.has(argument.text)
+        ) {
+          findings.push({
+            file: "Playing.tsx",
+            line: sourceLine(sourceFile, argument),
+            snippet: argument.text,
+            text: nodeLineText(sourceFile, argument)
+          })
+        } else if (!ts.isIdentifier(argument)) {
+          const nestedFindings = findForbiddenUiBoundarySetterReferences(
+            sourceFile,
+            argument,
+            forbiddenSetters
+          )
+          for (const finding of nestedFindings) {
+            findings.push(finding)
+          }
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return findings
+}
 
 const onDoPickupSignature =
   /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
@@ -155,10 +263,20 @@ describe("web input/view source guards", () => {
     expect(refreshSource).toContain("Effect.all")
     expect(refreshSource).toMatch(/world\s*:\s*getWorld\b/)
     expect(refreshSource).toMatch(/inventory\s*:\s*getInventory\b/)
+    expect(refreshSource).toContain("Effect.tap")
+    expect(refreshSource).toContain("Effect.sync")
     expect(refreshSource).toMatch(/setWorld\s*\(\s*world\s*\)/)
     expect(refreshSource).toMatch(
       /setInventory\s*\(\s*inventory\s*\)/
     )
+  })
+
+  it("keeps UI state side effects explicit inside Effect chains", () => {
+    expect(
+      findForbiddenEffectAndThenUiBoundaries(
+        readFileSync(playingPath, "utf8")
+      )
+    ).toEqual([])
   })
 
   it("gates player actions and refreshes after movement actions", () => {

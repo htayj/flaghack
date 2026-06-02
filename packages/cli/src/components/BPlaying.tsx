@@ -112,10 +112,10 @@ export default function BPlaying(_props: Props) {
     world: apiGetWorld,
     inventory: apiGetInventory
   }).pipe(
-    Effect.andThen(({ inventory, world }) => {
-      setWorld(world)
-      setInventory(inventory)
-    })
+    Effect.tap(({ world }) => Effect.sync(() => setWorld(world))),
+    Effect.tap(({ inventory }) =>
+      Effect.sync(() => setInventory(inventory))
+    )
   )
 
   useEffect(() => {
@@ -127,9 +127,10 @@ export default function BPlaying(_props: Props) {
     }
 
     initialWorldFetchStarted.current = true
-    apiGetWorld.pipe(Effect.andThen((w) => setWorld(w))).pipe(
-      Effect.andThen(() => pickupRef.current?.hide()),
-      Effect.andThen(() => dropRef.current?.hide()),
+    apiGetWorld.pipe(
+      Effect.tap((world) => Effect.sync(() => setWorld(world))),
+      Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
+      Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
       Effect.provide(MainLive),
       Effect.runPromise
     )
@@ -146,7 +147,9 @@ export default function BPlaying(_props: Props) {
       if (input === ",") {
         setMessages((messages) => messages.unshift("picking up "))
         apiGetPickupItemsFor("player").pipe(
-          Effect.andThen(setPickupContents),
+          Effect.tap((contents) =>
+            Effect.sync(() => setPickupContents(contents))
+          ),
           Effect.provide(MainLive),
           Effect.runPromise
         )
@@ -182,10 +185,8 @@ export default function BPlaying(_props: Props) {
   const onDoPickup = (pickupItems: Array<Key>) => {
     apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
-      Effect.andThen(() => {
-        pickupRef.current?.hide()
-        gameref.current?.focus()
-      }),
+      Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
+      Effect.tap(() => Effect.sync(() => gameref.current?.focus())),
       Effect.provide(MainLive),
       Effect.runPromise
     )
@@ -193,10 +194,8 @@ export default function BPlaying(_props: Props) {
   const onDoDrop = (dropItems: Array<Key>) => {
     apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
-      Effect.andThen(() => {
-        dropRef.current?.hide()
-        gameref.current?.focus()
-      }),
+      Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
+      Effect.tap(() => Effect.sync(() => gameref.current?.focus())),
       Effect.provide(MainLive),
       Effect.runPromise
     )

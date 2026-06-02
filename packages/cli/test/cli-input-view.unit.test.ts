@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import * as ts from "typescript"
 
 const bPlayingSourcePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -32,6 +33,143 @@ const modeUseStateBinding =
 const modeTypeAlias = /\btype\s+Mode\s*=/
 const modeConstDeclaration = /\bconst\s+mode\b[^=\n]*=/
 const modeIncludesConditional = /\.includes\s*\(\s*mode\s*\)/
+
+type ForbiddenEffectAndThenUiSideEffect = {
+  file: string
+  line: number
+  snippet: string
+  text: string
+}
+
+const parseBPlayingSource = (source: string): ts.SourceFile =>
+  ts.createSourceFile(
+    "BPlaying.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  )
+
+const sourceLine = (sourceFile: ts.SourceFile, node: ts.Node): number =>
+  sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line
+  + 1
+
+const nodeLineText = (sourceFile: ts.SourceFile, node: ts.Node): string =>
+  node.getText(sourceFile).split(/\r?\n/, 1)[0]?.trim() ?? ""
+
+const normalizedNodeText = (
+  sourceFile: ts.SourceFile,
+  node: ts.Node
+): string => node.getText(sourceFile).replace(/\s+/g, "")
+
+const isEffectAndThenCall = (
+  sourceFile: ts.SourceFile,
+  node: ts.Node
+): node is ts.CallExpression =>
+  ts.isCallExpression(node)
+  && node.expression.getText(sourceFile) === "Effect.andThen"
+
+const findForbiddenUiBoundaryReferences = (
+  sourceFile: ts.SourceFile,
+  root: ts.Node,
+  forbiddenSetters: ReadonlySet<string>,
+  forbiddenRefOperations: ReadonlySet<string>
+): Array<ForbiddenEffectAndThenUiSideEffect> => {
+  const findings: Array<ForbiddenEffectAndThenUiSideEffect> = []
+
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      if (
+        ts.isIdentifier(node.expression)
+        && forbiddenSetters.has(node.expression.text)
+      ) {
+        findings.push({
+          file: "BPlaying.tsx",
+          line: sourceLine(sourceFile, node),
+          snippet: node.expression.text,
+          text: nodeLineText(sourceFile, node)
+        })
+        return
+      }
+
+      const normalizedCall = normalizedNodeText(sourceFile, node)
+      if (forbiddenRefOperations.has(normalizedCall)) {
+        findings.push({
+          file: "BPlaying.tsx",
+          line: sourceLine(sourceFile, node),
+          snippet: normalizedCall,
+          text: nodeLineText(sourceFile, node)
+        })
+        return
+      }
+    } else if (
+      ts.isIdentifier(node) && forbiddenSetters.has(node.text)
+    ) {
+      findings.push({
+        file: "BPlaying.tsx",
+        line: sourceLine(sourceFile, node),
+        snippet: node.text,
+        text: nodeLineText(sourceFile, node)
+      })
+      return
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(root)
+  return findings
+}
+
+const findForbiddenEffectAndThenUiBoundaries = (
+  source: string
+): Array<ForbiddenEffectAndThenUiSideEffect> => {
+  const sourceFile = parseBPlayingSource(source)
+  const forbiddenSetters = new Set([
+    "setWorld",
+    "setInventory",
+    "setPickupContents"
+  ])
+  const forbiddenRefOperations = new Set([
+    "pickupRef.current?.hide()",
+    "dropRef.current?.hide()",
+    "gameref.current?.focus()"
+  ])
+  const findings: Array<ForbiddenEffectAndThenUiSideEffect> = []
+
+  const visit = (node: ts.Node) => {
+    if (isEffectAndThenCall(sourceFile, node)) {
+      for (const argument of node.arguments) {
+        if (
+          ts.isIdentifier(argument)
+          && forbiddenSetters.has(argument.text)
+        ) {
+          findings.push({
+            file: "BPlaying.tsx",
+            line: sourceLine(sourceFile, argument),
+            snippet: argument.text,
+            text: nodeLineText(sourceFile, argument)
+          })
+        } else if (!ts.isIdentifier(argument)) {
+          const nestedFindings = findForbiddenUiBoundaryReferences(
+            sourceFile,
+            argument,
+            forbiddenSetters,
+            forbiddenRefOperations
+          )
+          for (const finding of nestedFindings) {
+            findings.push(finding)
+          }
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return findings
+}
 
 const extractArrowFunctionBody = (
   source: string,
@@ -143,10 +281,17 @@ describe("CLI input handling static guards", () => {
     expect(refreshSource).toContain("Effect.all")
     expect(refreshSource).toMatch(/world\s*:\s*apiGetWorld\b/)
     expect(refreshSource).toMatch(/inventory\s*:\s*apiGetInventory\b/)
+    expect(refreshSource).toContain("Effect.tap")
+    expect(refreshSource).toContain("Effect.sync")
     expect(refreshSource).toMatch(/setWorld\s*\(\s*world\s*\)/)
     expect(refreshSource).toMatch(
       /setInventory\s*\(\s*inventory\s*\)/
     )
+  })
+
+  it("keeps UI state/ref side effects explicit inside Effect chains", () => {
+    expect(findForbiddenEffectAndThenUiBoundaries(readBPlayingSource()))
+      .toEqual([])
   })
 
   it("returns before action APIs and refreshes after movement actions", () => {

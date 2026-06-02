@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { genKey, nullMatrix } from "@flaghack/cli/util"
+import { cmap, genKey, nullMatrix } from "@flaghack/cli/util"
+import { List, Map as ImmutableMap } from "immutable"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -21,10 +22,42 @@ const getExportedConstSource = (source: string, name: string) => {
     : source.slice(exportStart, nextExport)
 }
 
+const cmapSource = () =>
+  getExportedConstSource(readFileSync(utilSourcePath, "utf8"), "cmap")
+
 const expectNoAliasedRowFill = (source: string) => {
   expect(source).not.toContain("rows.fill(Array")
   expect(source).not.toContain(".fill(Array<null>")
 }
+
+describe("CLI cmap", () => {
+  it("maps immutable lists with type-changing returns", () => {
+    const mapped: List<string> = cmap(
+      (value: number) => `flag-${value}`
+    )(List([0, 1, 2]))
+
+    expect(mapped.toArray()).toEqual(["flag-0", "flag-1", "flag-2"])
+  })
+
+  it("maps arrays and keyed immutable maps with type-changing returns", () => {
+    const mappedArray: Array<string> = cmap(
+      (value: number) => `flag-${value}`
+    )([0, 1, 2])
+    const mappedMap: ImmutableMap<string, string> = cmap(
+      (value: number) => `flag-${value}`
+    )(ImmutableMap<string, number>({ a: 1, b: 2 }))
+
+    expect(mappedArray).toEqual(["flag-0", "flag-1", "flag-2"])
+    expect(mappedMap.toObject()).toEqual({ a: "flag-1", b: "flag-2" })
+  })
+
+  it("is implemented through the collection map method", () => {
+    const source = cmapSource()
+
+    expect(source).toContain(".map(")
+    expect(source).not.toContain(".filter(")
+  })
+})
 
 describe("CLI nullMatrix", () => {
   it("returns the requested immutable matrix dimensions", () => {

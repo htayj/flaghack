@@ -1,4 +1,4 @@
-import { List } from "immutable"
+import { List, type Map } from "immutable"
 import { randomUUID } from "node:crypto"
 
 export type Matrix<T> = List<List<T>>
@@ -24,7 +24,21 @@ type CFilterPredicate<K, V, I> = <F extends V>(
   key: K,
   iter: I
 ) => value is F
-type CMapPredicate<K, V, I, R> = (value: V, key: K, iter: I) => R
+type CMapPredicate<V, R> = (value: V, key: never, iter: never) => R
+
+type MappableCollection<V, R> =
+  | List<V>
+  | ReadonlyArray<V>
+  | Map<unknown, V>
+  | { map: (pred: CMapPredicate<V, R>) => unknown }
+
+type MappedCollection<Collection, R> = Collection extends List<unknown>
+  ? List<R>
+  : Collection extends ReadonlyArray<unknown> ? Array<R>
+  : Collection extends Map<infer K, unknown> ? Map<K, R>
+  : Collection extends
+    { map: (pred: CMapPredicate<never, R>) => infer Mapped } ? Mapped
+  : never
 
 export const cfilter = <
   K,
@@ -37,15 +51,11 @@ export const cfilter = <
 ) =>
 (collection: T) => collection.filter(fn)
 
-export const cmap = <
-  K,
-  V,
-  I,
-  R,
-  T extends { filter: (pred: CMapPredicate<K, V, I, R>) => T }
->(
-  fn: CMapPredicate<K, V, I, R>
-) =>
-(collection: T) => collection.filter(fn)
+export const cmap =
+  <V, R>(fn: CMapPredicate<V, R>) =>
+  <Collection extends MappableCollection<V, R>>(
+    collection: Collection
+  ): MappedCollection<Collection, R> =>
+    collection.map(fn as never) as MappedCollection<Collection, R>
 
 export const genKey = (): string => randomUUID()

@@ -1,46 +1,16 @@
 // import { Match } from "effect"
-import type { Color, Tile } from "@flaghack/domain/display"
-import { Map } from "immutable"
+import type { Tile } from "@flaghack/domain/display"
 import React from "react"
 // import blessed from "react-blessed"
-import { identity } from "../util.js"
+import { tilesToText } from "../util.js"
 
 type Props = {
   tiles: Tiles
 }
 export type Tiles = ReadonlyArray<ReadonlyArray<Tile>>
 
-const colorNumMap = Map<Color, number>({
-  black: 0,
-  red: 1,
-  green: 2,
-  yellow: 3,
-  blue: 4,
-  magenta: 5,
-  cyan: 6,
-  white: 7
-})
-const maybeDo = (doP?: boolean) => (fn: (value: number) => number) =>
-  doP ? fn : identity
-const fgColor = (num: number) => num + 30
-const bgColor = (num: number) => num + 10
-const brightenColor = (num: number) => num + 60
-const escColor = (num: number) => `\x1b[${num}m`
-const ecolor = (color: Color = "white", bright?: boolean, bg?: boolean) =>
-  escColor(
-    maybeDo(bg)(bgColor)(
-      maybeDo(bright)(brightenColor)(
-        fgColor(colorNumMap.get(color) ?? 7)
-      )
-    )
-  )
-
-const tileToText = ({ bg, bright, char, color }: Tile) =>
-  `${ecolor(color, bright, bg)}${char}`
 export default function({ tiles }: Props) {
-  const content = tiles.map((row) => row.map(tileToText).join("")).join(
-    "\n"
-  )
+  const content = tilesToText(tiles)
   return (
     <box
       bottom={0}

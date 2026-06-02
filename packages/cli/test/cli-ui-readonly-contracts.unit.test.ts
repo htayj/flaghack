@@ -35,6 +35,18 @@ describe("CLI readonly UI contracts", () => {
     }
   })
 
+  it("centralizes BGameBoard tile rendering through CLI tilesToText", () => {
+    const source = readSource(join(componentDirectory, "BGameBoard.tsx"))
+
+    expect(source).toMatch(
+      /import\s*{\s*tilesToText\s*}\s*from\s*["']\.\.\/util\.js["']/
+    )
+    expect(source).toContain("tilesToText(tiles)")
+    expect(source).not.toMatch(/\bconst\s+tileToText\b/)
+    expect(source).not.toMatch(/\bconst\s+ecolor\b/)
+    expect(source).not.toContain("colorNumMap")
+  })
+
   it("accepts readonly key arrays at popup selection boundaries", () => {
     const sources = [
       readSource(join(componentDirectory, "PickupPopup.tsx")),

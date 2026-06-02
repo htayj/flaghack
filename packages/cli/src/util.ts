@@ -93,6 +93,7 @@ export const fgColor = (num: number) => num + 30
 export const bgColor = (num: number) => num + 10
 export const brightenColor = (num: number) => num + 60
 export const escColor = (num: number) => `\x1b[${num}m`
+export const resetColor = escColor(0)
 export const ecolor = (
   color: Color = "white",
   bright?: boolean,
@@ -107,6 +108,6 @@ export const ecolor = (
   )
 
 export const tileToText = ({ bg, bright, char, color }: Tile) =>
-  `${ecolor(color, bright, bg)}${char}`
+  `${ecolor(color, bright, bg)}${char}${resetColor}`
 export const tilesToText = (tiles: Tiles) =>
   tiles.map((row) => row.map(tileToText).join("")).join("\n")

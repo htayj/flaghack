@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { cmap, genKey, nullMatrix } from "@flaghack/cli/util"
+import {
+  cmap,
+  genKey,
+  nullMatrix,
+  tilesToText,
+  tileToText
+} from "@flaghack/cli/util"
 import { List, Map as ImmutableMap } from "immutable"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -29,6 +35,23 @@ const expectNoAliasedRowFill = (source: string) => {
   expect(source).not.toContain("rows.fill(Array")
   expect(source).not.toContain(".fill(Array<null>")
 }
+
+describe("CLI tile text rendering", () => {
+  it("resets terminal color after a rendered tile character", () => {
+    expect(tileToText({ color: "red", char: "R" })).toBe(
+      "\x1b[31mR\x1b[0m"
+    )
+  })
+
+  it("resets each adjacent tile independently", () => {
+    expect(
+      tilesToText([[
+        { color: "red", char: "A" },
+        { color: "blue", char: "B" }
+      ]])
+    ).toBe("\x1b[31mA\x1b[0m\x1b[34mB\x1b[0m")
+  })
+})
 
 describe("CLI cmap", () => {
   it("maps immutable lists with type-changing returns", () => {

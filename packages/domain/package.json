@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "The domain template",
+  "description": "Flag Hack shared schemas, API contract, game state types, and display helpers.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",

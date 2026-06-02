@@ -6,7 +6,7 @@
   "engines": {
     "node": ">=21"
   },
-  "description": "The CLI template",
+  "description": "Flag Hack terminal client and Node HTTP client runtime.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",

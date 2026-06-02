@@ -1,54 +1,39 @@
-# React + TypeScript + Vite
+# @flaghack/web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+`@flaghack/web` owns the Flag Hack React/Vite browser client and browser
+HTTP runtime. It renders the game in the DOM while using the
+`shared domain contract` against the server.
 
-Currently, two official plugins are available:
+## Current responsibilities
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `src/GameClient.ts` implements the browser HTTP runtime with
+  `HttpApiClient`, `BrowserHttpClient`, `ManagedRuntime`, and `GameApi`.
+- `src/App.tsx`, `src/main.tsx`, `src/Playing.tsx`, and related
+  components form the React/Vite DOM renderer.
+- `src/Playing.tsx` consumes shared world/action schemas and display tile
+  mapping from `@flaghack/domain`, then passes local tile and message
+  props to `src/GameBoard.tsx` and `src/Messages.tsx`.
+- `src/Inventory.tsx` and popup components render inventory and pickup
+  views around shared world data.
+- `src/config.ts` resolves browser API base URL configuration for the
+  client runtime.
 
-## Expanding the ESLint configuration
+## Validation and workflow notes
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Read the root `AGENTS.md` before changing package behavior, and use
+`docs/testing-gates.md` to choose focused web validation. Keep web code on
+the browser-client side of the shared `GameApi` contract; server runtime
+behavior belongs in `@flaghack/server`.
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-      tsconfigRootDir: import.meta.dirname
-    }
-  }
-})
-```
+## Audit and generated-file policy
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+This README covers ownership items tracked in
+`ARCHITECTURE_OPPORTUNITIES.md`, `BUILD_SYSTEM_OPPORTUNITIES.md`,
+`EFFECT_TS_OPPORTUNITIES.md`, and
+`FP_IMMUTABILITY_OPPORTUNITIES.md`.
 
-```js
-// eslint.config.js
-import reactDom from "eslint-plugin-react-dom"
-import reactX from "eslint-plugin-react-x"
-
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    "react-x": reactX,
-    "react-dom": reactDom
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs["recommended-typescript"].rules,
-    ...reactDom.configs.recommended.rules
-  }
-})
-```
+Do not hand-edit generated or disposable output. The repository policy
+called out in `AGENTS.md` includes `packages/**/build/**`,
+`packages/**/dist/**`, `*.d.ts`, `*.d.ts.map`, `*.js.map`, the
+generated schema JavaScript under `packages/domain/src/schemas/*.js`,
+and editor backup files such as `*~`, `#*#`, and `.#*`.

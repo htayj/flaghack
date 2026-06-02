@@ -31,7 +31,23 @@ describe("domain source schemas", () => {
     expect(Either.isRight(S.validateEither(Pos)(sampleFloor.at))).toBe(
       true
     )
+    expect(
+      Either.isRight(S.validateEither(Pos)({ x: -1, y: -2, z: -3 }))
+    ).toBe(true)
     expect(Either.isLeft(S.validateEither(Pos)({ x: 1, y: 2 }))).toBe(true)
+
+    for (
+      const fractionalPosition of [
+        { x: 1.5, y: 2, z: 0 },
+        { x: 1, y: 2.5, z: 0 },
+        { x: 1, y: 2, z: 0.5 }
+      ]
+    ) {
+      expect(Either.isLeft(S.validateEither(Pos)(fractionalPosition)))
+        .toBe(
+          true
+        )
+    }
   })
 
   it("decodes current movement and multi-item actions", () => {

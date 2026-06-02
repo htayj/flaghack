@@ -43,10 +43,12 @@ const tagas = <A extends S.Schema.Any, T extends string>(
 // const allof = (...a: Union[]) =>
 //   a.reduce((acc, curr) => S.compose(acc, curr)) // todo: not sure if this is right
 
+const Coordinate = S.Int
+
 export const Pos = struct({
-  x: S.Number,
-  y: S.Number,
-  z: S.Number
+  x: Coordinate,
+  y: Coordinate,
+  z: Coordinate
 })
 
 export const Key = S.String

@@ -101,6 +101,16 @@ export default function BPlaying(_props: Props) {
   const [showPickup, setShowPickup] = useState<boolean>(false)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const mode: Mode = "normal"
+  const refreshWorldAndInventory = Effect.all({
+    world: getWorld,
+    inventory: getInventory
+  }).pipe(
+    Effect.andThen(({ inventory, world }) => {
+      setWorld(world)
+      setInventory(inventory)
+    })
+  )
+
   useEffect(() => {
     if (initialWorldFetchRequestedRef.current) {
       return
@@ -140,12 +150,7 @@ export default function BPlaying(_props: Props) {
       }
 
       doPlayerAction(action).pipe(
-        Effect.andThen(getWorld),
-        Effect.andThen(setWorld),
-        Effect.runPromise
-      )
-      getInventory.pipe(
-        Effect.andThen(setInventory),
+        Effect.andThen(refreshWorldAndInventory),
         Effect.runPromise
       )
     }
@@ -200,6 +205,7 @@ export default function BPlaying(_props: Props) {
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: Array<Key>) => {
     doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+      Effect.andThen(refreshWorldAndInventory),
       Effect.andThen(() => {
         setShowPickup(false)
       }),

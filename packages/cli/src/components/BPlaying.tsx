@@ -110,6 +110,15 @@ export default function BPlaying(_props: Props) {
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const mode: Mode = "normal"
   const initialWorldFetchStarted = useRef(false)
+  const refreshWorldAndInventory = Effect.all({
+    world: apiGetWorld,
+    inventory: apiGetInventory
+  }).pipe(
+    Effect.andThen(({ inventory, world }) => {
+      setWorld(world)
+      setInventory(inventory)
+    })
+  )
 
   useEffect(() => {
     if (
@@ -155,13 +164,7 @@ export default function BPlaying(_props: Props) {
           return
         }
         apiDoPlayerAction(action).pipe(
-          Effect.andThen(apiGetWorld),
-          Effect.andThen(setWorld),
-          Effect.provide(MainLive),
-          Effect.runPromise
-        )
-        apiGetInventory.pipe(
-          Effect.andThen(setInventory),
+          Effect.andThen(refreshWorldAndInventory),
           Effect.provide(MainLive),
           Effect.runPromise
         )
@@ -180,6 +183,7 @@ export default function BPlaying(_props: Props) {
 
   const onDoPickup = (pickupItems: Array<Key>) => {
     apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+      Effect.andThen(refreshWorldAndInventory),
       Effect.andThen(() => {
         pickupRef.current?.hide()
         gameref.current?.focus()
@@ -190,6 +194,7 @@ export default function BPlaying(_props: Props) {
   }
   const onDoDrop = (dropItems: Array<Key>) => {
     apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
+      Effect.andThen(refreshWorldAndInventory),
       Effect.andThen(() => {
         dropRef.current?.hide()
         gameref.current?.focus()

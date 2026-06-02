@@ -40,6 +40,9 @@ const findForbiddenSource = (
     )
   )
 
+const onDoPickupSignature =
+  /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+
 const extractHandleKeyDownSource = (source: string): string => {
   const start = source.indexOf("const handleKeyDown =")
   const end = source.indexOf("\n  // useEffect", start)
@@ -49,6 +52,81 @@ const extractHandleKeyDownSource = (source: string): string => {
   }
 
   return source.slice(start, end)
+}
+
+const extractArrowFunctionBody = (
+  source: string,
+  signature: RegExp
+): string => {
+  const signatureMatch = source.match(signature)
+  expect(signatureMatch).not.toBeNull()
+
+  const signatureIndex = signatureMatch?.index ?? -1
+  const openBraceIndex = source.indexOf("{", signatureIndex)
+  expect(openBraceIndex).toBeGreaterThanOrEqual(0)
+
+  let depth = 0
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === "{") {
+      depth += 1
+    } else if (char === "}") {
+      depth -= 1
+      if (depth === 0) {
+        return source.slice(openBraceIndex + 1, index)
+      }
+    }
+  }
+
+  throw new Error("Could not find arrow function body terminator")
+}
+
+const extractConstInitializerSource = (
+  source: string,
+  identifier: string
+): string => {
+  const declaration = `const ${identifier} =`
+  const declarationIndex = source.indexOf(declaration)
+  expect(declarationIndex).toBeGreaterThanOrEqual(0)
+
+  const initializerIndex = declarationIndex + declaration.length
+  let depth = 0
+  let started = false
+
+  for (let index = initializerIndex; index < source.length; index += 1) {
+    const char = source[index]
+    if (char === "(" || char === "{" || char === "[") {
+      depth += 1
+      started = true
+    } else if (char === ")" || char === "}" || char === "]") {
+      depth -= 1
+    } else if (char === "\n" && started && depth === 0) {
+      return source.slice(declarationIndex, index)
+    }
+  }
+
+  throw new Error(`Could not find initializer for ${identifier}`)
+}
+
+const expectRefreshAfterAction = (
+  source: string,
+  actionCall: string
+) => {
+  const actionIndex = source.indexOf(actionCall)
+  expect(actionIndex, `${actionCall} should exist`).toBeGreaterThanOrEqual(
+    0
+  )
+
+  const refreshIndex = source.indexOf(
+    "Effect.andThen(refreshWorldAndInventory)",
+    actionIndex
+  )
+  expect(
+    refreshIndex,
+    "refreshWorldAndInventory should run after the player action"
+  ).toBeGreaterThan(actionIndex)
+
+  return refreshIndex
 }
 
 describe("web input parsing", () => {
@@ -65,7 +143,22 @@ describe("web input parsing", () => {
 })
 
 describe("web input/view source guards", () => {
-  it("gates player actions behind a parsed-input no-action guard", () => {
+  it("defines an authoritative world/inventory refresh effect", () => {
+    const refreshSource = extractConstInitializerSource(
+      readFileSync(playingPath, "utf8"),
+      "refreshWorldAndInventory"
+    )
+
+    expect(refreshSource).toContain("Effect.all")
+    expect(refreshSource).toMatch(/world\s*:\s*getWorld\b/)
+    expect(refreshSource).toMatch(/inventory\s*:\s*getInventory\b/)
+    expect(refreshSource).toMatch(/setWorld\s*\(\s*world\s*\)/)
+    expect(refreshSource).toMatch(
+      /setInventory\s*\(\s*inventory\s*\)/
+    )
+  })
+
+  it("gates player actions and refreshes after movement actions", () => {
     const handleKeyDownSource = extractHandleKeyDownSource(
       readFileSync(playingPath, "utf8")
     )
@@ -78,14 +171,31 @@ describe("web input/view source guards", () => {
     const doActionIndex = handleKeyDownSource.indexOf(
       "doPlayerAction(action)"
     )
-    const worldIndex = handleKeyDownSource.indexOf("getWorld")
-    const inventoryIndex = handleKeyDownSource.indexOf("getInventory")
+    const refreshIndex = handleKeyDownSource.indexOf(
+      "Effect.andThen(refreshWorldAndInventory)",
+      doActionIndex
+    )
 
     expect(parseIndex).toBeGreaterThanOrEqual(0)
     expect(guardIndex).toBeGreaterThan(parseIndex)
     expect(doActionIndex).toBeGreaterThan(guardIndex)
-    expect(worldIndex).toBeGreaterThan(guardIndex)
-    expect(inventoryIndex).toBeGreaterThan(guardIndex)
+    expect(refreshIndex).toBeGreaterThan(doActionIndex)
+    expect(handleKeyDownSource).not.toContain("Effect.andThen(getWorld)")
+    expect(handleKeyDownSource).not.toContain("getInventory.pipe(")
+  })
+
+  it("refreshes world and inventory after pickup actions", () => {
+    const onDoPickupBody = extractArrowFunctionBody(
+      readFileSync(playingPath, "utf8"),
+      onDoPickupSignature
+    )
+    const refreshIndex = expectRefreshAfterAction(
+      onDoPickupBody,
+      "doPlayerAction(EAction.pickupMulti"
+    )
+    const hideIndex = onDoPickupBody.indexOf("setShowPickup(false)")
+
+    expect(hideIndex).toBeGreaterThan(refreshIndex)
   })
 
   it("keeps the static UI mode out of React state", () => {

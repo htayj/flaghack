@@ -248,7 +248,6 @@ export const Direction = S.Literal(
 //   apply: {}
 //   noop: {}
 //   move: { dir: typeof Direction.Type }
-//   pickup: { readonly object: typeof Entity.Type }
 // }>
 
 // export const EAction = Data.taggedEnum<Action>()
@@ -257,19 +256,12 @@ const ActionOptions = [
   S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
-  S.TaggedStruct("pickup", { object: Entity }),
   S.TaggedStruct("pickupMulti", { keys: S.Array(Key) }),
   S.TaggedStruct("dropMulti", { keys: S.Array(Key) })
 ]
 export const SAction = S.Union(
   ...ActionOptions
 )
-// export const SAction = S.Union(
-//   S.TaggedStruct("apply", {}),
-//   S.TaggedStruct("noop", {}),
-//   S.TaggedStruct("move", { dir: Direction }),
-//   S.TaggedStruct("pickup", { object: Entity })
-// )
 export const SEAction = S.Data(SAction)
 export const EAction = Data.taggedEnum<typeof SEAction.Type>()
 export type Action = typeof SAction.Type

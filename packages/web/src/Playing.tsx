@@ -162,11 +162,6 @@ export default function BPlaying(_props: Props) {
   }
   // useEffect(() => {}) was the legacy react-blessed keyboard path.
 
-  // const pickupRecursive = (pickupItems: Key[]) => {
-  // 	if( pickupItems.length > 0 )  {
-  // 		const k = pickupItems[0]
-  // 		apiDoPlayerAction(EAction.pickup({object:world.pipe(HashMap.get(k))}))
-  // 	} }
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
     void LiveRuntime.runPromise(

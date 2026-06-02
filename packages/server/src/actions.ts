@@ -1,4 +1,4 @@
-import { type Action, EAction } from "@flaghack/domain/schemas"
+import type { Action } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Match } from "effect"
 import { type Option, some } from "effect/Option"
 import type { PlannedAction } from "./ai/ai.js"
@@ -15,11 +15,6 @@ const moveEntity =
   (vec: TPos): GameState =>
     updateEntity(gs)(entity)((c) => actPosition(gs.world)(c, vec))
 
-const pickupItem =
-  (gs: GameState) =>
-  <T extends Entity>(entity: Option<T>) =>
-  <I extends Entity>(item: Option<I>): GameState =>
-    updateEntity(gs)(item)((i) => pickup(entity)(i))
 const dropItems =
   (gs: GameState) =>
   <T extends Entity>(entity: Option<T>) =>
@@ -51,12 +46,13 @@ export const doAction = (
 const act =
   (gs: GameState) =>
   (crea: Option<Entity>) =>
-  (action: Action): GameState =>
-    EAction.$match({
-      apply: () => gs,
-      noop: () => gs,
-      move: ({ dir }) =>
-        Match.value(dir).pipe(
+  (action: Action): GameState => {
+    switch (action._tag) {
+      case "apply":
+      case "noop":
+        return gs
+      case "move":
+        return Match.value(action.dir).pipe(
           Match.when("N", () => moveEntity(gs)(crea)(UV.Up)),
           Match.when("E", () => moveEntity(gs)(crea)(UV.Right)),
           Match.when("S", () => moveEntity(gs)(crea)(UV.Down)),
@@ -66,8 +62,12 @@ const act =
           Match.when("SE", () => moveEntity(gs)(crea)(UV.DownRight)),
           Match.when("SW", () => moveEntity(gs)(crea)(UV.DownLeft)),
           Match.exhaustive
-        ),
-      pickup: ({ object }) => pickupItem(gs)(crea)(some(object)),
-      pickupMulti: ({ keys }) => pickupItems(gs)(crea)(keys),
-      dropMulti: ({ keys }) => dropItems(gs)(crea)(keys)
-    })(action)
+        )
+      case "pickupMulti":
+        return pickupItems(gs)(crea)(action.keys)
+      case "dropMulti":
+        return dropItems(gs)(crea)(action.keys)
+      default:
+        return gs
+    }
+  }

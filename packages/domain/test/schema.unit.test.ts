@@ -69,9 +69,18 @@ describe("domain source schemas", () => {
     expectRight(
       S.decodeUnknownEither(SAction)({
         _tag: "dropMulti",
-        keys: ["floor-1"]
+        keys: ["floor-1", "flag-1"]
       })
     )
+
+    expect(
+      Either.isLeft(
+        S.decodeUnknownEither(SAction)({
+          _tag: "pickup",
+          object: sampleItem
+        })
+      )
+    ).toBe(true)
   })
 
   it("validates a tiny world HashMap from source schema", () => {

@@ -37,6 +37,8 @@ export default function({ tiles }: Props) {
   )
   return (
     <div
+      role="region"
+      aria-label="Game map"
       style={{
         position: "absolute",
         bottom: 0,

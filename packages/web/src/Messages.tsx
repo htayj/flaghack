@@ -1,4 +1,4 @@
-import { List } from "immutable"
+import type { List } from "immutable"
 
 type Props = {
   messages: List<string>
@@ -7,6 +7,9 @@ type Props = {
 export default function Messages({ messages }: Props) {
   return (
     <div
+      role="log"
+      aria-live="polite"
+      aria-label="Messages"
       style={{
         border: "solid",
         position: "absolute",

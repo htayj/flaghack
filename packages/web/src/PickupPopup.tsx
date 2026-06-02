@@ -46,6 +46,9 @@ export default function PickupPopup(
   }
   return (
     <div
+      role="dialog"
+      aria-label="Pick up items"
+      aria-hidden={!open}
       style={{
         position: "absolute",
         left: "25vw",
@@ -57,21 +60,24 @@ export default function PickupPopup(
       }}
       onKeyDown={handleKeyDown}
     >
-      {invMap.valueSeq().toArray().map((item) => (
-        <div
-          key={item.key}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            height: "100%",
-            width: "100%",
-            background: marked.has(item.key) ? "#aaa" : "#000"
-          }}
-        >
-          {item._tag}
-        </div>
-      ))}
+      <div role="list">
+        {invMap.valueSeq().toArray().map((item) => (
+          <div
+            role="listitem"
+            key={item.key}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              height: "100%",
+              width: "100%",
+              background: marked.has(item.key) ? "#aaa" : "#000"
+            }}
+          >
+            {item._tag}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

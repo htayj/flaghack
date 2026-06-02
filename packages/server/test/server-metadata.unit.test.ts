@@ -54,6 +54,14 @@ describe("server package metadata", () => {
     )
   })
 
+  it("uses exact workspace protocol for the domain dependency", () => {
+    const serverPackageJson = readServerPackageJson()
+
+    expect(serverPackageJson.dependencies?.["@flaghack/domain"]).toBe(
+      "workspace:*"
+    )
+  })
+
   it("does not use latest for direct runtime dependencies", () => {
     const serverPackageJson = readServerPackageJson()
     const latestRuntimeDependencies = Object.entries(

@@ -24,7 +24,7 @@
   "dependencies": {
     "@effect/platform": "0.85.2",
     "@effect/platform-node": "0.86.4",
-    "@flaghack/domain": "workspace:^",
+    "@flaghack/domain": "workspace:*",
     "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
     "pure-rand": "7.0.1"

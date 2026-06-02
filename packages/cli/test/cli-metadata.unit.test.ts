@@ -175,6 +175,14 @@ describe("CLI metadata", () => {
     }
   })
 
+  it("uses exact workspace protocol for the domain dependency", () => {
+    const cliPackageJson = readCliPackageJson()
+
+    expect(cliPackageJson.dependencies?.["@flaghack/domain"]).toBe(
+      "workspace:*"
+    )
+  })
+
   it("does not duplicate runtime dependencies in devDependencies", () => {
     const cliPackageJson = readCliPackageJson()
     const runtimeDependencies = cliPackageJson.dependencies ?? {}

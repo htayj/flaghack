@@ -128,7 +128,7 @@ importers:
         specifier: 0.86.4
         version: 0.86.4(@effect/cluster@0.30.2(@effect/platform@0.85.2(effect@3.16.8))(@effect/rpc@0.56.2(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/sql@0.51.1(@effect/experimental@0.44.14(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(@effect/rpc@0.56.2(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/sql@0.51.1(@effect/experimental@0.44.14(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(effect@3.16.8)
       '@flaghack/domain':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../domain/dist
       blessed:
         specifier: 0.1.81
@@ -191,7 +191,7 @@ importers:
         specifier: 0.86.4
         version: 0.86.4(@effect/cluster@0.30.2(@effect/platform@0.85.2(effect@3.16.8))(@effect/rpc@0.56.2(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/sql@0.51.1(@effect/experimental@0.44.14(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(@effect/rpc@0.56.2(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/sql@0.51.1(@effect/experimental@0.44.14(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8))(effect@3.16.8)
       '@flaghack/domain':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../domain/dist
       effect:
         specifier: 3.16.8
@@ -216,7 +216,7 @@ importers:
         specifier: 0.65.2
         version: 0.65.2(@effect/platform@0.85.2(effect@3.16.8))(effect@3.16.8)
       '@flaghack/domain':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../domain/dist
       effect:
         specifier: 3.16.8

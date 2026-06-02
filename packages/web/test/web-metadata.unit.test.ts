@@ -70,6 +70,15 @@ describe("web package metadata", () => {
     )
   })
 
+  it("uses exact workspace protocol for the domain dependency", async () => {
+    const packageJson = await readWebPackageJson()
+
+    expect(packageJson.dependencies).toHaveProperty(
+      "@flaghack/domain",
+      "workspace:*"
+    )
+  })
+
   it("does not duplicate runtime dependencies as development dependencies", async () => {
     const packageJson = await readWebPackageJson()
 

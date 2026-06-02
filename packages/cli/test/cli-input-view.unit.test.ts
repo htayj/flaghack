@@ -25,6 +25,13 @@ const onDoDropSignature =
   /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const noActionGuardBeforeApiPattern =
   /const\s+action\s*=\s*parseInput\s*\(\s*input\s*\)\s*if\s*\(\s*action\s*===\s*undefined\s*\)\s*{\s*return\s*}/
+const modeUseStateInitializer =
+  /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
+const modeUseStateBinding =
+  /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
+const modeTypeAlias = /\btype\s+Mode\s*=/
+const modeConstDeclaration = /\bconst\s+mode\b[^=\n]*=/
+const modeIncludesConditional = /\.includes\s*\(\s*mode\s*\)/
 
 const extractArrowFunctionBody = (
   source: string,
@@ -185,5 +192,15 @@ describe("CLI input handling static guards", () => {
       onDoDropBody,
       "apiDoPlayerAction(EAction.dropMulti"
     )
+  })
+
+  it("keeps the static UI mode out of React state and source", () => {
+    const source = readBPlayingSource()
+
+    expect(source).not.toMatch(modeUseStateInitializer)
+    expect(source).not.toMatch(modeUseStateBinding)
+    expect(source).not.toMatch(modeTypeAlias)
+    expect(source).not.toMatch(modeConstDeclaration)
+    expect(source).not.toMatch(modeIncludesConditional)
   })
 })

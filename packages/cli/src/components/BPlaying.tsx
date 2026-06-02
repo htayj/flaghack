@@ -96,7 +96,6 @@ const drawWorld = (world: World): Tiles => {
   )
   return fullmap.map((r) => r.toArray()).toArray()
 }
-type Mode = "normal" | "inventory" | "picking_up" | "using" | "popup"
 export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
@@ -108,7 +107,6 @@ export default function BPlaying(_props: Props) {
     HashMap.empty()
   )
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const mode: Mode = "normal"
   const initialWorldFetchStarted = useRef(false)
   const refreshWorldAndInventory = Effect.all({
     world: apiGetWorld,
@@ -214,30 +212,28 @@ export default function BPlaying(_props: Props) {
     gameref.current?.focus()
   }
 
-  return ["normal", "picking_up"].includes(mode)
-    ? (
-      <box
-        ref={gameref}
-        width="100%"
-        height="100%"
-      >
-        <Messages messages={messages} />
-        <BGameBoard tiles={theDrawMatrix} />
-        <PickupPopup
-          pickupRef={pickupRef}
-          items={pickupContents}
-          onSubmit={onDoPickup}
-          onCancel={onCancelPickup}
-          log={log}
-        />
-        <MultiDropPopup
-          dropRef={dropRef}
-          world={world}
-          onDrop={onDoDrop}
-          onCancel={onCancelMultiDrop}
-        />
-        <Inventory inventory={inventory} />
-      </box>
-    )
-    : <box />
+  return (
+    <box
+      ref={gameref}
+      width="100%"
+      height="100%"
+    >
+      <Messages messages={messages} />
+      <BGameBoard tiles={theDrawMatrix} />
+      <PickupPopup
+        pickupRef={pickupRef}
+        items={pickupContents}
+        onSubmit={onDoPickup}
+        onCancel={onCancelPickup}
+        log={log}
+      />
+      <MultiDropPopup
+        dropRef={dropRef}
+        world={world}
+        onDrop={onDoDrop}
+        onCancel={onCancelMultiDrop}
+      />
+      <Inventory inventory={inventory} />
+    </box>
+  )
 }

@@ -33,7 +33,7 @@ const modeUseStateInitializer =
 const modeUseStateBinding =
   /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
 const drawWorldHelperSource =
-  /const\s+drawWorld\s*=\s*\([\s\S]*?\n}\ntype\s+Mode\b/
+  /const\s+drawWorld\s*=\s*\([\s\S]*?\n}\nexport\s+default\s+function\s+BPlaying\b/
 const drawWorldWorldOnlySignature =
   /const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*\)\s*:\s*Tiles\s*=>\s*{/
 const consoleLogReference = /console\s*\.\s*log/

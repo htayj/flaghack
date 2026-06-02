@@ -14,6 +14,9 @@ const modeUseStateInitializer =
   /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
 const modeUseStateBinding =
   /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
+const modeTypeAlias = /\btype\s+Mode\s*=/
+const modeConstDeclaration = /\bconst\s+mode\b[^=\n]*=/
+const modeIncludesConditional = /\.includes\s*\(\s*mode\s*\)/
 
 type SourceGuard = {
   file: string
@@ -198,11 +201,14 @@ describe("web input/view source guards", () => {
     expect(hideIndex).toBeGreaterThan(refreshIndex)
   })
 
-  it("keeps the static UI mode out of React state", () => {
+  it("keeps the static UI mode out of React state and source", () => {
     const playingSource = readFileSync(playingPath, "utf8")
 
     expect(playingSource).not.toMatch(modeUseStateInitializer)
     expect(playingSource).not.toMatch(modeUseStateBinding)
+    expect(playingSource).not.toMatch(modeTypeAlias)
+    expect(playingSource).not.toMatch(modeConstDeclaration)
+    expect(playingSource).not.toMatch(modeIncludesConditional)
   })
 
   it("keeps bounded input and view cleanup regressions out", () => {

@@ -64,4 +64,15 @@ describe("CLI readonly UI contracts", () => {
     expect(multiDropSource).toMatch(readonlyOnDropKeys)
     expect(multiDropSource).not.toMatch(mutablePopupKeyCallback)
   })
+
+  it("renders the playing app directly without static mode state", () => {
+    const source = readSource(join(srcDirectory, "BApp.tsx"))
+
+    expect(source).toMatch(
+      /return\s+<BPlaying\s+username=["']test["']\s*\/>/
+    )
+    expect(source).not.toMatch(/\buseState\b/)
+    expect(source).not.toMatch(/\bmode\s*===\s*["']playing["']/)
+    expect(source).not.toContain("BModeError")
+  })
 })

@@ -10,6 +10,13 @@ const domainSchemasImport = "@flaghack/domain/schemas"
 const webTsconfigPath = fileURLToPath(
   new URL("../tsconfig.app.json", import.meta.url)
 )
+const webNodeTsconfigPath = fileURLToPath(
+  new URL("../tsconfig.node.json", import.meta.url)
+)
+const strictIndexedAccessTsconfigPaths = [
+  ["tsconfig.app.json", webTsconfigPath],
+  ["tsconfig.node.json", webNodeTsconfigPath]
+] as const
 
 type RollupExternalOption = NonNullable<
   NonNullable<
@@ -20,6 +27,7 @@ type RollupExternalOption = NonNullable<
 type WebTsconfig = {
   readonly compilerOptions?: {
     readonly baseUrl?: string
+    readonly noUncheckedIndexedAccess?: boolean
     readonly paths?: Record<string, ReadonlyArray<string>>
   }
 }
@@ -47,10 +55,10 @@ const externalizesImport = (
   return external(importId, undefined, false) === true
 }
 
-const readWebTsconfig = (): WebTsconfig => {
+const readWebTsconfig = (tsconfigPath = webTsconfigPath): WebTsconfig => {
   const parsed = ts.parseConfigFileTextToJson(
-    webTsconfigPath,
-    readFileSync(webTsconfigPath, "utf8")
+    tsconfigPath,
+    readFileSync(tsconfigPath, "utf8")
   )
 
   if (parsed.error !== undefined) {
@@ -77,6 +85,16 @@ describe("web Vite config", () => {
         domainSchemasImport
       )
     ).toBe(false)
+  })
+
+  it("enables strict indexed access checks in web tsconfigs", () => {
+    for (const [name, tsconfigPath] of strictIndexedAccessTsconfigPaths) {
+      expect(
+        readWebTsconfig(tsconfigPath).compilerOptions
+          ?.noUncheckedIndexedAccess,
+        `${name} must enable noUncheckedIndexedAccess`
+      ).toBe(true)
+    }
   })
 
   it("does not alias bare packages to missing source indexes", () => {

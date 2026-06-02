@@ -4,9 +4,9 @@ import {
   AnyTerrain,
   conforms
 } from "@flaghack/domain/schemas"
-import { Effect, HashMap } from "effect"
+import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
-import { getPickupItemsFor } from "../src/gameloop.js"
+import { eGetWorld, getPickupItemsFor } from "../src/gameloop.js"
 
 const readGameloopSource = (): string =>
   readFileSync(new URL("../src/gameloop.ts", import.meta.url), "utf8")
@@ -21,6 +21,54 @@ const exportedConstBody = (source: string, constName: string): string => {
 
   return source.slice(start, end)
 }
+
+const initialSpawnSetupSource = (source: string): string => {
+  const start = source.indexOf("const testLevel")
+
+  expect(start).toBeGreaterThanOrEqual(0)
+
+  const end = source.indexOf("const testPlayer", start)
+
+  expect(end).toBeGreaterThan(start)
+
+  return source.slice(start, end)
+}
+
+describe("initial world", () => {
+  it("places the player on a generated floor tile", () => {
+    const world = Effect.runSync(eGetWorld)
+    const playerEntityOption = world.pipe(HashMap.get("player"))
+
+    expect(Option.isSome(playerEntityOption)).toBe(true)
+    if (Option.isNone(playerEntityOption)) return
+
+    const playerEntity = playerEntityOption.value
+
+    expect(playerEntity._tag).toBe("player")
+    if (playerEntity._tag !== "player") return
+
+    const floorAtPlayer = Array.from(HashMap.values(world)).find(
+      (entity) =>
+        entity._tag === "floor"
+        && entity.at.x === playerEntity.at.x
+        && entity.at.y === playerEntity.at.y
+        && entity.at.z === playerEntity.at.z
+    )
+
+    expect(floorAtPlayer?._tag).toBe("floor")
+  })
+
+  it("does not fall back to the origin when selecting the player spawn", () => {
+    const gameloopSource = readGameloopSource()
+    const initialSpawnSetup = initialSpawnSetupSource(gameloopSource)
+
+    expect(initialSpawnSetup).not.toContain("testLevelFloors.first()?.at")
+    expect(initialSpawnSetup).not.toContain("{ x: 0, y: 0, z: 0 }")
+    expect(initialSpawnSetup).not.toMatch(
+      /(?:\?\?|\|\|)\s*\{\s*x:\s*0,\s*y:\s*0,\s*z:\s*0\s*\}/u
+    )
+  })
+})
 
 describe("getPickupItemsFor", () => {
   it("returns an empty HashMap for a missing entity", () => {

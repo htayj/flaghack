@@ -13,9 +13,8 @@ import {
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
 import { type Action, EAction, GameState } from "@flaghack/domain/schemas"
-import { filter } from "effect/HashMap"
+import { filter, findFirst } from "effect/HashMap"
 import { match as omatch } from "effect/Option"
-import { List } from "immutable"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
@@ -27,6 +26,7 @@ import {
   getPlayer
 } from "./gamestate.js"
 import { logger } from "./log.js"
+import type { TPos } from "./position.js"
 import { noop } from "./util.js"
 import { BSPGenLevel, isItem, type World } from "./world.js"
 
@@ -43,12 +43,19 @@ export type Log = (a: string) => void
 //   log: noop
 // }
 const testLevel: World = BSPGenLevel(777, 0)
-const testLevelFloors = List(
-  testLevel.pipe(HashMap.filter((e) => e._tag === "floor"), HashMap.values)
-)
-// const testLevelPlayerLocation = testLevelFloors.get(Math.random()*testLevelFloors.size-1)
-const testLevelPlayerLocation = testLevelFloors.first()?.at
-  ?? { x: 0, y: 0, z: 0 }
+const selectRequiredSpawnFloor = (world: World): TPos =>
+  omatch(
+    world.pipe(findFirst((entity) => entity._tag === "floor")),
+    {
+      onNone: () => {
+        throw new Error(
+          "Initial level generation produced no floor tiles; cannot place player"
+        )
+      },
+      onSome: ([, floorEntity]) => floorEntity.at
+    }
+  )
+const testLevelPlayerLocation = selectRequiredSpawnFloor(testLevel)
 
 const testPlayer = player(
   testLevelPlayerLocation.x,

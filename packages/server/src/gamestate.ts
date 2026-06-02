@@ -38,10 +38,8 @@ export const getEntitiesAtEntity = (a: Entity) => (w: World): World =>
   )
 
 export const updateWorld =
-  (gs: GameState) => (fn: (w: World) => World): GameState => {
-    const a = GameState.make({ world: fn(gs.world) }) // fixme
-    return a
-  }
+  (gs: GameState) => (fn: (w: World) => World): GameState =>
+    GameState.make({ world: fn(gs.world) })
 
 const worldEntUp =
   <T extends Entity>(e: Option<T>) =>

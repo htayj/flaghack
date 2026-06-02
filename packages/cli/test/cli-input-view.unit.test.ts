@@ -23,9 +23,9 @@ const parseInputDefaultNone =
 const handleGameKeySignature =
   /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string\s*\)\s*=>\s*{/
 const onDoPickupSignature =
-  /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+  /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onDoDropSignature =
-  /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+  /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const noActionGuardBeforeApiPattern =
   /const\s+action\s*=\s*parseInput\s*\(\s*input\s*\)\s*if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*{\s*return\s*}/
 const modeUseStateInitializer =

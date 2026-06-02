@@ -7,7 +7,7 @@ export type Tile = {
   bright?: boolean
   bg?: boolean
 }
-export type Tiles = Tile[][]
+export type Tiles = ReadonlyArray<ReadonlyArray<Tile>>
 
 type Color =
   | "black"

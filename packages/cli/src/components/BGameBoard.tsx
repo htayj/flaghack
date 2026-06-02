@@ -8,7 +8,7 @@ import { identity } from "../util.js"
 type Props = {
   tiles: Tiles
 }
-export type Tiles = Array<Array<Tile>>
+export type Tiles = ReadonlyArray<ReadonlyArray<Tile>>
 
 const colorNumMap = Map<Color, number>({
   black: 0,

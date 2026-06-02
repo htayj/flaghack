@@ -204,7 +204,7 @@ export default function BPlaying(_props: Props) {
   // 		apiDoPlayerAction(EAction.pickup({object:world.pipe(HashMap.get(k))}))
   // 	} }
   // const GameElement = reactBlessed.render(box)
-  const onDoPickup = (pickupItems: Array<Key>) => {
+  const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
     doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
       Effect.tap(() => Effect.sync(() => setShowPickup(false))),

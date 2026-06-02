@@ -1,14 +1,17 @@
-import { Key, World } from "@flaghack/domain/schemas"
+import type {
+  Key as KeySchema,
+  World as WorldSchema
+} from "@flaghack/domain/schemas"
 // import { HashMap } from "effect"
 import { Map } from "immutable"
 import React, { useCallback, useMemo, useState } from "react"
 
-type Key = typeof Key.Type
-type World = typeof World.Type
+type Key = typeof KeySchema.Type
+type World = typeof WorldSchema.Type
 type Props = {
   items: World
   open: boolean
-  onSubmit: (keys: Key[]) => void
+  onSubmit: (keys: ReadonlyArray<Key>) => void
   onCancel: () => void
   pickupRef: React.RefObject<HTMLElement | null>
   log: (l: string) => void

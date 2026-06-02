@@ -183,7 +183,7 @@ export default function BPlaying(_props: Props) {
     }
   }, [])
 
-  const onDoPickup = (pickupItems: Array<Key>) => {
+  const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
     apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
       Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
@@ -192,7 +192,7 @@ export default function BPlaying(_props: Props) {
       Effect.runPromise
     )
   }
-  const onDoDrop = (dropItems: Array<Key>) => {
+  const onDoDrop = (dropItems: ReadonlyArray<Key>) => {
     apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
       Effect.andThen(refreshWorldAndInventory),
       Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),

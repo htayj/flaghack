@@ -153,7 +153,7 @@ const findForbiddenEffectAndThenUiBoundaries = (
 }
 
 const onDoPickupSignature =
-  /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+  /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 
 const extractHandleKeyDownSource = (source: string): string => {
   const start = source.indexOf("const handleKeyDown =")

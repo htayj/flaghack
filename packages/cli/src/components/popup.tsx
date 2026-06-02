@@ -10,7 +10,7 @@ type Key = typeof KeySchema.Type
 type World = typeof WorldSchema.Type
 type Props = {
   items: World
-  onSubmit: (keys: Array<Key>) => void
+  onSubmit: (keys: ReadonlyArray<Key>) => void
   onCancel: () => void
   boxRef: React.RefObject<BoxElement | null>
 } & DetailedBlessedProps<BoxElement>

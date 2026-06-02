@@ -51,6 +51,7 @@ const requiredBuildUtilsExcludePatterns = [
 
 type RootPackageJson = {
   readonly devDependencies?: Readonly<Record<string, unknown>>
+  readonly scripts?: Readonly<Record<string, unknown>>
   readonly pnpm?: {
     readonly overrides?: Readonly<Record<string, unknown>>
   }
@@ -105,6 +106,12 @@ describe("root package metadata", () => {
     expect(rootPackageJson.pnpm?.overrides ?? {}).not.toHaveProperty(
       "@effect/sql"
     )
+  })
+
+  it("defines verify as the strict readiness gate alias", () => {
+    const rootPackageJson = readRootPackageJson()
+
+    expect(rootPackageJson.scripts?.verify).toBe("pnpm verify:gates")
   })
 
   it("does not use latest for direct Effect-family dev dependencies", () => {

@@ -29,6 +29,7 @@
     "test:api": "tsx scripts/api-smoke.ts",
     "test:e2e:tmux": "tsx scripts/tmux-e2e-smoke.ts",
     "coverage": "vitest run --coverage --workspace vitest.workspace.ts",
+    "verify": "pnpm verify:gates",
     "verify:smoke": "pnpm generated:guard && pnpm test:unit && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux",
     "verify:gates": "pnpm generated:guard && pnpm check && pnpm test:unit && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux"
   },

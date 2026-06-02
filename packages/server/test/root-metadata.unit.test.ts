@@ -2,6 +2,10 @@ import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+  getVitestSourceTarget,
+  packageAlias
+} from "../../../vitest.shared.js"
 
 const repositoryRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -12,6 +16,7 @@ const rootTsconfigBuildJsonPath = join(
   repositoryRoot,
   "tsconfig.build.json"
 )
+const rootVitestSharedTsPath = join(repositoryRoot, "vitest.shared.ts")
 
 const packageManifests = [
   {
@@ -76,6 +81,9 @@ const readRootTsconfigBuildJson = (): RootTsconfigBuildJson =>
     readFileSync(rootTsconfigBuildJsonPath, "utf8")
   ) as RootTsconfigBuildJson
 
+const readRootVitestSharedTs = (): string =>
+  readFileSync(rootVitestSharedTsPath, "utf8")
+
 const readPackageManifest = (path: string): PackageManifest =>
   JSON.parse(readFileSync(path, "utf8")) as PackageManifest
 
@@ -123,6 +131,33 @@ describe("root TypeScript build metadata", () => {
     )
 
     expect(referencePaths).toContain("packages/web")
+  })
+})
+
+describe("root Vitest metadata", () => {
+  it("selects source aliases by default and package dist ESM aliases for TEST_DIST", () => {
+    expect(getVitestSourceTarget({ TEST_DIST: "1" })).toBe(
+      "dist/dist/esm"
+    )
+    expect(getVitestSourceTarget({})).toBe("src")
+  })
+
+  it("resolves TEST_DIST package aliases from package roots", () => {
+    const aliases = packageAlias(
+      "domain",
+      "@flaghack/domain",
+      "dist/dist/esm"
+    )
+
+    expect(aliases["@flaghack/domain"]).toBe(
+      join(repositoryRoot, "packages/domain/dist/dist/esm")
+    )
+  })
+
+  it("keeps TEST_DIST configured for build-utils pack-v2 package output", () => {
+    const rootVitestSharedTs = readRootVitestSharedTs()
+
+    expect(rootVitestSharedTs).toContain("\"dist/dist/esm\"")
   })
 })
 

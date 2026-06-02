@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import {
   AnyTerrain,
   conforms,
+  ItemCollection,
   Pos,
   SAction,
   World
@@ -22,6 +23,13 @@ const expectRight = <A, E>(either: Either.Either<A, E>): A =>
 const sampleFloor = {
   _tag: "floor" as const,
   key: "floor-1",
+  in: "world",
+  at: { x: 1, y: 2, z: 0 }
+}
+
+const sampleItem = {
+  _tag: "flag" as const,
+  key: "flag-1",
   in: "world",
   at: { x: 1, y: 2, z: 0 }
 }
@@ -71,6 +79,26 @@ describe("domain source schemas", () => {
 
     expect(HashMap.size(world)).toBe(1)
     expect(Either.isRight(S.validateEither(World)(world))).toBe(true)
+  })
+
+  it("narrows item collections to item HashMap values", () => {
+    const itemCollection = HashMap.fromIterable([[
+      sampleItem.key,
+      sampleItem
+    ]])
+    const terrainCollection = HashMap.fromIterable([[
+      sampleFloor.key,
+      sampleFloor
+    ]])
+
+    expect(
+      Either.isRight(S.validateEither(ItemCollection)(itemCollection))
+    )
+      .toBe(true)
+    expect(
+      Either.isLeft(S.validateEither(ItemCollection)(terrainCollection))
+    )
+      .toBe(true)
   })
 
   it("exposes conforms as a terrain type guard", () => {

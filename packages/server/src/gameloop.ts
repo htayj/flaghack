@@ -28,7 +28,7 @@ import {
 } from "./gamestate.js"
 import { logger } from "./log.js"
 import { noop } from "./util.js"
-import { BSPGenLevel, type World } from "./world.js"
+import { BSPGenLevel, isItem, type World } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
@@ -135,7 +135,7 @@ export const eGetWorld = pipe(
 export const getInventory = (key: TKey) =>
   pipe(
     eGetWorld,
-    andThen((w) => w.pipe(filter((e) => e.in === key)))
+    andThen((w) => w.pipe(filter(isItem), filter((e) => e.in === key)))
   )
 
 export const getPickupItemsFor = (key: TKey) =>
@@ -147,6 +147,7 @@ export const getPickupItemsFor = (key: TKey) =>
         onNone: () => HashMap.empty(),
         onSome: (entity) =>
           getEntitiesAtEntity(entity)(w).pipe(
+            HashMap.filter(isItem),
             HashMap.filter((e) => e.key !== key)
           )
       })

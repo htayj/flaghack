@@ -140,6 +140,7 @@ export const AnyTool = oneof(
 // <<<<<<
 
 export const AnyItem = oneof(Flag, AnyFood, AnyDrink, AnyTool)
+export const ItemCollection = S.HashMap({ key: Key, value: AnyItem })
 // ===========================
 // Creatures
 // ===========================

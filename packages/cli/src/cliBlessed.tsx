@@ -5,6 +5,29 @@ import React from "react"
 import { render } from "react-blessed"
 import BApp from "./BApp.js"
 
+type ShutdownSignal = "SIGINT" | "SIGTERM"
+
+const createShutdown = (screen: blessed.Widgets.Screen) => {
+  let destroyed = false
+
+  const shutdown = (signal: ShutdownSignal) => {
+    if (!destroyed) {
+      destroyed = true
+      screen.destroy()
+    }
+
+    process.removeListener(signal, signalHandlers[signal])
+    process.kill(process.pid, signal)
+  }
+
+  const signalHandlers: Readonly<Record<ShutdownSignal, () => void>> = {
+    SIGINT: () => shutdown("SIGINT"),
+    SIGTERM: () => shutdown("SIGTERM")
+  }
+
+  return { shutdown, signalHandlers }
+}
+
 export const startblessed = () => {
   const screen = blessed.screen({
     // autoPadding: false,
@@ -17,15 +40,15 @@ export const startblessed = () => {
     title: "react-blessed hello world"
   })
 
+  const { shutdown, signalHandlers } = createShutdown(screen)
+
   // Adding a way to quit the program
   screen.key(["C-c"], function(_ch, _key) {
-    return process.exit(0)
+    shutdown("SIGINT")
   })
 
-  process.once("SIGTERM", () => {
-    screen.destroy()
-    process.exit(0)
-  })
+  process.once("SIGINT", signalHandlers.SIGINT)
+  process.once("SIGTERM", signalHandlers.SIGTERM)
 
   return render(<BApp />, screen)
 }

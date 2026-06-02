@@ -1,15 +1,21 @@
 import { Schema } from "effect"
-import { collect, numberbetween, prop, struct } from "./util.js"
+import { collect } from "./util.js"
 
-const AttributeGeneric = numberbetween(0, 20)
-// pipe(number, between(start, end))
+const AttributeGeneric = Schema.Number.pipe(
+  Schema.int(),
+  Schema.between(0, 20)
+)
+const NonNegativeInteger = Schema.Number.pipe(
+  Schema.int(),
+  Schema.nonNegative()
+)
 
-const Charisma = prop("charisma", AttributeGeneric)
-const Strength = prop("strength", AttributeGeneric)
-const Intelligence = prop("intelligence", AttributeGeneric)
-const Dexterity = prop("dexterity", AttributeGeneric)
-const Constitution = prop("constitution", AttributeGeneric)
-const Wisdom = prop("wisdom", AttributeGeneric)
+const Charisma = Schema.Struct({ charisma: AttributeGeneric })
+const Strength = Schema.Struct({ strength: AttributeGeneric })
+const Intelligence = Schema.Struct({ intelligence: AttributeGeneric })
+const Dexterity = Schema.Struct({ dexterity: AttributeGeneric })
+const Constitution = Schema.Struct({ constitution: AttributeGeneric })
+const Wisdom = Schema.Struct({ wisdom: AttributeGeneric })
 
 export const [AllAttributes, AnyAttribute] = collect(
   Charisma,
@@ -23,12 +29,12 @@ export const [AllAttributes, AnyAttribute] = collect(
 /** Status effects:
 Things that are temporarily applied to other things, with some effect
  */
-export const StatusEffect = struct({
+export const StatusEffect = Schema.Struct({
   active: Schema.Boolean,
-  started: Schema.Number,
-  duration: Schema.Number
+  started: NonNegativeInteger,
+  duration: NonNegativeInteger
 })
-export const Confused = prop("confused", StatusEffect)
+export const Confused = Schema.Struct({ confused: StatusEffect })
 export const [allStatusEffect, AnyStatusEffect] = collect(Confused)
 
 /** Properties:
@@ -36,8 +42,8 @@ Things that something either has or doesnt have and that are conferred or remove
  */
 export const Property = Schema.Boolean
 
-export const Fixed = prop("fixed", Property) // not able to be corroded or burned due to magic
-export const Wet = prop("wet", Property)
+export const Fixed = Schema.Struct({ fixed: Property }) // not able to be corroded or burned due to magic
+export const Wet = Schema.Struct({ wet: Property })
 
 export const [AllProperties, AnyProperty] = collect(Fixed, Wet)
 
@@ -47,15 +53,15 @@ There can be multiple phases in a state. And an item must be in one of each stat
 export const State = Schema.Literal
 export const Phase = State("solid", "gas", "liquid")
 export const BUC = State("blessed", "uncursed", "cursed")
-export const PhaseState = prop("phase", Phase)
-export const BUCState = prop("buc", BUC)
+export const PhaseState = Schema.Struct({ phase: Phase })
+export const BUCState = Schema.Struct({ buc: BUC })
 export const [AllStates, AnyState] = collect(PhaseState, BUCState)
 
 /** things used to keep track of numerical state. Like hit points
 We are currently keeping track of how much has been lost, the amount total is calculated based on other things
  */
 
-export const Points = Schema.Number
-export const HitP = prop("dhp", Points) // the amount of damage TAKEN
-export const VrilP = prop("dvp", Points) // the amount of magic LOST
-export const HungerP = prop("dhunger", Points) // the amount of hunger LOST
+export const Points = NonNegativeInteger
+export const HitP = Schema.Struct({ dhp: Points }) // the amount of damage TAKEN
+export const VrilP = Schema.Struct({ dvp: Points }) // the amount of magic LOST
+export const HungerP = Schema.Struct({ dhunger: Points }) // the amount of hunger LOST

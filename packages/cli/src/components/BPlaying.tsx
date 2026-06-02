@@ -16,7 +16,7 @@ import { List, Map } from "immutable"
 import React, { useEffect, useRef, useState } from "react"
 import type { BoxElement } from "react-blessed"
 import { GameClient } from "../GameClient.js"
-import { MainLive } from "../runtime.js"
+import { LiveRuntime } from "../runtime.js"
 import BGameBoard, { type Tiles } from "./BGameBoard.js"
 import Inventory from "./Inventory.js"
 import Messages from "./Messages.js"
@@ -128,12 +128,12 @@ export default function BPlaying(_props: Props) {
     }
 
     initialWorldFetchStarted.current = true
-    apiGetWorld.pipe(
-      Effect.tap((world) => Effect.sync(() => setWorld(world))),
-      Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
-      Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
-      Effect.provide(MainLive),
-      Effect.runPromise
+    void LiveRuntime.runPromise(
+      apiGetWorld.pipe(
+        Effect.tap((world) => Effect.sync(() => setWorld(world))),
+        Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => dropRef.current?.hide()))
+      )
     )
   }, [world])
   const theDrawMatrix = drawWorld(world)
@@ -147,12 +147,12 @@ export default function BPlaying(_props: Props) {
       setMessages((messages) => messages.unshift(`doing ${input}`))
       if (input === ",") {
         setMessages((messages) => messages.unshift("picking up "))
-        apiGetPickupItemsFor("player").pipe(
-          Effect.tap((contents) =>
-            Effect.sync(() => setPickupContents(contents))
-          ),
-          Effect.provide(MainLive),
-          Effect.runPromise
+        void LiveRuntime.runPromise(
+          apiGetPickupItemsFor("player").pipe(
+            Effect.tap((contents) =>
+              Effect.sync(() => setPickupContents(contents))
+            )
+          )
         )
         pickupRef.current?.show()
         pickupRef.current?.focus()
@@ -165,10 +165,10 @@ export default function BPlaying(_props: Props) {
         if (Option.isNone(action)) {
           return
         }
-        apiDoPlayerAction(action.value).pipe(
-          Effect.andThen(refreshWorldAndInventory),
-          Effect.provide(MainLive),
-          Effect.runPromise
+        void LiveRuntime.runPromise(
+          apiDoPlayerAction(action.value).pipe(
+            Effect.andThen(refreshWorldAndInventory)
+          )
         )
       }
     }
@@ -184,21 +184,21 @@ export default function BPlaying(_props: Props) {
   }, [])
 
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
-    apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
-      Effect.andThen(refreshWorldAndInventory),
-      Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
-      Effect.tap(() => Effect.sync(() => gameref.current?.focus())),
-      Effect.provide(MainLive),
-      Effect.runPromise
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
     )
   }
   const onDoDrop = (dropItems: ReadonlyArray<Key>) => {
-    apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
-      Effect.andThen(refreshWorldAndInventory),
-      Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
-      Effect.tap(() => Effect.sync(() => gameref.current?.focus())),
-      Effect.provide(MainLive),
-      Effect.runPromise
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
     )
   }
   const onCancelMultiDrop = () => {

@@ -9,7 +9,7 @@ import type {
   World as WorldSchema
 } from "@flaghack/domain/schemas"
 // import blessed from "blessed"
-import { Effect, HashMap } from "effect"
+import { Effect, HashMap, Option } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
 import { type KeyboardEvent, useEffect, useRef, useState } from "react"
@@ -41,26 +41,26 @@ type Props = {
 const getTileOrDefault = (e: Entity | undefined): Tile =>
   e === undefined ? { color: "black", char: " " } : getTile(e)
 
-export const parseInput = (input: string): Action | undefined => {
+export const parseInput = (input: string): Option.Option<Action> => {
   switch (input) {
     case "j":
-      return EAction.move({ dir: "S" })
+      return Option.some(EAction.move({ dir: "S" }))
     case "h":
-      return EAction.move({ dir: "W" })
+      return Option.some(EAction.move({ dir: "W" }))
     case "k":
-      return EAction.move({ dir: "N" })
+      return Option.some(EAction.move({ dir: "N" }))
     case "l":
-      return EAction.move({ dir: "E" })
+      return Option.some(EAction.move({ dir: "E" }))
     case "y":
-      return EAction.move({ dir: "NW" })
+      return Option.some(EAction.move({ dir: "NW" }))
     case "u":
-      return EAction.move({ dir: "NE" })
+      return Option.some(EAction.move({ dir: "NE" }))
     case "b":
-      return EAction.move({ dir: "SW" })
+      return Option.some(EAction.move({ dir: "SW" }))
     case "n":
-      return EAction.move({ dir: "SE" })
+      return Option.some(EAction.move({ dir: "SE" }))
     default:
-      return undefined
+      return Option.none()
   }
 }
 
@@ -146,11 +146,11 @@ export default function BPlaying(_props: Props) {
       setShowPickup(true)
     } else {
       const action = parseInput(input)
-      if (action === undefined) {
+      if (Option.isNone(action)) {
         return
       }
 
-      doPlayerAction(action).pipe(
+      doPlayerAction(action.value).pipe(
         Effect.andThen(refreshWorldAndInventory),
         Effect.runPromise
       )

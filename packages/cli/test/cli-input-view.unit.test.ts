@@ -12,12 +12,14 @@ const bPlayingSourcePath = join(
 const readBPlayingSource = () => readFileSync(bPlayingSourcePath, "utf8")
 
 const parseInputSignature =
-  /const\s+parseInput\s*=\s*\(\s*input\s*:\s*string\s*\)\s*(?::\s*[^=]+)?=>\s*{/
+  /const\s+parseInput\s*=\s*\(\s*input\s*:\s*string\s*\)\s*:\s*Option\.Option\s*<\s*Action\s*>\s*=>\s*{/
 const parseInputAnySignature =
   /const\s+parseInput\s*=\s*\(\s*input\s*:\s*any\s*\)/
 const parseInputDefaultNoop =
   /default\s*:\s*return\s+EAction\.noop\s*\(\s*\)/
 const parseInputDefaultUndefined = /default\s*:\s*return\s+undefined\b/
+const parseInputDefaultNone =
+  /default\s*:\s*return\s+Option\.none\s*\(\s*\)/
 const handleGameKeySignature =
   /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string\s*\)\s*=>\s*{/
 const onDoPickupSignature =
@@ -25,7 +27,7 @@ const onDoPickupSignature =
 const onDoDropSignature =
   /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*Array\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const noActionGuardBeforeApiPattern =
-  /const\s+action\s*=\s*parseInput\s*\(\s*input\s*\)\s*if\s*\(\s*action\s*===\s*undefined\s*\)\s*{\s*return\s*}/
+  /const\s+action\s*=\s*parseInput\s*\(\s*input\s*\)\s*if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*{\s*return\s*}/
 const modeUseStateInitializer =
   /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
 const modeUseStateBinding =
@@ -258,7 +260,7 @@ const expectRefreshAfterAction = (
 }
 
 describe("CLI input handling static guards", () => {
-  it("keeps parseInput string-typed with an undefined no-action default", () => {
+  it("keeps parseInput string-typed with an explicit Option no-action default", () => {
     const source = readBPlayingSource()
     const parseInputBody = extractArrowFunctionBody(
       source,
@@ -268,7 +270,13 @@ describe("CLI input handling static guards", () => {
     expect(source).toMatch(parseInputSignature)
     expect(source).not.toMatch(parseInputAnySignature)
     expect(parseInputBody).not.toMatch(parseInputDefaultNoop)
-    expect(parseInputBody).toMatch(parseInputDefaultUndefined)
+    expect(parseInputBody).not.toMatch(parseInputDefaultUndefined)
+    expect(parseInputBody).toMatch(parseInputDefaultNone)
+    for (const dir of ["S", "W", "N", "E", "NW", "NE", "SW", "SE"]) {
+      expect(parseInputBody).toContain(
+        `Option.some(EAction.move({ dir: "${dir}" }))`
+      )
+    }
   })
 
   it("defines an authoritative world/inventory refresh effect", () => {
@@ -308,11 +316,15 @@ describe("CLI input handling static guards", () => {
 
     const guardEnd = (guardMatch?.index ?? 0)
       + (guardMatch?.[0].length ?? 0)
-    indexAfter(handleGameKeyBody, "apiDoPlayerAction(action)", guardEnd)
+    indexAfter(
+      handleGameKeyBody,
+      "apiDoPlayerAction(action.value)",
+      guardEnd
+    )
     indexAfter(handleGameKeyBody, "refreshWorldAndInventory", guardEnd)
     expectRefreshAfterAction(
       handleGameKeyBody,
-      "apiDoPlayerAction(action)"
+      "apiDoPlayerAction(action.value)"
     )
     expect(handleGameKeyBody).not.toContain("Effect.andThen(apiGetWorld)")
     expect(handleGameKeyBody).not.toContain("apiGetInventory.pipe(")

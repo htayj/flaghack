@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { EAction } from "@flaghack/domain/schemas"
+import { type Action, EAction } from "@flaghack/domain/schemas"
+import { Option } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
@@ -240,16 +241,41 @@ const expectRefreshAfterAction = (
   return refreshIndex
 }
 
+const expectSomeAction = (
+  actual: Option.Option<Action>,
+  expected: Action
+) => {
+  expect(Option.isSome(actual)).toBe(true)
+  if (Option.isSome(actual)) {
+    expect(actual.value).toEqual(expected)
+  }
+}
+
 describe("web input parsing", () => {
   it("maps vi movement keys to domain actions", () => {
-    expect(parseInput("j")).toEqual(EAction.move({ dir: "S" }))
+    const movementCases = [
+      ["j", "S"],
+      ["h", "W"],
+      ["k", "N"],
+      ["l", "E"],
+      ["y", "NW"],
+      ["u", "NE"],
+      ["b", "SW"],
+      ["n", "SE"]
+    ] as const
+
+    for (const [input, dir] of movementCases) {
+      expectSomeAction(parseInput(input), EAction.move({ dir }))
+    }
   })
 
   it("maps unknown keys to no action", () => {
-    const action = parseInput("?")
+    for (const input of ["?", "d"] as const) {
+      const action = parseInput(input)
 
-    expect(action).toBeUndefined()
-    expect(action).not.toEqual(EAction.noop())
+      expect(Option.isNone(action)).toBe(true)
+      expect(action).not.toEqual(Option.some(EAction.noop()))
+    }
   })
 })
 
@@ -287,10 +313,10 @@ describe("web input/view source guards", () => {
       "const action = parseInput(input)"
     )
     const guardIndex = handleKeyDownSource.search(
-      /if\s*\(\s*action\s*===\s*undefined\s*\)\s*\{\s*return\s*\}/
+      /if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*\{\s*return\s*\}/
     )
     const doActionIndex = handleKeyDownSource.indexOf(
-      "doPlayerAction(action)"
+      "doPlayerAction(action.value)"
     )
     const refreshIndex = handleKeyDownSource.indexOf(
       "Effect.andThen(refreshWorldAndInventory)",

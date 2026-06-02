@@ -19,7 +19,8 @@ import {
   doPlayerAction,
   getInventory,
   getPickupItemsFor,
-  getWorld
+  getWorld,
+  LiveRuntime
 } from "./GameClient.js"
 import Inventory from "./Inventory.tsx"
 import Messages from "./Messages.tsx"
@@ -119,9 +120,10 @@ export default function BPlaying(_props: Props) {
     }
 
     initialWorldFetchRequestedRef.current = true
-    getWorld.pipe(
-      Effect.tap((world) => Effect.sync(() => setWorld(world))),
-      Effect.runPromise
+    void LiveRuntime.runPromise(
+      getWorld.pipe(
+        Effect.tap((world) => Effect.sync(() => setWorld(world)))
+      )
     )
   }, [world])
   const theDrawMatrix = drawWorld(world)
@@ -137,11 +139,12 @@ export default function BPlaying(_props: Props) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const input = event.key
     if (input === ",") {
-      getPickupItemsFor("player").pipe(
-        Effect.tap((contents) =>
-          Effect.sync(() => setPickupContents(contents))
-        ),
-        Effect.runPromise
+      void LiveRuntime.runPromise(
+        getPickupItemsFor("player").pipe(
+          Effect.tap((contents) =>
+            Effect.sync(() => setPickupContents(contents))
+          )
+        )
       )
       setShowPickup(true)
     } else {
@@ -150,53 +153,14 @@ export default function BPlaying(_props: Props) {
         return
       }
 
-      doPlayerAction(action.value).pipe(
-        Effect.andThen(refreshWorldAndInventory),
-        Effect.runPromise
+      void LiveRuntime.runPromise(
+        doPlayerAction(action.value).pipe(
+          Effect.andThen(refreshWorldAndInventory)
+        )
       )
     }
   }
-  // useEffect(() => {
-  //   gameref.current?.focus()
-  //   gameref.current?.key(
-  //     ["j", "k", "l", "h", "y", "u", "n", "b", ","],
-  //     (input: string) => {
-  //       setMessages((messages) => messages.unshift(`doing ${input}`))
-  //       if (input === ",") {
-  //         setMessages((messages) => messages.unshift("picking up "))
-  //         apiGetPickupItemsFor("player").pipe(
-  //           Effect.andThen(setPickupContents),
-  //           Effect.provide(MainLive),
-  //           Effect.runPromise
-  //         )
-  //         pickupRef.current?.show()
-  //         pickupRef.current?.focus()
-  //       } else {
-  //         const action = parseInput(input)
-  //         action
-  //           ? (
-  //             apiDoPlayerAction(action).pipe(
-  //               Effect.andThen(apiGetWorld),
-  //               Effect.andThen(setWorld),
-  //               Effect.provide(MainLive),
-  //               Effect.runPromise
-  //             )
-  //           )
-  //           : setMode(action)
-  //         // apiGetLogs.pipe(
-  //         //   Effect.andThen((messages) => setMessages(List(messages))),
-  //         //   Effect.provide(MainLive),
-  //         //   Effect.runPromise
-  //         // )
-  //         apiGetInventory.pipe(
-  //           Effect.andThen(setInventory),
-  //           Effect.provide(MainLive),
-  //           Effect.runPromise
-  //         )
-  //       }
-  //     }
-  //   )
-  // }, [])
+  // useEffect(() => {}) was the legacy react-blessed keyboard path.
 
   // const pickupRecursive = (pickupItems: Key[]) => {
   // 	if( pickupItems.length > 0 )  {
@@ -205,10 +169,11 @@ export default function BPlaying(_props: Props) {
   // 	} }
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
-    doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
-      Effect.andThen(refreshWorldAndInventory),
-      Effect.tap(() => Effect.sync(() => setShowPickup(false))),
-      Effect.runPromise
+    void LiveRuntime.runPromise(
+      doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => setShowPickup(false)))
+      )
     )
   }
   const onCancelPickup = () => {

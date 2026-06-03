@@ -1,10 +1,25 @@
 import { describe, expect, it } from "@effect/vitest"
+import {
+  type Action,
+  EAction,
+  type Entity as EntitySchema,
+  type World as WorldSchema
+} from "@flaghack/domain/schemas"
+import { HashMap, Option } from "effect"
 import { List } from "immutable"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
-import { prependMessage } from "../src/components/BPlaying.js"
+import {
+  clampTravelTarget,
+  findTravelDirections,
+  type MovementDirection,
+  normalizeGameInput,
+  parseExtendedCommand,
+  parseInput,
+  prependMessage
+} from "../src/components/BPlaying.js"
 import { MAX_VISIBLE_MESSAGES } from "../src/components/Messages.js"
 
 const bPlayingSourcePath = join(
@@ -14,8 +29,86 @@ const bPlayingSourcePath = join(
 
 const readBPlayingSource = () => readFileSync(bPlayingSourcePath, "utf8")
 
+type Direction = "N" | "E" | "S" | "W" | "NE" | "NW" | "SE" | "SW"
+type DirectionCase = readonly [input: string, direction: Direction]
+type Entity = typeof EntitySchema.Type
+type World = typeof WorldSchema.Type
+
+const worldFromEntities = (entities: ReadonlyArray<Entity>): World =>
+  HashMap.fromIterable(
+    entities.map((entity) => [entity.key, entity] as const)
+  )
+
+const floorAt = (x: number, y: number): Entity => ({
+  _tag: "floor",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `floor-${x}-${y}`
+})
+const wallAt = (x: number, y: number): Entity => ({
+  _tag: "wall",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `wall-${x}-${y}`,
+  variant: "none"
+})
+const playerAt = (x: number, y: number): Entity => ({
+  _tag: "player",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: "player",
+  name: "you"
+})
+const hippieAt = (x: number, y: number): Entity => ({
+  _tag: "hippie",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `hippie-${x}-${y}`,
+  name: "blocked"
+})
+
+const baseDirectionCases = [
+  ["h", "W"],
+  ["j", "S"],
+  ["k", "N"],
+  ["l", "E"],
+  ["y", "NW"],
+  ["u", "NE"],
+  ["b", "SW"],
+  ["n", "SE"]
+] as const satisfies ReadonlyArray<DirectionCase>
+
+const shiftedDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [input.toUpperCase(), direction] as const
+)
+const controlDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [`C-${input}`, direction] as const
+)
+const gPrefixDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [`g+${input}`, direction] as const
+)
+const mPrefixDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [`m+${input}`, direction] as const
+)
+
+const expectSomeAction = (
+  actual: Option.Option<Action>,
+  expected: Action
+) => {
+  expect(Option.isSome(actual)).toBe(true)
+  if (Option.isSome(actual)) {
+    expect(actual.value).toEqual(expected)
+  }
+}
+
+const expectMovementCases = (cases: ReadonlyArray<DirectionCase>) => {
+  for (const [input, direction] of cases) {
+    expectSomeAction(parseInput(input), EAction.move({ dir: direction }))
+  }
+}
+
 const parseInputSignature =
-  /const\s+parseInput\s*=\s*\(\s*input\s*:\s*string\s*\)\s*:\s*Option\.Option\s*<\s*Action\s*>\s*=>\s*{/
+  /(?:export\s+)?const\s+parseInput\s*=\s*\(\s*input\s*:\s*string\s*\)\s*:\s*Option\.Option\s*<\s*Action\s*>\s*=>\s*{/
 const parseInputAnySignature =
   /const\s+parseInput\s*=\s*\(\s*input\s*:\s*any\s*\)/
 const parseInputDefaultNoop =
@@ -24,13 +117,13 @@ const parseInputDefaultUndefined = /default\s*:\s*return\s+undefined\b/
 const parseInputDefaultNone =
   /default\s*:\s*return\s+Option\.none\s*\(\s*\)/
 const handleGameKeySignature =
-  /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string\s*\)\s*=>\s*{/
+  /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string(?:\s*,\s*key\s*\?\s*:\s*BlessedKeyLike)?\s*\)\s*=>\s*{/
 const onDoPickupSignature =
   /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onDoDropSignature =
   /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const noActionGuardBeforeApiPattern =
-  /const\s+action\s*=\s*parseInput\s*\(\s*input\s*\)\s*if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*{\s*return\s*}/
+  /const\s+action\s*=\s*parseInput\s*\(\s*\w+\s*\)\s*if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*{\s*return\s*}/
 const modeUseStateInitializer =
   /useState\s*<\s*Mode\s*>\s*\(\s*"normal"\s*\)/
 const modeUseStateBinding =
@@ -291,6 +384,134 @@ describe("CLI message log", () => {
   })
 })
 
+describe("CLI NetHack movement input parser", () => {
+  it("maps base vim directions to single-step movement actions", () => {
+    expectMovementCases(baseDirectionCases)
+  })
+
+  it("maps shifted vim directions to movement actions", () => {
+    expectMovementCases(shiftedDirectionCases)
+  })
+
+  it("maps control vim directions to movement actions", () => {
+    expectMovementCases(controlDirectionCases)
+  })
+
+  it("maps g-prefix vim directions to movement actions", () => {
+    expectMovementCases(gPrefixDirectionCases)
+  })
+
+  it("maps m-prefix vim directions to movement actions", () => {
+    expectMovementCases(mPrefixDirectionCases)
+  })
+
+  it("maps dot to the rest/no-op action", () => {
+    expectSomeAction(parseInput("."), EAction.noop())
+  })
+
+  it("ignores unknown keys and bare movement prefixes", () => {
+    for (const input of ["?", "g", "m", "g+?", "m+?"]) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
+  })
+})
+
+describe("CLI NetHack key normalization", () => {
+  it("normalizes blessed shifted and control direction events", () => {
+    expect(normalizeGameInput("H", { full: "S-h" })).toBe("H")
+    expect(normalizeGameInput("", { full: "C-k" })).toBe("C-k")
+    expect(normalizeGameInput("", { full: "backspace" })).toBe("C-h")
+    expect(normalizeGameInput("", { full: "linefeed" })).toBe("C-j")
+  })
+
+  it("normalizes raw control characters used by common terminals", () => {
+    expect(normalizeGameInput("\b")).toBe("C-h")
+    expect(normalizeGameInput("\n")).toBe("C-j")
+    expect(normalizeGameInput("\u000b")).toBe("C-k")
+    expect(normalizeGameInput("\f")).toBe("C-l")
+    expect(normalizeGameInput("\u0019")).toBe("C-y")
+    expect(normalizeGameInput("\u0015")).toBe("C-u")
+    expect(normalizeGameInput("\u0002")).toBe("C-b")
+    expect(normalizeGameInput("\u000e")).toBe("C-n")
+  })
+})
+
+describe("CLI NetHack travel pathfinding", () => {
+  it("finds shortest travel directions across known passable map tiles", () => {
+    const world = worldFromEntities([
+      playerAt(0, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0)
+    ])
+
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 2, y: 0, z: 0 }
+    )).toEqual(["E", "E"] satisfies ReadonlyArray<MovementDirection>)
+  })
+
+  it("does not route to an unknown or impassable travel target", () => {
+    const world = worldFromEntities([
+      playerAt(0, 0),
+      floorAt(0, 0),
+      wallAt(1, 0)
+    ])
+
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 }
+    )).toEqual([])
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 2, y: 0, z: 0 }
+    )).toEqual([])
+  })
+
+  it("treats creature-occupied floor tiles as blocked while routing", () => {
+    const world = worldFromEntities([
+      playerAt(0, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0),
+      hippieAt(1, 0)
+    ])
+
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 2, y: 0, z: 0 }
+    )).toEqual([])
+  })
+
+  it("keeps travel cursor targets inside the visible board", () => {
+    expect(clampTravelTarget({ x: -5, y: -1, z: 0 })).toEqual({
+      x: 0,
+      y: 0,
+      z: 0
+    })
+    expect(clampTravelTarget({ x: 100, y: 30, z: 0 })).toEqual({
+      x: 79,
+      y: 19,
+      z: 0
+    })
+  })
+})
+
+describe("CLI NetHack extended command parser", () => {
+  it("recognizes #quit and quit as the initial extended command", () => {
+    expect(Option.isSome(parseExtendedCommand("#quit"))).toBe(true)
+    expect(Option.isSome(parseExtendedCommand("quit"))).toBe(true)
+  })
+
+  it("ignores unsupported extended commands", () => {
+    expect(Option.isNone(parseExtendedCommand("#pray"))).toBe(true)
+  })
+})
+
 describe("CLI input handling static guards", () => {
   it("keeps parseInput string-typed with an explicit Option no-action default", () => {
     const source = readBPlayingSource()
@@ -304,11 +525,8 @@ describe("CLI input handling static guards", () => {
     expect(parseInputBody).not.toMatch(parseInputDefaultNoop)
     expect(parseInputBody).not.toMatch(parseInputDefaultUndefined)
     expect(parseInputBody).toMatch(parseInputDefaultNone)
-    for (const dir of ["S", "W", "N", "E", "NW", "NE", "SW", "SE"]) {
-      expect(parseInputBody).toContain(
-        `Option.some(EAction.move({ dir: "${dir}" }))`
-      )
-    }
+    expect(source).toContain("baseMovementDirections")
+    expect(source).toContain("EAction.noop()")
   })
 
   it("defines an authoritative world/inventory refresh effect", () => {

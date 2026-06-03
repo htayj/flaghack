@@ -50,7 +50,7 @@ export const startblessed = () => {
   process.once("SIGINT", signalHandlers.SIGINT)
   process.once("SIGTERM", signalHandlers.SIGTERM)
 
-  return render(<BApp />, screen)
+  return render(<BApp onQuit={() => shutdown("SIGINT")} />, screen)
 }
 // export type CliType = typeof cli
 // render(<App opts={cli} />)

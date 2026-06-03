@@ -127,6 +127,13 @@ const liveRuntimeCallClassification = (
     return "movement apiDoPlayerAction action value"
   }
   if (
+    /runTravelToTarget\s*\(\s*target\s*\)\s*\.pipe\s*\(/.test(
+      argumentSource
+    )
+  ) {
+    return "travel runTravelToTarget target"
+  }
+  if (
     /apiDoPlayerAction\s*\(\s*EAction\.pickupMulti\s*\(\s*{\s*keys\s*:\s*pickupItems\s*}\s*\)\s*\)/
       .test(argumentSource)
   ) {
@@ -177,13 +184,14 @@ describe("CLI runtime boundary", () => {
       findPropertyAccesses(sourceFile, "Effect", "runPromise")
     ).toHaveLength(0)
     expect(findEffectProvideMainLiveCalls(sourceFile)).toHaveLength(0)
-    expect(liveRuntimeCalls).toHaveLength(5)
+    expect(liveRuntimeCalls).toHaveLength(6)
     expect(
       liveRuntimeCalls.map((call) =>
         liveRuntimeCallClassification(call, sourceFile)
       )
     ).toEqual([
       "initial apiGetWorld",
+      "travel runTravelToTarget target",
       "comma apiGetPickupItemsFor player",
       "movement apiDoPlayerAction action value",
       "pickup apiDoPlayerAction pickupMulti",

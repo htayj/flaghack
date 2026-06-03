@@ -69,7 +69,7 @@ describe("CLI readonly UI contracts", () => {
     const source = readSource(join(srcDirectory, "BApp.tsx"))
 
     expect(source).toMatch(
-      /return\s+<BPlaying\s+username=["']test["']\s*\/>/
+      /return\s+<BPlaying\s+username=["']test["']\s+onQuit=\{onQuit\}\s*\/>/
     )
     expect(source).not.toMatch(/\buseState\b/)
     expect(source).not.toMatch(/\bmode\s*===\s*["']playing["']/)

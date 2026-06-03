@@ -14,7 +14,7 @@ const capturedGameBox = /const\s+gameBox\s*=\s*gameref\.current/
 const gameBoxFocus = /gameBox\?\.focus\s*\(\s*\)/
 const gameKeysDeclaration = /const\s+gameKeys\s*=\s*\[([\s\S]*?)\]/
 const namedGameKeyHandler =
-  /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string\s*\)\s*=>\s*{/
+  /const\s+handleGameKey\s*=\s*\(\s*input\s*:\s*string(?:\s*,\s*key\s*\?\s*:\s*BlessedKeyLike)?\s*\)\s*=>\s*{/
 const registrationWithHandler =
   /gameBox\?\.key\s*\(\s*gameKeys\s*,\s*handleGameKey\s*\)/
 const cleanupLoopOverGameKeys =
@@ -35,20 +35,49 @@ const modeUseStateBinding =
 const drawWorldHelperSource =
   /const\s+drawWorld\s*=\s*\([\s\S]*?\n}\nexport\s+default\s+function\s+BPlaying\b/
 const drawWorldWorldOnlySignature =
-  /const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*\)\s*:\s*Tiles\s*=>\s*{/
+  /const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*,\s*travelTarget\?\s*:\s*Pos\s*\)\s*:\s*Tiles\s*=>\s*{/
 const consoleLogReference = /console\s*\.\s*log/
 
 const expectedGameKeys = [
+  "h",
   "j",
   "k",
   "l",
-  "h",
   "y",
-  "d",
   "u",
-  "n",
   "b",
-  ","
+  "n",
+  "S-h",
+  "S-j",
+  "S-k",
+  "S-l",
+  "S-y",
+  "S-u",
+  "S-b",
+  "S-n",
+  "C-h",
+  "C-j",
+  "C-k",
+  "C-l",
+  "C-y",
+  "C-u",
+  "C-b",
+  "C-n",
+  "backspace",
+  "linefeed",
+  "g",
+  "m",
+  ".",
+  "_",
+  "d",
+  ",",
+  "#",
+  "q",
+  "i",
+  "t",
+  "enter",
+  "return",
+  "escape"
 ] as const
 
 describe("CLI BPlaying key subscription static guards", () => {

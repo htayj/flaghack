@@ -1,6 +1,6 @@
-import { Action } from "@flaghack/domain/schemas"
-import { Effect, pipe } from "effect"
-import { TKey } from "./entity.js"
+import type { Action } from "@flaghack/domain/schemas"
+import { Effect } from "effect"
+import type { TKey } from "./entity.js"
 import {
   actPlayerAction as apiDoPlayerAction,
   eGetWorld as apiGetWorld,
@@ -11,30 +11,18 @@ import { getLogs as apiGetLogs } from "./log.js"
 
 export class GameRepository
   extends Effect.Service<GameRepository>()("api/GameRepository", {
-    effect: Effect.gen(function*() {
-      const getLogs = apiGetLogs
-      const getWorld = apiGetWorld
-      function getPickupItemsFor(k: TKey) {
-        return pipe(
-          Effect.succeed(k),
-          Effect.andThen(apiGetPickupItemsFor)
-        )
-      }
-      function doPlayerAction(action: Action) {
-        return pipe(
-          Effect.succeed(action),
-          Effect.andThen(apiDoPlayerAction)
-        )
-      }
-      const getInventory = apiGetInventory("player")
-
-      return {
-        getLogs,
-        getWorld,
-        getInventory,
-        getPickupItemsFor,
-        doPlayerAction
+    effect: Effect.succeed(
+      {
+        getLogs: apiGetLogs,
+        getWorld: apiGetWorld,
+        getInventory: apiGetInventory("player"),
+        getPickupItemsFor(k: TKey) {
+          return apiGetPickupItemsFor(k)
+        },
+        doPlayerAction(action: Action) {
+          return apiDoPlayerAction(action)
+        }
       } as const
-    })
+    )
   })
 {}

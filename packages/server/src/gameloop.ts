@@ -34,15 +34,6 @@ type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
-// const _state: { gameState: TGameState; log: (s: string) => void } = {
-//   gameState: GameState.make({
-//     world: HashMap.fromIterable(
-//       initWorld.map((e) => [e.key, e])
-//     )
-//   }),
-//   log: noop
-// }
-const testLevel: World = BSPGenLevel(777, 0)
 const selectRequiredSpawnFloor = (world: World): TPos =>
   omatch(
     world.pipe(findFirst((entity) => entity._tag === "floor")),
@@ -55,25 +46,49 @@ const selectRequiredSpawnFloor = (world: World): TPos =>
       onSome: ([, floorEntity]) => floorEntity.at
     }
   )
-const testLevelPlayerLocation = selectRequiredSpawnFloor(testLevel)
 
-const testPlayer = player(
-  testLevelPlayerLocation.x,
-  testLevelPlayerLocation.y,
-  testLevelPlayerLocation.z
-)
-const testLevelPlayer: World = HashMap.fromIterable([[
-  "player",
-  testPlayer
-]])
-const testLevelReady: World = testLevelPlayer.pipe(
-  HashMap.union(testLevel)
-)
-const _state: { gameState: TGameState; log: (s: string) => void } = {
-  gameState: GameState.make({
-    world: testLevelReady
-  }),
+const _state: {
+  gameState: TGameState | undefined
+  log: (s: string) => void
+} = {
+  gameState: undefined,
   log: noop
+}
+
+const makeInitialGameState = (): TGameState => {
+  const testLevel: World = BSPGenLevel(777, 0)
+  const testLevelPlayerLocation = selectRequiredSpawnFloor(testLevel)
+
+  const testPlayer = player(
+    testLevelPlayerLocation.x,
+    testLevelPlayerLocation.y,
+    testLevelPlayerLocation.z
+  )
+  const testLevelPlayer: World = HashMap.fromIterable([[
+    "player",
+    testPlayer
+  ]])
+  const testLevelReady: World = testLevelPlayer.pipe(
+    HashMap.union(testLevel)
+  )
+
+  return GameState.make({
+    world: testLevelReady
+  })
+}
+
+const getOrInitializeGameState = (): TGameState => {
+  const existing = _state.gameState
+
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const initialized = makeInitialGameState()
+
+  _state.gameState = initialized
+
+  return initialized
 }
 
 const setGameState = (s: TGameState): void => {
@@ -131,7 +146,7 @@ export const actPlayerAction = (
     )
   )
 
-const eGetGameState = suspend(() => succeed(_state.gameState))
+const eGetGameState = suspend(() => succeed(getOrInitializeGameState()))
 const eSetGameState = (gs: TGameState) =>
   suspend(() => succeed(setGameState(gs)))
 

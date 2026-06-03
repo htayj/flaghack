@@ -6,10 +6,24 @@ import {
 } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
-import { eGetWorld, getPickupItemsFor } from "../src/gameloop.js"
+import { vi } from "vitest"
+import type { BSPGenLevel } from "../src/world.js"
+
+type BspGenLevel = typeof BSPGenLevel
+type WorldModule = Record<string, unknown> & {
+  BSPGenLevel: BspGenLevel
+}
 
 const readGameloopSource = (): string =>
   readFileSync(new URL("../src/gameloop.ts", import.meta.url), "utf8")
+
+const importGameloop = async () => await import("../src/gameloop.js")
+
+const runGetWorld = async () =>
+  Effect.runSync((await importGameloop()).eGetWorld)
+
+const runGetPickupItemsFor = async (key: string) =>
+  Effect.runSync((await importGameloop()).getPickupItemsFor(key))
 
 const exportedConstBody = (source: string, constName: string): string => {
   const start = source.indexOf(`export const ${constName}`)
@@ -34,9 +48,51 @@ const initialSpawnSetupSource = (source: string): string => {
   return source.slice(start, end)
 }
 
+const sourceBeforeInitialStateInitializer = (source: string): string => {
+  const end = source.indexOf("const makeInitialGameState")
+
+  expect(end).toBeGreaterThanOrEqual(0)
+
+  return source.slice(0, end)
+}
+
 describe("initial world", () => {
-  it("places the player on a generated floor tile", () => {
-    const world = Effect.runSync(eGetWorld)
+  it("does not generate the initial BSP level until world state is read", async () => {
+    vi.resetModules()
+    let bspCalls = 0
+
+    vi.doMock("../src/world.js", async () => {
+      const actual = await vi.importActual<WorldModule>("../src/world.js")
+
+      return {
+        ...actual,
+        BSPGenLevel: (...args: Parameters<WorldModule["BSPGenLevel"]>) => {
+          bspCalls += 1
+          return actual.BSPGenLevel(...args)
+        }
+      }
+    })
+
+    try {
+      const module = await importGameloop()
+
+      expect(bspCalls).toBe(0)
+
+      Effect.runSync(module.eGetWorld)
+
+      expect(bspCalls).toBe(1)
+
+      Effect.runSync(module.eGetWorld)
+
+      expect(bspCalls).toBe(1)
+    } finally {
+      vi.doUnmock("../src/world.js")
+      vi.resetModules()
+    }
+  })
+
+  it("places the player on a generated floor tile", async () => {
+    const world = await runGetWorld()
     const playerEntityOption = world.pipe(HashMap.get("player"))
 
     expect(Option.isSome(playerEntityOption)).toBe(true)
@@ -68,19 +124,33 @@ describe("initial world", () => {
       /(?:\?\?|\|\|)\s*\{\s*x:\s*0,\s*y:\s*0,\s*z:\s*0\s*\}/u
     )
   })
+
+  it("keeps default game state initialization lazy", () => {
+    const gameloopSource = readGameloopSource()
+    const eagerSource = sourceBeforeInitialStateInitializer(gameloopSource)
+
+    expect(eagerSource).not.toContain("BSPGenLevel(")
+    expect(eagerSource).not.toContain("GameState.make(")
+    expect(gameloopSource).toMatch(
+      /const _state:\s*\{\s*gameState:\s*TGameState\s*\|\s*undefined\s*log:\s*\(s:\s*string\)\s*=>\s*void\s*\}\s*=\s*\{\s*gameState:\s*undefined,/u
+    )
+    expect(gameloopSource).toContain(
+      "const eGetGameState = suspend(() => succeed(getOrInitializeGameState()))"
+    )
+  })
 })
 
 describe("getPickupItemsFor", () => {
-  it("returns an empty HashMap for a missing entity", () => {
-    const items = Effect.runSync(getPickupItemsFor("__missing__"))
+  it("returns an empty HashMap for a missing entity", async () => {
+    const items = await runGetPickupItemsFor("__missing__")
 
     expect(Array.from(HashMap.values(items))).toHaveLength(0)
   })
 
-  it("excludes terrain and creatures from pickup items at the player", () => {
+  it("excludes terrain and creatures from pickup items at the player", async () => {
     const isTerrain = conforms(AnyTerrain)
     const isCreature = conforms(AnyCreature)
-    const items = Effect.runSync(getPickupItemsFor("player"))
+    const items = await runGetPickupItemsFor("player")
     const values = Array.from(HashMap.values(items))
 
     expect(values.some(isTerrain)).toBe(false)

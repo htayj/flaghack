@@ -12,6 +12,7 @@ const repositoryRoot = join(
   "../../.."
 )
 const rootPackageJsonPath = join(repositoryRoot, "package.json")
+const rootDprintJsonPath = join(repositoryRoot, "dprint.json")
 const rootTsconfigBuildJsonPath = join(
   repositoryRoot,
   "tsconfig.build.json"
@@ -49,6 +50,21 @@ const requiredBuildUtilsExcludePatterns = [
   "**/test*.ts"
 ]
 
+const requiredDprintExcludePatterns = [
+  ".pi/schedule-prompts.json",
+  ".pi/dev-suite/task-graph/current.json",
+  "packages/**/build/**",
+  "packages/**/dist/**",
+  "**/*.d.ts",
+  "**/*.d.ts.map",
+  "**/*.js.map",
+  "packages/domain/src/schemas/*.js",
+  "pnpm-lock.yaml",
+  "**/*~",
+  "**/#*#",
+  "**/.#*"
+]
+
 type RootPackageJson = {
   readonly devDependencies?: Readonly<Record<string, unknown>>
   readonly scripts?: Readonly<Record<string, unknown>>
@@ -61,6 +77,10 @@ type RootTsconfigBuildJson = {
   readonly references?: ReadonlyArray<{
     readonly path?: unknown
   }>
+}
+
+type RootDprintJson = {
+  readonly excludes?: ReadonlyArray<unknown>
 }
 
 type PackageManifest = {
@@ -81,6 +101,9 @@ const readRootTsconfigBuildJson = (): RootTsconfigBuildJson =>
   JSON.parse(
     readFileSync(rootTsconfigBuildJsonPath, "utf8")
   ) as RootTsconfigBuildJson
+
+const readRootDprintJson = (): RootDprintJson =>
+  JSON.parse(readFileSync(rootDprintJsonPath, "utf8")) as RootDprintJson
 
 const readRootVitestSharedTs = (): string =>
   readFileSync(rootVitestSharedTsPath, "utf8")
@@ -138,6 +161,16 @@ describe("root TypeScript build metadata", () => {
     )
 
     expect(referencePaths).toContain("packages/web")
+  })
+})
+
+describe("root formatter metadata", () => {
+  it("excludes generated, disposable, and local Pi runtime files", () => {
+    const rootDprintJson = readRootDprintJson()
+
+    expect(rootDprintJson.excludes).toEqual(
+      expect.arrayContaining(requiredDprintExcludePatterns)
+    )
   })
 })
 

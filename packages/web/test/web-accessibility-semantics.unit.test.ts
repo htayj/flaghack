@@ -32,9 +32,7 @@ const renderPickupPopup = (open: boolean) =>
       items: sampleWorld,
       open,
       onCancel: () => undefined,
-      onSubmit: () => undefined,
-      pickupRef: React.createRef<HTMLElement | null>(),
-      log: () => undefined
+      onSubmit: () => undefined
     })
   )
 
@@ -151,12 +149,14 @@ describe("web accessibility semantics", () => {
     expect(openMarkup).toContain("role=\"dialog\"")
     expect(openMarkup).toContain("aria-label=\"Pick up items\"")
     expect(openMarkup).toContain("aria-hidden=\"false\"")
+    expect(openMarkup).toContain("tabindex=\"-1\"")
     expect(openMarkup).toContain("role=\"list\"")
     expect(openMarkup).toContain("role=\"listitem\"")
     expect(openMarkup).toContain(sampleItem._tag)
     expect(openMarkup).toMatch(/style="[^"]*display:inherit/)
 
     expect(closedMarkup).toContain("aria-hidden=\"true\"")
+    expect(closedMarkup).toContain("tabindex=\"-1\"")
     expect(closedMarkup).toContain(sampleItem._tag)
     expect(closedMarkup).toMatch(/style="[^"]*display:none/)
 

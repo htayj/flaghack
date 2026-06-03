@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url"
 const pickupPopupPath = fileURLToPath(
   new URL("../src/PickupPopup.tsx", import.meta.url)
 )
+const playingPath = fileURLToPath(
+  new URL("../src/Playing.tsx", import.meta.url)
+)
 
 const forbiddenRegressions = [
   { snippet: "[\"asdf\"]", pattern: /\[\s*"asdf"\s*\]/ },
@@ -69,6 +72,41 @@ describe("PickupPopup source regression guards", () => {
   it("keeps popup cleanup regressions out of the source", () => {
     expect(findRegressions(readFileSync(pickupPopupPath, "utf8")))
       .toEqual([])
+  })
+
+  it("keeps dead popup props out of PickupPopup and Playing", () => {
+    const pickupPopupSource = readFileSync(pickupPopupPath, "utf8")
+    const playingSource = readFileSync(playingPath, "utf8")
+
+    expect(pickupPopupSource).not.toContain("pickupRef")
+    expect(pickupPopupSource).not.toMatch(/\blog\s*:/)
+    expect(pickupPopupSource).not.toMatch(/\blog\s*=/)
+    expect(playingSource).not.toContain("pickupRef")
+    expect(playingSource).not.toMatch(/\bconst\s+log\b/)
+    expect(playingSource).not.toMatch(/\blog\s*=\s*\{/)
+  })
+
+  it("keeps popup focus and keyboard handling local to the dialog", () => {
+    const pickupPopupSource = readFileSync(pickupPopupPath, "utf8")
+
+    expect(pickupPopupSource).toMatch(
+      /\bconst\s+dialogRef\s*=\s*useRef\s*<\s*HTMLDivElement\s*>\s*\(\s*null\s*\)/
+    )
+    expect(pickupPopupSource).toMatch(/ref\s*=\s*\{\s*dialogRef\s*\}/)
+    expect(pickupPopupSource).toMatch(/tabIndex\s*=\s*\{\s*-1\s*\}/)
+    expect(pickupPopupSource).toMatch(
+      /if\s*\(\s*!\s*open\s*\)\s*\{\s*return\s*\}/
+    )
+    expect(pickupPopupSource).toMatch(
+      /dialogRef\.current\?\.\s*focus\s*\(\s*\)/
+    )
+    expect(pickupPopupSource).toMatch(
+      /event\.stopPropagation\s*\(\s*\)/
+    )
+    expect(
+      pickupPopupSource.match(/event\.preventDefault\s*\(\s*\)/g)
+        ?.length ?? 0
+    ).toBeGreaterThanOrEqual(3)
   })
 
   it("keeps item rows from becoming full-size absolute overlays", () => {

@@ -98,7 +98,6 @@ export const prependMessage =
 export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<HTMLDivElement>(null)
-  const pickupRef = useRef<HTMLDivElement>(null)
   const initialWorldFetchRequestedRef = useRef(false)
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
@@ -134,8 +133,6 @@ export default function BPlaying(_props: Props) {
     )
   }, [world])
   const theDrawMatrix = drawWorld(world)
-  const log = (input: string) =>
-    setMessages(prependMessage(`[debug] ${input}`))
 
   // const handleKeyDown = (event: any) =>
   //   Match.value(event.keyCode).pipe(
@@ -192,12 +189,10 @@ export default function BPlaying(_props: Props) {
       <Messages messages={messages} />
       <GameBoard tiles={theDrawMatrix} />
       <PickupPopup
-        pickupRef={pickupRef}
         items={pickupContents}
         onSubmit={onDoPickup}
         onCancel={onCancelPickup}
         open={showPickup}
-        log={log}
       />
       <Inventory inventory={inventory} />
     </div>

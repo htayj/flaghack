@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 const sourceDirectory = fileURLToPath(new URL("../src/", import.meta.url))
 const sourceExtensions = new Set([".ts", ".tsx"])
 
-const sourceFiles = (directory: string): string[] =>
+const sourceFiles = (directory: string): Array<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
 
@@ -29,7 +29,7 @@ type Finding = {
   text: string
 }
 
-const findForbiddenSnippets = (): Finding[] =>
+const findForbiddenSnippets = (): Array<Finding> =>
   sourceFiles(sourceDirectory).flatMap((path) => {
     const file = relative(sourceDirectory, path)
     const lines = readFileSync(path, "utf8").split(/\r?\n/)

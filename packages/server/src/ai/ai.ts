@@ -1,5 +1,5 @@
-import { Action, EAction } from "@flaghack/domain/schemas"
-import { HashMap, Match, pipe } from "effect"
+import { type Action, EAction } from "@flaghack/domain/schemas"
+import { Match, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   all,
@@ -9,10 +9,11 @@ import {
   tap,
   withLogSpan
 } from "effect/Effect"
+import type { HashMap } from "effect/HashMap"
 import { map, values } from "effect/HashMap"
 import type { Creature } from "../creatures.js"
-import { GameState, worldFrom } from "../gamestate.js"
-import { Entity } from "../world.js"
+import { type GameState, worldFrom } from "../gamestate.js"
+import type { Entity } from "../world.js"
 
 // class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 
@@ -52,9 +53,8 @@ const ai = (gs: GameState) =>
 
 const eAi = (gs: GameState) => (e: Entity) =>
   succeed({ entity: e, action: ai(gs)(e) })
-const planAllAi =
-  (gs: GameState) => (w: HashMap.HashMap<string, Entity>) =>
-    w.pipe(map((e) => eAi(gs)(e)), values)
+const planAllAi = (gs: GameState) => (w: HashMap<string, Entity>) =>
+  w.pipe(map((e) => eAi(gs)(e)), values)
 export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),

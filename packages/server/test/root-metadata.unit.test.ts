@@ -178,6 +178,7 @@ describe("root package metadata", () => {
     expect(lintScript).toContain(
       "**/{src,test,examples,scripts,dtslint}/**/*."
     )
+    expect(lintScript).toMatch(/--max-warnings(?:=|\s+)0\b/)
 
     const boundedSourceGlobMatch = lintScript.match(
       /\*\*\/\{src,test,examples,scripts,dtslint\}\/\*\*\/\*\.\{([^}]+)\}/

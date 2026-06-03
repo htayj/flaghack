@@ -1,6 +1,6 @@
+import type { List } from "immutable"
 import React from "react"
 // import {Box, Text} from 'ink';
-import { List } from "immutable"
 
 type Props = {
   messages: List<string>

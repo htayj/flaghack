@@ -23,7 +23,7 @@ type RegressionFinding = {
   text: string
 }
 
-const findRegressions = (source: string): RegressionFinding[] =>
+const findRegressions = (source: string): Array<RegressionFinding> =>
   source.split(/\r?\n/).flatMap((text, index) =>
     forbiddenRegressions
       .filter(({ pattern }) => pattern.test(text))

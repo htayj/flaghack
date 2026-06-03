@@ -56,17 +56,10 @@ export const Keyed = prop("key", Key)
 
 export const Contain = struct({ in: Key })
 export const Position = struct({ at: Pos })
-export const Location = oneof(Contain, Position)
 
-// export const EntityPositioned = struct({
-//   ...Keyed.fields,
-//   loc: Position
-// })
-// export const EntityContained = struct({
-//   ...Keyed.fields,
-//   loc: Contain
-// })
-// export const EntityBase = S.Union(Keyed, Located)
+// Current entities intentionally include `key`, `at`, and `in`. The larger
+// `{InWorld|InContainer}` ADT, branded EntityKey, map-key/entity-key
+// consistency, and containment-reference validation cleanup is deferred.
 export const EntityBase = allof(
   Keyed,
   Position,
@@ -287,7 +280,7 @@ export const conforms = <A, I>(
   schema: S.Schema<A, I, never>
 ): (u: unknown) => u is A => S.is(schema)
 
-export const World = S.HashMap({ key: S.String, value: Entity })
+export const World = S.HashMap({ key: Key, value: Entity })
 export const GameState = S.Struct({ world: World })
 
 // const flatten = <A, B, C>(s: S.Schema<A, B, C>) => {

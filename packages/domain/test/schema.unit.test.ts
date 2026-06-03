@@ -34,7 +34,48 @@ const sampleItem = {
   at: { x: 1, y: 2, z: 0 }
 }
 
+const readSchemasSource = () =>
+  readFileSync(new URL("../src/schemas.ts", import.meta.url), "utf8")
+
 describe("domain source schemas", () => {
+  it("documents current location schema intent in source", () => {
+    const source = readSchemasSource()
+
+    expect(source).not.toMatch(/\bexport\s+const\s+Location\b/)
+    expect(source).toMatch(
+      /export\s+const\s+World\s*=\s*S\.HashMap\s*\(\s*\{\s*key\s*:\s*Key\s*,\s*value\s*:\s*Entity\s*\}\s*\)/
+    )
+    expect(source).not.toMatch(
+      /export\s+const\s+World\s*=\s*S\.HashMap\s*\(\s*\{\s*key\s*:\s*S\.String\s*,\s*value\s*:\s*Entity\s*\}\s*\)/
+    )
+  })
+
+  it("requires current World entity values to include at and in", () => {
+    const missingAtWorld = HashMap.fromIterable<string, unknown>([[
+      "floor-missing-at",
+      {
+        _tag: "floor" as const,
+        key: "floor-missing-at",
+        in: "world"
+      }
+    ]])
+    const missingInWorld = HashMap.fromIterable<string, unknown>([[
+      "floor-missing-in",
+      {
+        _tag: "floor" as const,
+        key: "floor-missing-in",
+        at: { x: 1, y: 2, z: 0 }
+      }
+    ]])
+
+    expect(Either.isLeft(S.validateEither(World)(missingAtWorld))).toBe(
+      true
+    )
+    expect(Either.isLeft(S.validateEither(World)(missingInWorld))).toBe(
+      true
+    )
+  })
+
   it("requires three-dimensional positions", () => {
     expect(Either.isRight(S.validateEither(Pos)(sampleFloor.at))).toBe(
       true
@@ -126,10 +167,7 @@ describe("domain source schemas", () => {
   })
 
   it("implements conforms with canonical Schema.is validation", () => {
-    const source = readFileSync(
-      new URL("../src/schemas.ts", import.meta.url),
-      "utf8"
-    )
+    const source = readSchemasSource()
     const conformsStart = source.indexOf("export const conforms")
     const worldStart = source.indexOf("export const World", conformsStart)
     const effectImport = source

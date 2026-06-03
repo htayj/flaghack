@@ -19,7 +19,7 @@ import { GameClient } from "../GameClient.js"
 import { LiveRuntime } from "../runtime.js"
 import BGameBoard, { type Tiles } from "./BGameBoard.js"
 import Inventory from "./Inventory.js"
-import Messages from "./Messages.js"
+import Messages, { MAX_VISIBLE_MESSAGES } from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
 
@@ -73,6 +73,9 @@ const getPosition = (e: Entity): Pos | undefined =>
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
 const zindex = (p: Entity) => isTerrain(p) ? 0 : 1
+export const prependMessage =
+  (message: string) => (messages: List<string>): List<string> =>
+    messages.unshift(message).take(MAX_VISIBLE_MESSAGES)
 
 const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
@@ -138,15 +141,15 @@ export default function BPlaying(_props: Props) {
   }, [world])
   const theDrawMatrix = drawWorld(world)
   const log = (input: string) =>
-    setMessages((messages) => messages.unshift(`[debug] ${input}`))
+    setMessages(prependMessage(`[debug] ${input}`))
 
   useEffect(() => {
     const gameBox = gameref.current
     const gameKeys = ["j", "k", "l", "h", "y", "d", "u", "n", "b", ","]
     const handleGameKey = (input: string) => {
-      setMessages((messages) => messages.unshift(`doing ${input}`))
+      setMessages(prependMessage(`doing ${input}`))
       if (input === ",") {
-        setMessages((messages) => messages.unshift("picking up "))
+        setMessages(prependMessage("picking up "))
         void LiveRuntime.runPromise(
           apiGetPickupItemsFor("player").pipe(
             Effect.tap((contents) =>
@@ -157,7 +160,7 @@ export default function BPlaying(_props: Props) {
         pickupRef.current?.show()
         pickupRef.current?.focus()
       } else if (input === "d") {
-        setMessages((messages) => messages.unshift("dropping"))
+        setMessages(prependMessage("dropping"))
         dropRef.current?.show()
         dropRef.current?.focus()
       } else {
@@ -202,12 +205,12 @@ export default function BPlaying(_props: Props) {
     )
   }
   const onCancelMultiDrop = () => {
-    setMessages((messages) => messages.unshift(`canceling multidrop`))
+    setMessages(prependMessage(`canceling multidrop`))
     dropRef.current?.hide()
     gameref.current?.focus()
   }
   const onCancelPickup = () => {
-    setMessages((messages) => messages.unshift(`canceling pickup`))
+    setMessages(prependMessage(`canceling pickup`))
     pickupRef.current?.hide()
     gameref.current?.focus()
   }

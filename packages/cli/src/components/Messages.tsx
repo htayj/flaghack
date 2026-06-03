@@ -2,6 +2,8 @@ import type { List } from "immutable"
 import React from "react"
 // import {Box, Text} from 'ink';
 
+export const MAX_VISIBLE_MESSAGES = 50
+
 type Props = {
   messages: List<string>
 }

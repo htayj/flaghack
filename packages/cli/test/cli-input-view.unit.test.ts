@@ -1,8 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
+import { List } from "immutable"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
+import { prependMessage } from "../src/components/BPlaying.js"
+import { MAX_VISIBLE_MESSAGES } from "../src/components/Messages.js"
 
 const bPlayingSourcePath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -258,6 +261,35 @@ const expectRefreshAfterAction = (
     "refreshWorldAndInventory should run after the player action"
   ).toBeGreaterThan(actionIndex)
 }
+
+describe("CLI message log", () => {
+  it("prepends new messages, caps stored state, and drops oldest tail entries", () => {
+    const previousMessages = List(
+      Array.from(
+        { length: MAX_VISIBLE_MESSAGES },
+        (_, index) => `message-${index}`
+      )
+    )
+    const result = prependMessage("newest")(previousMessages)
+    const expectedMessages = [
+      "newest",
+      ...previousMessages.take(MAX_VISIBLE_MESSAGES - 1).toArray()
+    ]
+
+    expect(result.first()).toBe("newest")
+    expect(result.size).toBe(MAX_VISIBLE_MESSAGES)
+    expect(result.toArray()).toEqual(expectedMessages)
+    expect(result.includes(`message-${MAX_VISIBLE_MESSAGES - 1}`)).toBe(
+      false
+    )
+  })
+
+  it("keeps BPlaying message updates routed through the capping helper", () => {
+    expect(readBPlayingSource()).not.toContain(
+      "setMessages((messages) => messages.unshift("
+    )
+  })
+})
 
 describe("CLI input handling static guards", () => {
   it("keeps parseInput string-typed with an explicit Option no-action default", () => {

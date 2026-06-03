@@ -155,7 +155,7 @@ describe("getPickupItemsFor", () => {
 
     expect(values.some(isTerrain)).toBe(false)
     expect(values.some(isCreature)).toBe(false)
-    expect(values.some((entity) => entity._tag === "floor")).toBe(false)
+    expect(values.map((entity) => entity._tag)).not.toContain("floor")
   })
 
   it("does not handle missing entities through NoSuchElementException catchTag", () => {

@@ -47,6 +47,8 @@ const getTile = (e: Entity | undefined): Tile =>
       trailmix: () => tile({ color: "yellow", char: "%" }),
       pancake: () => tile({ color: "white", bright: true, char: "%" }),
       soup: () => tile({ color: "red", char: "%" }),
+      hammer: () => tile({ color: "white", bright: true, char: "T" }),
+      nails: () => tile({ color: "cyan", bright: true, char: ":" }),
       wall: () => tile({ color: "white", char: "#" }),
       tunnel: () => tile({ color: "black", bright: true, char: "," }),
       floor: () => tile({ color: "black", bright: true, char: "." })

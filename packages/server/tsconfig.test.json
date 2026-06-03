@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["test"],
+  "include": ["test", "../../vitest.shared.ts"],
   "references": [
     { "path": "tsconfig.src.json" },
     { "path": "../domain/tsconfig.src.json" }
@@ -8,7 +8,7 @@
   "compilerOptions": {
     "types": ["node"],
     "tsBuildInfoFile": ".tsbuildinfo/test.tsbuildinfo",
-    "rootDir": "test",
+    "rootDir": "../..",
     "noEmit": true
   }
 }

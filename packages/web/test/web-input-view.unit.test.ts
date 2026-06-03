@@ -156,6 +156,18 @@ const findForbiddenEffectAndThenUiBoundaries = (
 
 const onDoPickupSignature =
   /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+const onCancelPickupSignature =
+  /const\s+onCancelPickup\s*=\s*\(\s*\)\s*=>\s*{/
+
+const indexOfMatch = (
+  source: string,
+  pattern: RegExp,
+  startIndex = 0
+): number => {
+  const relativeIndex = source.slice(startIndex).search(pattern)
+
+  return relativeIndex === -1 ? -1 : startIndex + relativeIndex
+}
 
 const extractHandleKeyDownSource = (source: string): string => {
   const start = source.indexOf("const handleKeyDown =")
@@ -356,7 +368,7 @@ describe("web input/view source guards", () => {
     expect(handleKeyDownSource).not.toContain("getInventory.pipe(")
   })
 
-  it("refreshes world and inventory after pickup actions", () => {
+  it("refreshes before closing and refocusing after pickup actions", () => {
     const onDoPickupBody = extractArrowFunctionBody(
       readFileSync(playingPath, "utf8"),
       onDoPickupSignature
@@ -365,9 +377,44 @@ describe("web input/view source guards", () => {
       onDoPickupBody,
       "doPlayerAction(EAction.pickupMulti"
     )
-    const hideIndex = onDoPickupBody.indexOf("setShowPickup(false)")
+    const hideIndex = indexOfMatch(
+      onDoPickupBody,
+      /setShowPickup\s*\(\s*false\s*\)/,
+      refreshIndex
+    )
+    const focusIndex = indexOfMatch(
+      onDoPickupBody,
+      /gameref\.current\s*\?\.\s*focus\s*\(\s*\)/,
+      hideIndex
+    )
 
     expect(hideIndex).toBeGreaterThan(refreshIndex)
+    expect(focusIndex).toBeGreaterThan(hideIndex)
+  })
+
+  it("closes pickup cancellation before restoring game root focus", () => {
+    const onCancelPickupBody = extractArrowFunctionBody(
+      readFileSync(playingPath, "utf8"),
+      onCancelPickupSignature
+    )
+    const cancelMessageIndex = indexOfMatch(
+      onCancelPickupBody,
+      /setMessages\s*\(\s*prependMessage\s*\(\s*"canceling pickup"\s*\)\s*\)/
+    )
+    const hideIndex = indexOfMatch(
+      onCancelPickupBody,
+      /setShowPickup\s*\(\s*false\s*\)/,
+      cancelMessageIndex
+    )
+    const focusIndex = indexOfMatch(
+      onCancelPickupBody,
+      /gameref\.current\s*\?\.\s*focus\s*\(\s*\)/,
+      hideIndex
+    )
+
+    expect(cancelMessageIndex).toBeGreaterThanOrEqual(0)
+    expect(hideIndex).toBeGreaterThan(cancelMessageIndex)
+    expect(focusIndex).toBeGreaterThan(hideIndex)
   })
 
   it("keeps the static UI mode out of React state and source", () => {

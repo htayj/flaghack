@@ -171,13 +171,19 @@ export default function BPlaying(_props: Props) {
     void LiveRuntime.runPromise(
       doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
         Effect.andThen(refreshWorldAndInventory),
-        Effect.tap(() => Effect.sync(() => setShowPickup(false)))
+        Effect.tap(() =>
+          Effect.sync(() => {
+            setShowPickup(false)
+            gameref.current?.focus()
+          })
+        )
       )
     )
   }
   const onCancelPickup = () => {
     setMessages(prependMessage("canceling pickup"))
     setShowPickup(false)
+    gameref.current?.focus()
   }
 
   return (

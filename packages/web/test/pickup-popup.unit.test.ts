@@ -17,6 +17,17 @@ const forbiddenRegressions = [
   }
 ] as const
 
+const forbiddenListItemStyleRegressions = [
+  {
+    snippet: "position: \"absolute\"",
+    pattern: /\bposition\s*:\s*"absolute"/
+  },
+  { snippet: "height: \"100%\"", pattern: /\bheight\s*:\s*"100%"/ },
+  { snippet: "width: \"100%\"", pattern: /\bwidth\s*:\s*"100%"/ }
+] as const
+
+const listitemOpeningTagPattern = /<div(?=[^>]*\brole="listitem")[^>]*>/g
+
 type RegressionFinding = {
   line: number
   snippet: string
@@ -34,9 +45,36 @@ const findRegressions = (source: string): Array<RegressionFinding> =>
       }))
   )
 
+const findListItemStyleRegressions = (
+  source: string
+): Array<RegressionFinding> =>
+  Array.from(source.matchAll(listitemOpeningTagPattern)).flatMap(
+    (match) => {
+      const startLine =
+        source.slice(0, match.index ?? 0).split(/\r?\n/).length
+
+      return match[0].split(/\r?\n/).flatMap((text, index) =>
+        forbiddenListItemStyleRegressions
+          .filter(({ pattern }) => pattern.test(text))
+          .map(({ snippet }) => ({
+            line: startLine + index,
+            snippet,
+            text: text.trim()
+          }))
+      )
+    }
+  )
+
 describe("PickupPopup source regression guards", () => {
   it("keeps popup cleanup regressions out of the source", () => {
     expect(findRegressions(readFileSync(pickupPopupPath, "utf8")))
+      .toEqual([])
+  })
+
+  it("keeps item rows from becoming full-size absolute overlays", () => {
+    expect(
+      findListItemStyleRegressions(readFileSync(pickupPopupPath, "utf8"))
+    )
       .toEqual([])
   })
 })

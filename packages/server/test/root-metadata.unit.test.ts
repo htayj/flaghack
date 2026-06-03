@@ -66,6 +66,12 @@ const requiredDprintExcludePatterns = [
   "**/.#*"
 ]
 
+const requiredEslintErrorRules = [
+  "@typescript-eslint/no-explicit-any",
+  "@typescript-eslint/ban-ts-comment",
+  "@typescript-eslint/no-non-null-assertion"
+] as const
+
 const requiredEslintIgnorePatterns = [
   "**/node_modules",
   "**/*-lock.json",
@@ -233,6 +239,14 @@ describe("root ESLint metadata", () => {
 
     for (const ignorePattern of requiredEslintIgnorePatterns) {
       expect(rootEslintConfigMjs).toContain(`"${ignorePattern}"`)
+    }
+  })
+
+  it("treats unsafe TypeScript boundary rules as errors", () => {
+    const rootEslintConfigMjs = readRootEslintConfigMjs()
+
+    for (const ruleName of requiredEslintErrorRules) {
+      expect(rootEslintConfigMjs).toContain(`"${ruleName}": "error"`)
     }
   })
 })

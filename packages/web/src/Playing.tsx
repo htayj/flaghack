@@ -1,6 +1,6 @@
 import { getTile } from "@flaghack/domain/display"
 import type { Tile } from "@flaghack/domain/display"
-import { EAction } from "@flaghack/domain/schemas"
+import { AnyTerrain, conforms, EAction } from "@flaghack/domain/schemas"
 import type {
   Action,
   Entity as EntitySchema,
@@ -69,7 +69,9 @@ const getPosition = (e: Entity): Pos | undefined =>
   e.in === "world" ? e.at : undefined
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
-const drawWorld = (world: World): Tiles => {
+const isTerrain = conforms(AnyTerrain)
+const zindex = (entity: Entity): number => isTerrain(entity) ? 0 : 1
+export const drawWorld = (world: World): Tiles => {
   const emptyMatrix = nullMatrix(20, 80)
 
   const worldMap = Map(world)
@@ -83,7 +85,7 @@ const drawWorld = (world: World): Tiles => {
     row
       .map((_, x) => worldMap.get(posKey({ x, y })))
       .map(List)
-      .map((l) => l.first())
+      .map((l) => l.sortBy(zindex).reverse().first())
       .map(getTileOrDefault)
   )
   return fullmap.map((r) => r.toArray()).toArray()

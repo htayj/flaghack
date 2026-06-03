@@ -13,6 +13,7 @@ const repositoryRoot = join(
 )
 const rootPackageJsonPath = join(repositoryRoot, "package.json")
 const rootDprintJsonPath = join(repositoryRoot, "dprint.json")
+const rootEslintConfigMjsPath = join(repositoryRoot, "eslint.config.mjs")
 const rootTsconfigBuildJsonPath = join(
   repositoryRoot,
   "tsconfig.build.json"
@@ -65,6 +66,30 @@ const requiredDprintExcludePatterns = [
   "**/.#*"
 ]
 
+const requiredEslintIgnorePatterns = [
+  "**/node_modules",
+  "**/*-lock.json",
+  ".pi/schedule-prompts.json",
+  ".pi/dev-suite/task-graph/current.json",
+  ".pi/dev-suite/task-graph/runs/**",
+  ".pi/dev-suite/task-graph/artifacts/**",
+  ".pi/task-graph-artifacts/**",
+  "packages/**/build/**",
+  "packages/**/dist/**",
+  "**/*.d.ts",
+  "**/*.d.ts.map",
+  "**/*.js.map",
+  "packages/domain/src/schemas/*.js",
+  "pnpm-lock.yaml",
+  "**/*~",
+  "**/#*#",
+  "**/.#*",
+  "**/docs",
+  "**/*.md"
+]
+
+const requiredLintExtensions = ["ts", "tsx", "js", "mjs", "cjs"]
+
 type RootPackageJson = {
   readonly devDependencies?: Readonly<Record<string, unknown>>
   readonly scripts?: Readonly<Record<string, unknown>>
@@ -105,6 +130,9 @@ const readRootTsconfigBuildJson = (): RootTsconfigBuildJson =>
 const readRootDprintJson = (): RootDprintJson =>
   JSON.parse(readFileSync(rootDprintJsonPath, "utf8")) as RootDprintJson
 
+const readRootEslintConfigMjs = (): string =>
+  readFileSync(rootEslintConfigMjsPath, "utf8")
+
 const readRootVitestSharedTs = (): string =>
   readFileSync(rootVitestSharedTsPath, "utf8")
 
@@ -135,6 +163,30 @@ describe("root package metadata", () => {
     const rootPackageJson = readRootPackageJson()
 
     expect(rootPackageJson.scripts?.verify).toBe("pnpm verify:gates")
+  })
+
+  it("uses bounded source globs for root lint", () => {
+    const rootPackageJson = readRootPackageJson()
+    const lintScript = rootPackageJson.scripts?.lint
+
+    expect(typeof lintScript).toBe("string")
+    if (typeof lintScript !== "string") {
+      throw new Error("Expected root lint script to be a string")
+    }
+
+    expect(lintScript).not.toMatch(/\beslint\s+\.(?:\s|$)/)
+    expect(lintScript).toContain(
+      "**/{src,test,examples,scripts,dtslint}/**/*."
+    )
+
+    const boundedSourceGlobMatch = lintScript.match(
+      /\*\*\/\{src,test,examples,scripts,dtslint\}\/\*\*\/\*\.\{([^}]+)\}/
+    )
+    const lintExtensions = boundedSourceGlobMatch?.[1]?.split(",") ?? []
+
+    expect(lintExtensions).toEqual(
+      expect.arrayContaining(requiredLintExtensions)
+    )
   })
 
   it("does not use latest for direct Effect-family dev dependencies", () => {
@@ -171,6 +223,16 @@ describe("root formatter metadata", () => {
     expect(rootDprintJson.excludes).toEqual(
       expect.arrayContaining(requiredDprintExcludePatterns)
     )
+  })
+})
+
+describe("root ESLint metadata", () => {
+  it("ignores generated, disposable, docs, and local Pi runtime files", () => {
+    const rootEslintConfigMjs = readRootEslintConfigMjs()
+
+    for (const ignorePattern of requiredEslintIgnorePatterns) {
+      expect(rootEslintConfigMjs).toContain(`"${ignorePattern}"`)
+    }
   })
 })
 

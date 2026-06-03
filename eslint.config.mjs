@@ -19,7 +19,27 @@ const compat = new FlatCompat({
 
 export default [
   {
-    ignores: ["**/dist", "**/build", "**/docs", "**/*.md"]
+    ignores: [
+      "**/node_modules",
+      "**/*-lock.json",
+      ".pi/schedule-prompts.json",
+      ".pi/dev-suite/task-graph/current.json",
+      ".pi/dev-suite/task-graph/runs/**",
+      ".pi/dev-suite/task-graph/artifacts/**",
+      ".pi/task-graph-artifacts/**",
+      "packages/**/build/**",
+      "packages/**/dist/**",
+      "**/*.d.ts",
+      "**/*.d.ts.map",
+      "**/*.js.map",
+      "packages/domain/src/schemas/*.js",
+      "pnpm-lock.yaml",
+      "**/*~",
+      "**/#*#",
+      "**/.#*",
+      "**/docs",
+      "**/*.md"
+    ]
   },
   ...compat.extends(
     "eslint:recommended",

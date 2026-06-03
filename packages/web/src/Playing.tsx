@@ -23,7 +23,7 @@ import {
   LiveRuntime
 } from "./GameClient.js"
 import Inventory from "./Inventory.tsx"
-import Messages from "./Messages.tsx"
+import Messages, { MAX_VISIBLE_MESSAGES } from "./Messages.tsx"
 import PickupPopup from "./PickupPopup.tsx"
 
 export type Matrix<T> = List<List<T>>
@@ -90,6 +90,11 @@ export const drawWorld = (world: World): Tiles => {
   )
   return fullmap.map((r) => r.toArray()).toArray()
 }
+
+export const prependMessage =
+  (message: string) => (messages: List<string>): List<string> =>
+    messages.unshift(message).take(MAX_VISIBLE_MESSAGES)
+
 export default function BPlaying(_props: Props) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<HTMLDivElement>(null)
@@ -130,7 +135,7 @@ export default function BPlaying(_props: Props) {
   }, [world])
   const theDrawMatrix = drawWorld(world)
   const log = (input: string) =>
-    setMessages((messages) => messages.unshift(`[debug] ${input}`))
+    setMessages(prependMessage(`[debug] ${input}`))
 
   // const handleKeyDown = (event: any) =>
   //   Match.value(event.keyCode).pipe(
@@ -174,7 +179,7 @@ export default function BPlaying(_props: Props) {
     )
   }
   const onCancelPickup = () => {
-    setMessages((messages) => messages.unshift(`canceling pickup`))
+    setMessages(prependMessage("canceling pickup"))
     setShowPickup(false)
   }
 

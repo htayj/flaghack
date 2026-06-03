@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { type Action, EAction } from "@flaghack/domain/schemas"
 import { Option } from "effect"
+import { List } from "immutable"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
-import { parseInput } from "../src/Playing.tsx"
+import { MAX_VISIBLE_MESSAGES } from "../src/Messages.tsx"
+import { parseInput, prependMessage } from "../src/Playing.tsx"
 
 const playingPath = fileURLToPath(
   new URL("../src/Playing.tsx", import.meta.url)
@@ -276,6 +278,29 @@ describe("web input parsing", () => {
       expect(Option.isNone(action)).toBe(true)
       expect(action).not.toEqual(Option.some(EAction.noop()))
     }
+  })
+})
+
+describe("web message log", () => {
+  it("prepends new messages, caps stored state, and drops oldest tail entries", () => {
+    const previousMessages = List(
+      Array.from(
+        { length: MAX_VISIBLE_MESSAGES },
+        (_, index) => `message-${index}`
+      )
+    )
+    const result = prependMessage("newest")(previousMessages)
+    const expectedMessages = [
+      "newest",
+      ...previousMessages.take(MAX_VISIBLE_MESSAGES - 1).toArray()
+    ]
+
+    expect(result.first()).toBe("newest")
+    expect(result.size).toBe(MAX_VISIBLE_MESSAGES)
+    expect(result.toArray()).toEqual(expectedMessages)
+    expect(result.includes(`message-${MAX_VISIBLE_MESSAGES - 1}`)).toBe(
+      false
+    )
   })
 })
 

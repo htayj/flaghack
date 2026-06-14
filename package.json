@@ -28,6 +28,7 @@
     "test:perf": "vitest bench --config vitest.bench.ts --run",
     "test:api": "tsx scripts/api-smoke.ts",
     "test:e2e:tmux": "tsx scripts/tmux-e2e-smoke.ts",
+    "test:feature:tmux": "tsx scripts/tmux-feature-check.ts",
     "coverage": "vitest run --coverage --workspace vitest.workspace.ts",
     "verify": "pnpm verify:gates",
     "verify:smoke": "pnpm generated:guard && pnpm test:unit && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux",

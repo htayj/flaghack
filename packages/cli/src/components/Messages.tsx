@@ -1,8 +1,9 @@
 import type { List } from "immutable"
 import React from "react"
+import { MAX_VISIBLE_MESSAGES } from "../tuiGame.js"
 // import {Box, Text} from 'ink';
 
-export const MAX_VISIBLE_MESSAGES = 50
+export { MAX_VISIBLE_MESSAGES }
 
 type Props = {
   messages: List<string>

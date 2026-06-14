@@ -11,7 +11,7 @@ const testDir = dirname(fileURLToPath(import.meta.url))
 const gameClientSourcePath = join(testDir, "../src/GameClient.ts")
 
 describe("CLI API client config", () => {
-  it("defaults to the localhost smoke API", () => {
+  it("defaults to the local smoke API", () => {
     expect(resolveCliApiBaseUrl({})).toBe(DEFAULT_CLI_API_BASE_URL)
   })
 
@@ -36,7 +36,7 @@ describe("CLI API client config", () => {
       /resolveCliApiBaseUrl\s*\(\s*process\.env\s*\)/
     )
     expect(gameClientSource).not.toContain(
-      "baseUrl: \"http://localhost:3000\""
+      "baseUrl: \"http://127.0.0.1:3000\""
     )
   })
 })

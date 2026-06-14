@@ -15,7 +15,7 @@ type Props = {
   boxRef: React.RefObject<BoxElement | null>
 } & DetailedBlessedProps<BoxElement>
 
-const controlKeys: Array<string> = ["q", "r", ","]
+const controlKeys: Array<string> = ["q", "r", ",", "escape"]
 const submitKeys: Array<string> = [" ", "space"]
 
 export default function Popup(
@@ -37,7 +37,7 @@ export default function Popup(
     }
 
     const handleControlKey = (input: string) => {
-      if (input === "q" || input === "r") {
+      if (input === "q" || input === "r" || input === "escape") {
         setMarked(new Set())
         onCancel()
         return
@@ -58,6 +58,10 @@ export default function Popup(
   }, [boxRef, markAll, onCancel])
 
   useEffect(() => {
+    setMarked(new Set())
+  }, [items])
+
+  useEffect(() => {
     const popup = boxRef.current
     if (!popup) {
       return undefined
@@ -65,7 +69,11 @@ export default function Popup(
 
     const handleSubmitKey = (input: string) => {
       if (input === " " || input === "space") {
-        onSubmit(Array.from(marked))
+        const validMarked = Array.from(marked).filter((key) =>
+          itemMap.has(key)
+        )
+        setMarked(new Set())
+        onSubmit(validMarked)
       }
     }
 
@@ -76,7 +84,7 @@ export default function Popup(
         popup.removeListener(`key ${key}`, handleSubmitKey)
       }
     }
-  }, [boxRef, marked, onSubmit])
+  }, [boxRef, itemMap, marked, onSubmit])
 
   return (
     <box

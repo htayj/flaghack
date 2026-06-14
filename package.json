@@ -12,6 +12,11 @@
     "build": "tsc -b tsconfig.build.json && pnpm --recursive --parallel run build",
     "check": "tsc -b tsconfig.json",
     "cli:tsx": "tsx packages/cli/src/bin.ts playB",
+    "cli:ink": "tsx packages/cli/src/cliInk.tsx",
+    "cli:terminal-kit": "tsx packages/cli/src/cliTerminalKit.ts",
+    "cli:termkit": "pnpm run cli:terminal-kit",
+    "cli:charm": "cd packages/cli/charm && go run .",
+    "cli:charmbracelet": "pnpm run cli:charm",
     "cli": "cd packages/cli/; pnpm run dev",
     "cli:old": "tsx packages/server/src/cli.tsx",
     "serve": "cd packages/server/; pnpm run dev",
@@ -29,10 +34,11 @@
     "test:api": "tsx scripts/api-smoke.ts",
     "test:e2e:tmux": "tsx scripts/tmux-e2e-smoke.ts",
     "test:feature:tmux": "tsx scripts/tmux-feature-check.ts",
+    "test:charm": "cd packages/cli/charm && go test ./...",
     "coverage": "vitest run --coverage --workspace vitest.workspace.ts",
     "verify": "pnpm verify:gates",
-    "verify:smoke": "pnpm generated:guard && pnpm test:unit && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux",
-    "verify:gates": "pnpm generated:guard && pnpm check && pnpm test:unit && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux"
+    "verify:smoke": "pnpm generated:guard && pnpm test:unit && pnpm test:charm && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux",
+    "verify:gates": "pnpm generated:guard && pnpm check && pnpm test:unit && pnpm test:charm && pnpm test:perf && pnpm test:api && pnpm test:e2e:tmux"
   },
   "devDependencies": {
     "@babel/cli": "^7.27.2",

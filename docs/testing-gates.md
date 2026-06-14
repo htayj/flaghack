@@ -32,7 +32,7 @@ corepack prepare pnpm@9.10.0 --activate
 pnpm install --frozen-lockfile
 ```
 
-The Nix shell includes Node, Corepack, Python for `node-gyp`, and `tmux` for the terminal E2E smoke gate.
+The Nix shell includes Node, Corepack, Go for the Charmbracelet CLI experiment, Python for `node-gyp`, and `tmux` for the terminal E2E smoke gate.
 
 ## Generated-file policy
 
@@ -61,6 +61,7 @@ pnpm generated:guard
 pnpm format:check
 pnpm check
 pnpm test:unit
+pnpm test:charm
 pnpm test:perf
 pnpm test:api
 pnpm test:e2e:tmux
@@ -68,7 +69,7 @@ pnpm test:e2e:tmux
 FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux
 ```
 
-`pnpm verify:smoke` runs the generated-file guard plus the four smoke gates:
+`pnpm verify:smoke` runs the generated-file guard plus the smoke gates:
 
 ```sh
 pnpm verify:smoke
@@ -87,6 +88,14 @@ pnpm test:unit
 ```
 
 Runs Vitest in non-watch workspace mode across `packages/*/vitest.config.ts`, including web smoke tests.
+
+### Charmbracelet CLI gate
+
+```sh
+pnpm test:charm
+```
+
+Runs `go test ./...` in `packages/cli/charm`. This verifies the Go Bubble Tea/Lip Gloss frontend and requires the Go toolchain from `nix develop` or an equivalent local install.
 
 ### Performance gate
 

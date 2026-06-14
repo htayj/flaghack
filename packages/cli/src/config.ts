@@ -3,7 +3,7 @@ export interface CliApiConfigEnv {
   readonly FLAGHACK_API_URL?: string | undefined
 }
 
-export const DEFAULT_CLI_API_BASE_URL = "http://localhost:3000"
+export const DEFAULT_CLI_API_BASE_URL = "http://127.0.0.1:3000"
 
 const normalizeEnvValue = (value: string | undefined) => {
   const trimmed = value?.trim()

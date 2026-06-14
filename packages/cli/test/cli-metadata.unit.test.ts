@@ -183,6 +183,13 @@ describe("CLI metadata", () => {
     )
   })
 
+  it("declares the selected experimental TUI frameworks", () => {
+    const cliPackageJson = readCliPackageJson()
+
+    expect(cliPackageJson.dependencies?.ink).toBe("5.2.1")
+    expect(cliPackageJson.dependencies?.["terminal-kit"]).toBe("3.1.2")
+  })
+
   it("does not duplicate runtime dependencies in devDependencies", () => {
     const cliPackageJson = readCliPackageJson()
     const runtimeDependencies = cliPackageJson.dependencies ?? {}

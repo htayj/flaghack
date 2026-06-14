@@ -28,12 +28,12 @@ import {
 } from "../src/components/BPlaying.js"
 import { MAX_VISIBLE_MESSAGES } from "../src/components/Messages.js"
 
-const bPlayingSourcePath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../src/components/BPlaying.tsx"
-)
+const testDir = dirname(fileURLToPath(import.meta.url))
+const bPlayingSourcePath = join(testDir, "../src/components/BPlaying.tsx")
+const tuiGameSourcePath = join(testDir, "../src/tuiGame.ts")
 
 const readBPlayingSource = () => readFileSync(bPlayingSourcePath, "utf8")
+const readTuiGameSource = () => readFileSync(tuiGameSourcePath, "utf8")
 
 type Direction = "N" | "E" | "S" | "W" | "NE" | "NW" | "SE" | "SW"
 type DirectionCase = readonly [input: string, direction: Direction]
@@ -984,7 +984,7 @@ describe("CLI NetHack extended command parser", () => {
 
 describe("CLI input handling static guards", () => {
   it("keeps parseInput string-typed with an explicit Option no-action default", () => {
-    const source = readBPlayingSource()
+    const source = readTuiGameSource()
     const parseInputBody = extractArrowFunctionBody(
       source,
       parseInputSignature

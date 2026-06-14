@@ -171,6 +171,35 @@ describe("root package metadata", () => {
     expect(rootPackageJson.scripts?.verify).toBe("pnpm verify:gates")
   })
 
+  it("exposes experimental non-blessed TUI launch scripts", () => {
+    const rootPackageJson = readRootPackageJson()
+
+    expect(rootPackageJson.scripts?.["cli:ink"]).toBe(
+      "tsx packages/cli/src/cliInk.tsx"
+    )
+    expect(rootPackageJson.scripts?.["cli:terminal-kit"]).toBe(
+      "tsx packages/cli/src/cliTerminalKit.ts"
+    )
+    expect(rootPackageJson.scripts?.["cli:termkit"]).toBe(
+      "pnpm run cli:terminal-kit"
+    )
+    expect(rootPackageJson.scripts?.["cli:charm"]).toBe(
+      "cd packages/cli/charm && go run ."
+    )
+    expect(rootPackageJson.scripts?.["cli:charmbracelet"]).toBe(
+      "pnpm run cli:charm"
+    )
+    expect(rootPackageJson.scripts?.["test:charm"]).toBe(
+      "cd packages/cli/charm && go test ./..."
+    )
+    expect(rootPackageJson.scripts?.["verify:smoke"]).toContain(
+      "pnpm test:charm"
+    )
+    expect(rootPackageJson.scripts?.["verify:gates"]).toContain(
+      "pnpm test:charm"
+    )
+  })
+
   it("uses bounded source globs for root lint", () => {
     const rootPackageJson = readRootPackageJson()
     const lintScript = rootPackageJson.scripts?.lint

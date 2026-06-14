@@ -127,11 +127,17 @@ const liveRuntimeCallClassification = (
     return "movement apiDoPlayerAction action value"
   }
   if (
-    /runTravelToTarget\s*\(\s*target\s*\)\s*\.pipe\s*\(/.test(
+    /runTravelToTarget\s*\(\s*target\s*,\s*autoMoveId\s*\)\s*\.pipe\s*\(/
+      .test(argumentSource)
+  ) {
+    return "travel runTravelToTarget target"
+  }
+  if (
+    /runDirectionalMovement\s*\(\s*\{[\s\S]*moveAndRefresh/u.test(
       argumentSource
     )
   ) {
-    return "travel runTravelToTarget target"
+    return "directional runDirectionalMovement"
   }
   if (
     /apiDoPlayerAction\s*\(\s*EAction\.pickupMulti\s*\(\s*{\s*keys\s*:\s*pickupItems\s*}\s*\)\s*\)/
@@ -184,7 +190,7 @@ describe("CLI runtime boundary", () => {
       findPropertyAccesses(sourceFile, "Effect", "runPromise")
     ).toHaveLength(0)
     expect(findEffectProvideMainLiveCalls(sourceFile)).toHaveLength(0)
-    expect(liveRuntimeCalls).toHaveLength(6)
+    expect(liveRuntimeCalls).toHaveLength(7)
     expect(
       liveRuntimeCalls.map((call) =>
         liveRuntimeCallClassification(call, sourceFile)
@@ -193,6 +199,7 @@ describe("CLI runtime boundary", () => {
       "initial apiGetWorld",
       "travel runTravelToTarget target",
       "comma apiGetPickupItemsFor player",
+      "directional runDirectionalMovement",
       "movement apiDoPlayerAction action value",
       "pickup apiDoPlayerAction pickupMulti",
       "drop apiDoPlayerAction dropMulti"

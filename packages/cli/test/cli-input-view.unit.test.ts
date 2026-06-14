@@ -5,7 +5,7 @@ import {
   type Entity as EntitySchema,
   type World as WorldSchema
 } from "@flaghack/domain/schemas"
-import { HashMap, Option } from "effect"
+import { Effect, HashMap, Option } from "effect"
 import { List } from "immutable"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -14,11 +14,17 @@ import * as ts from "typescript"
 import {
   clampTravelTarget,
   findTravelDirections,
+  MAX_DIRECTIONAL_MOVEMENT_STEPS,
+  type MovementCommand,
+  movementCommandRequiresRepeatedMovement,
   type MovementDirection,
   normalizeGameInput,
   parseExtendedCommand,
   parseInput,
-  prependMessage
+  parseMovementCommand,
+  prependMessage,
+  runDirectionalMovement,
+  shouldStopDirectionalRun
 } from "../src/components/BPlaying.js"
 import { MAX_VISIBLE_MESSAGES } from "../src/components/Messages.js"
 
@@ -45,6 +51,12 @@ const floorAt = (x: number, y: number): Entity => ({
   in: "world",
   key: `floor-${x}-${y}`
 })
+const tunnelAt = (x: number, y: number): Entity => ({
+  _tag: "tunnel",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `tunnel-${x}-${y}`
+})
 const wallAt = (x: number, y: number): Entity => ({
   _tag: "wall",
   at: { x, y, z: 0 },
@@ -65,6 +77,12 @@ const hippieAt = (x: number, y: number): Entity => ({
   in: "world",
   key: `hippie-${x}-${y}`,
   name: "blocked"
+})
+const waterAt = (x: number, y: number): Entity => ({
+  _tag: "water",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `water-${x}-${y}`
 })
 
 const baseDirectionCases = [
@@ -87,8 +105,14 @@ const controlDirectionCases = baseDirectionCases.map(
 const gPrefixDirectionCases = baseDirectionCases.map(
   ([input, direction]) => [`g+${input}`, direction] as const
 )
+const GPrefixDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [`G+${input}`, direction] as const
+)
 const mPrefixDirectionCases = baseDirectionCases.map(
   ([input, direction]) => [`m+${input}`, direction] as const
+)
+const MPrefixDirectionCases = baseDirectionCases.map(
+  ([input, direction]) => [`M+${input}`, direction] as const
 )
 
 const expectSomeAction = (
@@ -104,6 +128,19 @@ const expectSomeAction = (
 const expectMovementCases = (cases: ReadonlyArray<DirectionCase>) => {
   for (const [input, direction] of cases) {
     expectSomeAction(parseInput(input), EAction.move({ dir: direction }))
+  }
+}
+
+const expectMovementCommandCases = (
+  cases: ReadonlyArray<DirectionCase>,
+  tag: MovementCommand["_tag"]
+) => {
+  for (const [input, direction] of cases) {
+    const actual = parseMovementCommand(input)
+    expect(Option.isSome(actual)).toBe(true)
+    if (Option.isSome(actual)) {
+      expect(actual.value).toEqual({ _tag: tag, dir: direction })
+    }
   }
 }
 
@@ -389,20 +426,44 @@ describe("CLI NetHack movement input parser", () => {
     expectMovementCases(baseDirectionCases)
   })
 
-  it("maps shifted vim directions to movement actions", () => {
-    expectMovementCases(shiftedDirectionCases)
+  it("classifies shifted vim directions as NetHack move-far commands", () => {
+    expectMovementCommandCases(shiftedDirectionCases, "run-to-block")
+    for (const [input] of shiftedDirectionCases) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
   })
 
-  it("maps control vim directions to movement actions", () => {
-    expectMovementCases(controlDirectionCases)
+  it("classifies control vim directions as NetHack run commands", () => {
+    expectMovementCommandCases(controlDirectionCases, "run")
+    for (const [input] of controlDirectionCases) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
   })
 
-  it("maps g-prefix vim directions to movement actions", () => {
-    expectMovementCases(gPrefixDirectionCases)
+  it("classifies g-prefix vim directions as NetHack rush commands", () => {
+    expectMovementCommandCases(gPrefixDirectionCases, "rush")
+    for (const [input] of gPrefixDirectionCases) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
   })
 
-  it("maps m-prefix vim directions to movement actions", () => {
+  it("classifies G-prefix vim directions as NetHack run commands", () => {
+    expectMovementCommandCases(GPrefixDirectionCases, "run")
+    for (const [input] of GPrefixDirectionCases) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
+  })
+
+  it("maps m-prefix vim directions to no-pickup single-step movement actions", () => {
+    expectMovementCommandCases(mPrefixDirectionCases, "no-pickup-walk")
     expectMovementCases(mPrefixDirectionCases)
+  })
+
+  it("classifies M-prefix vim directions as NetHack no-pickup move-far commands", () => {
+    expectMovementCommandCases(MPrefixDirectionCases, "no-pickup-run")
+    for (const [input] of MPrefixDirectionCases) {
+      expect(Option.isNone(parseInput(input))).toBe(true)
+    }
   })
 
   it("maps dot to the rest/no-op action", () => {
@@ -410,15 +471,424 @@ describe("CLI NetHack movement input parser", () => {
   })
 
   it("ignores unknown keys and bare movement prefixes", () => {
-    for (const input of ["?", "g", "m", "g+?", "m+?"]) {
+    for (
+      const input of [
+        "?",
+        "g",
+        "G",
+        "m",
+        "M",
+        "g+?",
+        "G+?",
+        "m+?",
+        "M+?"
+      ]
+    ) {
       expect(Option.isNone(parseInput(input))).toBe(true)
     }
+  })
+})
+
+describe("CLI NetHack directional run behavior", () => {
+  it("identifies repeated autorun commands", () => {
+    expect(movementCommandRequiresRepeatedMovement({
+      _tag: "run-to-block",
+      dir: "E"
+    })).toBe(true)
+    expect(
+      movementCommandRequiresRepeatedMovement({ _tag: "run", dir: "E" })
+    )
+      .toBe(true)
+    expect(
+      movementCommandRequiresRepeatedMovement({ _tag: "rush", dir: "E" })
+    )
+      .toBe(true)
+    expect(movementCommandRequiresRepeatedMovement({
+      _tag: "no-pickup-run",
+      dir: "E"
+    })).toBe(true)
+    expect(
+      movementCommandRequiresRepeatedMovement({ _tag: "walk", dir: "E" })
+    )
+      .toBe(false)
+    expect(movementCommandRequiresRepeatedMovement({
+      _tag: "no-pickup-walk",
+      dir: "E"
+    })).toBe(false)
+  })
+
+  it("repeats movement until blocked or no progress is made", async () => {
+    const worlds = [
+      worldFromEntities([playerAt(1, 0)]),
+      worldFromEntities([playerAt(2, 0)]),
+      worldFromEntities([playerAt(2, 0)])
+    ]
+    let refreshCount = 0
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0)]),
+      command: { _tag: "run-to-block", dir: "E" },
+      maxSteps: MAX_DIRECTIONAL_MOVEMENT_STEPS,
+      moveAndRefresh: () =>
+        Effect.succeed({
+          world: worlds[Math.min(refreshCount++, worlds.length - 1)]
+            ?? worlds.at(-1)
+            ?? worldFromEntities([playerAt(2, 0)])
+        })
+    }))
+
+    expect(result).toEqual({ _tag: "blocked", steps: 2 })
+    expect(refreshCount).toBe(3)
+  })
+
+  it("cancels directional autorun before making the next move", async () => {
+    let refreshCount = 0
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0)]),
+      command: { _tag: "run-to-block", dir: "E" },
+      isCancelled: () => refreshCount > 0,
+      moveAndRefresh: () => {
+        refreshCount += 1
+        return Effect.succeed({
+          world: worldFromEntities([playerAt(1, 0)])
+        })
+      }
+    }))
+
+    expect(result).toEqual({ _tag: "cancelled", steps: 1 })
+    expect(refreshCount).toBe(1)
+  })
+
+  it("does not move when directional autorun is already cancelled", async () => {
+    let refreshCount = 0
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0)]),
+      command: { _tag: "run-to-block", dir: "E" },
+      isCancelled: () => true,
+      moveAndRefresh: () => {
+        refreshCount += 1
+        return Effect.succeed({
+          world: worldFromEntities([playerAt(1, 0)])
+        })
+      }
+    }))
+
+    expect(result).toEqual({ _tag: "cancelled", steps: 0 })
+    expect(refreshCount).toBe(0)
+  })
+
+  it("follows NetHack run corners through one-way tunnels", async () => {
+    const tunnelCorner = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(1, 1)
+    ]
+    const directions: Array<MovementDirection> = []
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), ...tunnelCorner]),
+      command: { _tag: "run", dir: "E" },
+      moveAndRefresh: (direction) => {
+        directions.push(direction)
+        const nextPlayer = directions.length === 1
+          ? playerAt(1, 0)
+          : directions.length === 2
+          ? playerAt(1, 1)
+          : playerAt(1, 1)
+        return Effect.succeed({
+          world: worldFromEntities([nextPlayer, ...tunnelCorner])
+        })
+      }
+    }))
+
+    expect(directions).toEqual(["E", "S", "S"])
+    expect(result).toEqual({ _tag: "blocked", steps: 2 })
+  })
+
+  it("treats g as NetHack rush: forks are interesting and corners are not auto-turned", async () => {
+    const forkWorld = worldFromEntities([
+      playerAt(1, 0),
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(2, 0),
+      tunnelAt(1, 1)
+    ])
+
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "rush", dir: "E" },
+      direction: "E",
+      world: forkWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(true)
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "run", dir: "E" },
+      direction: "E",
+      world: forkWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(false)
+
+    const rushResult = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), tunnelAt(0, 0)]),
+      command: { _tag: "rush", dir: "E" },
+      moveAndRefresh: () => Effect.succeed({ world: forkWorld })
+    }))
+
+    expect(rushResult).toEqual({ _tag: "interesting", steps: 1 })
+  })
+
+  it("does not treat ordinary open room floor as a corridor fork", () => {
+    const roomWorld = worldFromEntities([
+      playerAt(1, 1),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0),
+      floorAt(0, 1),
+      floorAt(1, 1),
+      floorAt(2, 1),
+      floorAt(0, 2),
+      floorAt(1, 2),
+      floorAt(2, 2)
+    ])
+
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "rush", dir: "E" },
+      direction: "E",
+      world: roomWorld,
+      position: { x: 1, y: 1, z: 0 },
+      previousPosition: { x: 0, y: 1, z: 0 }
+    })).toBe(false)
+  })
+
+  it("stops after two same-direction NetHack corridor turns", async () => {
+    const uTurnCorridor = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(1, 1),
+      tunnelAt(0, 1)
+    ]
+    const directions: Array<MovementDirection> = []
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), ...uTurnCorridor]),
+      command: { _tag: "run", dir: "E" },
+      moveAndRefresh: (direction) => {
+        directions.push(direction)
+        const nextPlayer = directions.length === 1
+          ? playerAt(1, 0)
+          : directions.length === 2
+          ? playerAt(1, 1)
+          : playerAt(1, 1)
+        return Effect.succeed({
+          world: worldFromEntities([nextPlayer, ...uTurnCorridor])
+        })
+      }
+    }))
+
+    expect(directions).toEqual(["E", "S", "S"])
+    expect(result).toEqual({ _tag: "blocked", steps: 2 })
+  })
+
+  it("stops shifted autorun before cardinal room exits but ignores diagonal rooms", async () => {
+    const corridorToRoom = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      floorAt(2, 0),
+      floorAt(2, 1)
+    ]
+    const diagonalRoomOnly = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      floorAt(2, 1)
+    ]
+    const directions: Array<MovementDirection> = []
+
+    const roomResult = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), ...corridorToRoom]),
+      command: { _tag: "run-to-block", dir: "E" },
+      moveAndRefresh: () =>
+        Effect.succeed({
+          world: worldFromEntities([playerAt(1, 0), ...corridorToRoom])
+        })
+    }))
+    const diagonalResult = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), ...diagonalRoomOnly]),
+      command: { _tag: "run-to-block", dir: "E" },
+      moveAndRefresh: (direction) => {
+        directions.push(direction)
+        const nextPlayer = directions.length === 1
+          ? playerAt(1, 0)
+          : playerAt(1, 0)
+        return Effect.succeed({
+          world: worldFromEntities([nextPlayer, ...diagonalRoomOnly])
+        })
+      }
+    }))
+
+    expect(roomResult).toEqual({ _tag: "interesting", steps: 1 })
+    expect(diagonalResult).toEqual({ _tag: "blocked", steps: 1 })
+    expect(directions).toEqual(["E", "E"])
+  })
+
+  it("moves into and through an adjacent room when shifted autorun starts at the doorway", async () => {
+    const directions: Array<MovementDirection> = []
+    const roomFromDoorway = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      floorAt(2, 0),
+      floorAt(3, 0)
+    ]
+
+    const result = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(1, 0), ...roomFromDoorway]),
+      command: { _tag: "run-to-block", dir: "E" },
+      moveAndRefresh: (direction) => {
+        directions.push(direction)
+        const nextPlayer = directions.length === 1
+          ? playerAt(2, 0)
+          : directions.length === 2
+          ? playerAt(3, 0)
+          : playerAt(3, 0)
+        return Effect.succeed({
+          world: worldFromEntities([nextPlayer, ...roomFromDoorway])
+        })
+      }
+    }))
+
+    expect(result).toEqual({ _tag: "blocked", steps: 2 })
+    expect(directions).toEqual(["E", "E", "E"])
+  })
+
+  it("stops shifted autorun at corridor forks and follows one-way corridor corners", async () => {
+    const cardinalForkWorld = worldFromEntities([
+      playerAt(1, 0),
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(2, 0),
+      tunnelAt(1, 1)
+    ])
+    const diagonalForkWorld = worldFromEntities([
+      playerAt(1, 0),
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(2, 0),
+      tunnelAt(2, 1)
+    ])
+    const initialCornerCorridor = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0)
+    ]
+    const discoveredCornerCorridor = [
+      tunnelAt(0, 0),
+      tunnelAt(1, 0),
+      tunnelAt(1, 1),
+      floorAt(1, 2)
+    ]
+    const directions: Array<MovementDirection> = []
+
+    for (const world of [cardinalForkWorld, diagonalForkWorld]) {
+      expect(shouldStopDirectionalRun({
+        command: { _tag: "run-to-block", dir: "E" },
+        direction: "E",
+        world,
+        position: { x: 1, y: 0, z: 0 },
+        previousPosition: { x: 0, y: 0, z: 0 }
+      })).toBe(true)
+    }
+
+    const cornerResult = await Effect.runPromise(runDirectionalMovement({
+      world: worldFromEntities([playerAt(0, 0), ...initialCornerCorridor]),
+      command: { _tag: "run-to-block", dir: "E" },
+      moveAndRefresh: (direction) => {
+        directions.push(direction)
+        const nextPlayer = directions.length === 1
+          ? playerAt(1, 0)
+          : directions.length === 2
+          ? playerAt(1, 1)
+          : playerAt(1, 1)
+        return Effect.succeed({
+          world: worldFromEntities([
+            nextPlayer,
+            ...discoveredCornerCorridor
+          ])
+        })
+      }
+    }))
+
+    expect(directions).toEqual(["E", "S"])
+    expect(cornerResult).toEqual({ _tag: "interesting", steps: 2 })
+  })
+
+  it("stops g/G runs at items and nearby creatures but lets shifted movement continue", () => {
+    const itemWorld = worldFromEntities([
+      playerAt(1, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0),
+      waterAt(1, 0)
+    ])
+    const sideCreatureWorld = worldFromEntities([
+      playerAt(1, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0),
+      hippieAt(1, 1)
+    ])
+    const aheadCreatureWorld = worldFromEntities([
+      playerAt(1, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      floorAt(2, 0),
+      hippieAt(2, 0)
+    ])
+
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "run", dir: "E" },
+      direction: "E",
+      world: itemWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(true)
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "rush", dir: "E" },
+      direction: "E",
+      world: sideCreatureWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(true)
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "run-to-block", dir: "E" },
+      direction: "E",
+      world: itemWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(false)
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "run-to-block", dir: "E" },
+      direction: "E",
+      world: sideCreatureWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(false)
+    expect(shouldStopDirectionalRun({
+      command: { _tag: "run-to-block", dir: "E" },
+      direction: "E",
+      world: aheadCreatureWorld,
+      position: { x: 1, y: 0, z: 0 },
+      previousPosition: { x: 0, y: 0, z: 0 }
+    })).toBe(true)
   })
 })
 
 describe("CLI NetHack key normalization", () => {
   it("normalizes blessed shifted and control direction events", () => {
     expect(normalizeGameInput("H", { full: "S-h" })).toBe("H")
+    expect(normalizeGameInput("", { full: "S-g" })).toBe("G")
+    expect(normalizeGameInput("", { full: "S-m" })).toBe("M")
+    expect(normalizeGameInput("", { full: "S-3" })).toBe("#")
     expect(normalizeGameInput("", { full: "C-k" })).toBe("C-k")
     expect(normalizeGameInput("", { full: "backspace" })).toBe("C-h")
     expect(normalizeGameInput("", { full: "linefeed" })).toBe("C-j")
@@ -571,7 +1041,6 @@ describe("CLI input handling static guards", () => {
       "apiDoPlayerAction(action.value)",
       guardEnd
     )
-    indexAfter(handleGameKeyBody, "refreshWorldAndInventory", guardEnd)
     expectRefreshAfterAction(
       handleGameKeyBody,
       "apiDoPlayerAction(action.value)"

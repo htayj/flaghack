@@ -3,7 +3,10 @@
   "version": "0.0.0",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "The CLI template",
+  "engines": {
+    "node": ">=21"
+  },
+  "description": "Flag Hack terminal client and Node HTTP client runtime.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",
@@ -26,42 +29,55 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/cli": "latest",
-    "@effect/platform": "latest",
-    "@effect/platform-node": "latest",
-    "@flaghack/domain": "workspace:^",
-    "blessed": "latest",
-    "blessed-contrib": "latest",
+    "@effect/cli": "0.64.2",
+    "@effect/platform": "0.85.2",
+    "@effect/platform-node": "0.86.4",
+    "@flaghack/domain": "workspace:*",
+    "blessed": "0.1.81",
+    "blessed-contrib": "4.11.0",
     "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
     "react": "18.2.0",
     "react-blessed": "npm:@htayj/react-blessed@^0.7.3",
-    "react-devtools": "latest",
-    "scala-ts": "^0.1.8"
+    "react-devtools": "7.0.1"
   },
   "devDependencies": {
-    "@effect/cli": "latest",
-    "@effect/platform": "latest",
-    "@effect/platform-node": "latest",
-    "@flaghack/domain": "workspace:^",
     "@types/blessed": "0.1.25",
     "@types/react": "^19.1.2",
-    "@types/react-blessed": "latest",
+    "@types/react-blessed": "0.7.8",
     "@vitejs/plugin-react": "^4.5.2",
     "chokidar": "^4.0.3",
-    "effect": "3.16.8",
-    "scala-ts": "^0.1.8",
     "vite": "^6.3.5"
   },
   "effect": {
     "generateExports": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     },
     "generateIndex": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     }
   }

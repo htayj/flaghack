@@ -5,25 +5,52 @@ import React from "react"
 import { render } from "react-blessed"
 import BApp from "./BApp.js"
 
-const screen = blessed.screen({
-  // autoPadding: false,
-  autoPadding: true,
-  // smartCSR: true,
-  fastCSR: true,
-  debug: true,
-  // warnings: true,
-  // useBCE: true,
-  title: "react-blessed hello world"
-})
-// Adding a way to quit the program
-screen.key(["C-c"], function(ch, key) {
-  return process.exit(0)
-})
+type ShutdownSignal = "SIGINT" | "SIGTERM"
 
-process.on("SIGTERM", () => {
-  screen.destroy()
-  process.exit(0)
-})
-export const startblessed = () => render(<BApp />, screen)
+const createShutdown = (screen: blessed.Widgets.Screen) => {
+  let destroyed = false
+
+  const shutdown = (signal: ShutdownSignal) => {
+    if (!destroyed) {
+      destroyed = true
+      screen.destroy()
+    }
+
+    process.removeListener(signal, signalHandlers[signal])
+    process.kill(process.pid, signal)
+  }
+
+  const signalHandlers: Readonly<Record<ShutdownSignal, () => void>> = {
+    SIGINT: () => shutdown("SIGINT"),
+    SIGTERM: () => shutdown("SIGTERM")
+  }
+
+  return { shutdown, signalHandlers }
+}
+
+export const startblessed = () => {
+  const screen = blessed.screen({
+    // autoPadding: false,
+    autoPadding: true,
+    // smartCSR: true,
+    fastCSR: true,
+    debug: true,
+    // warnings: true,
+    // useBCE: true,
+    title: "react-blessed hello world"
+  })
+
+  const { shutdown, signalHandlers } = createShutdown(screen)
+
+  // Adding a way to quit the program
+  screen.key(["C-c"], function(_ch, _key) {
+    shutdown("SIGINT")
+  })
+
+  process.once("SIGINT", signalHandlers.SIGINT)
+  process.once("SIGTERM", signalHandlers.SIGTERM)
+
+  return render(<BApp onQuit={() => shutdown("SIGINT")} />, screen)
+}
 // export type CliType = typeof cli
 // render(<App opts={cli} />)

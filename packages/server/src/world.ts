@@ -2,12 +2,14 @@ import {
   AnyCreature,
   AnyItem,
   conforms,
-  DirectionalVariant,
   EEntity,
-  Entity,
-  Hippie,
-  Player,
-  World
+  Hippie
+} from "@flaghack/domain/schemas"
+import type {
+  DirectionalVariant as DirectionalVariantSchema,
+  Entity as EntitySchema,
+  Player as PlayerSchema,
+  World as WorldSchema
 } from "@flaghack/domain/schemas"
 import { HashMap, Option } from "effect"
 import { filter, findFirst } from "effect/HashMap"
@@ -18,13 +20,14 @@ import { groundFlag, waterbottle } from "./items.js"
 import { range } from "effect/Array"
 import { Set } from "immutable"
 import prand from "pure-rand"
-import { collideP, shift, TPos } from "./position.js"
+import { collideP, shift } from "./position.js"
+import type { TPos } from "./position.js"
 import { floor, isTerrain, testWalls, tunnel, wall } from "./terrain.js"
 import { dijkstraPath } from "./worldUtil.js"
 
-export type Entity = typeof Entity.Type
-type Player = typeof Player.Type
-export type World = typeof World.Type
+export type Entity = typeof EntitySchema.Type
+type Player = typeof PlayerSchema.Type
+export type World = typeof WorldSchema.Type
 
 export const initWorld: Array<Entity> = [
   player(3, 3, 0),
@@ -54,7 +57,7 @@ export const isItem = conforms(AnyItem)
 export const notPlayerFrom = <T extends World>(w: T) =>
   w.pipe(filter((o) => !isPlayer(o)))
 export const isAt = (p: TPos) => <T extends Entity>(e: T) =>
-  e.in === "world" && e.at === p
+  e.in === "world" && collideP(p)(e.at)
 export const itemsAt = (world: World) => (pos: TPos) =>
   world.pipe(filter(isItem), filter(isAt(pos)))
 
@@ -89,17 +92,30 @@ const BSP_MAX_PART_HEIGHT = 10
 const BSP_MAX_PART_WIDTH = 10
 const makeAllWalls = (width: number, height: number, dlvl: number) => [
   ...range(0, height - 1).map((y) =>
-    range(0, width).map((x) => wall(x, y, 0))
+    range(0, width).map((x) => wall(x, y, dlvl))
   ).flat()
 ]
-const randBool = (rng: prand.RandomGenerator) => {
+const randBool = (
+  rng: prand.RandomGenerator
+): [boolean, prand.RandomGenerator] => {
   const [num, rng2] = prand.uniformIntDistribution(0, 1, rng)
-  return [!!num, rng2] as [boolean, prand.RandomGenerator]
+  return [num === 1, rng2]
 }
 const filterSplit = <T>(
-  arr: T[],
+  arr: Array<T>,
   fn: (a: T) => boolean
-) => [arr.filter(fn), arr.filter((a) => !fn(a))]
+): [Array<T>, Array<T>] => [arr.filter(fn), arr.filter((a) => !fn(a))]
+const getRequiredAt = <T>(
+  values: ReadonlyArray<T>,
+  index: number,
+  description: string
+): T => {
+  const value = values.at(index)
+  if (value === undefined) {
+    throw new Error(`${description} missing item at index ${index}`)
+  }
+  return value
+}
 
 // const getRoomStats = (chunk: Array<Entity>) => {
 
@@ -113,8 +129,8 @@ const getSpatialInfo = (
   number,
   number,
   number,
-  number[],
-  number[]
+  Array<number>,
+  Array<number>
 ] => {
   const xs = level.map((e) => e.at.x)
   const ys = level.map((e) => e.at.y)
@@ -141,24 +157,28 @@ const _linkLeaves = (
   const [, , minXB, minYB, maxXB, maxYB, xsB, ysB] = getSpatialInfo(
     floorsB
   )
-  const z = floorsB[0].at.z // fixme?
+  const z = getRequiredAt(floorsB, 0, "right leaf floor").at.z
 
   // fixme replace all the rest of this with a pathfinding to link random points on edges....
-  const yIntersect = Set(ysB).intersect(Set(ysA)).filter((y) =>
-    !!floorsA.find((f) => f.at.y === y && (maxXA === f.at.x))
-    && !!floorsB.find((f) => f.at.y === y && (minXB === f.at.x))
-  )
-  if (yIntersect.size > 0) {
+  const yIntersectValues = Set(ysB).intersect(Set(ysA)).filter((y) =>
+    floorsA.some((f) => f.at.y === y && maxXA === f.at.x)
+    && floorsB.some((f) => f.at.y === y && minXB === f.at.x)
+  ).toArray()
+  if (yIntersectValues.length > 0) {
     // console.log(
     //   "able to link on y intersection",
-    //   JSON.stringify(yIntersect.toArray())
+    //   JSON.stringify(yIntersectValues)
     // )
     const [i, rng2] = prand.uniformIntDistribution(
       0,
-      yIntersect.size - 1,
+      yIntersectValues.length - 1,
       rng
     )
-    const linkLineY = yIntersect.toArray()[i]
+    const linkLineY = getRequiredAt(
+      yIntersectValues,
+      i,
+      "y intersection"
+    )
 
     const tunnels = (minXA < minXB
       ? range(maxXA + 1, minXB - 1)
@@ -172,21 +192,25 @@ const _linkLeaves = (
     // )
     return [merged, rng2]
   }
-  const xIntersect = Set(xsB).intersect(Set(xsA)).filter((x) =>
-    !!floorsA.find((f) => f.at.x === x && maxYA === f.at.y)
-    && !!floorsB.find((f) => f.at.x === x && maxYB === f.at.y)
-  )
-  if (xIntersect.size > 0) {
+  const xIntersectValues = Set(xsB).intersect(Set(xsA)).filter((x) =>
+    floorsA.some((f) => f.at.x === x && maxYA === f.at.y)
+    && floorsB.some((f) => f.at.x === x && maxYB === f.at.y)
+  ).toArray()
+  if (xIntersectValues.length > 0) {
     // console.log(
     //   "able to link on x intersection: ",
-    //   JSON.stringify(xIntersect.toArray())
+    //   JSON.stringify(xIntersectValues)
     // )
     const [i, rng2] = prand.uniformIntDistribution(
       0,
-      xIntersect.size - 1,
+      xIntersectValues.length - 1,
       rng
     )
-    const linkLineX = xIntersect.toArray()[i]
+    const linkLineX = getRequiredAt(
+      xIntersectValues,
+      i,
+      "x intersection"
+    )
 
     const tunnels = (minYA < minYB
       ? range(maxYA + 1, minYB - 1)
@@ -210,8 +234,8 @@ const _linkLeaves = (
     floorsB.length - 1,
     rng2
   )
-  const fa = floorsA[ia]
-  const fb = floorsB[ib]
+  const fa = getRequiredAt(floorsA, ia, "left leaf floor")
+  const fb = getRequiredAt(floorsB, ib, "right leaf floor")
   const world = HashMap.fromIterable(a.concat(b).map((e) => [e.key, e]))
 
   const tunnels = dijkstraPath(fa.at, fb.at, tunnelingDist, world, true)
@@ -246,7 +270,7 @@ const wallSW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y + 1))
 const determineWallVariant = (
   entity: Entity,
   world: Array<Entity>
-): typeof DirectionalVariant.Type => {
+): typeof DirectionalVariantSchema.Type => {
   // const n = normalNeighbors(e, w).filter((n) => n._tag === "wall")
   const n = wallN(world)(entity)
   const w = wallW(world)(entity)

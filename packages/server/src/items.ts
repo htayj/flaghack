@@ -1,12 +1,14 @@
-import { AnyItem, Flag, Water } from "@flaghack/domain/schemas"
+import type {
+  AnyItem as AnyItemSchema,
+  Flag as FlagSchema,
+  Water as WaterSchema
+} from "@flaghack/domain/schemas"
 import { Data, Effect } from "effect"
-import { match as omatch, Option } from "effect/Option"
-import { none } from "effect/Option"
-import { some } from "effect/Option"
-import { TKey } from "./entity.js"
+import { match as omatch, none, type Option, some } from "effect/Option"
+import type { TKey } from "./entity.js"
 import type { TPos } from "./position.js"
 import { genKey } from "./util.js"
-import { Entity } from "./world.js"
+import type { Entity } from "./world.js"
 
 class ErrTriedToPickupNothing
   extends Data.TaggedError("TriedToPickupNothing")
@@ -14,9 +16,9 @@ class ErrTriedToPickupNothing
 class ErrNothingTriedToPickup
   extends Data.TaggedError("NotingTriedToPickup")
 {}
-export type Flag = typeof Flag.Type
-export type Water = typeof Water.Type
-export type Item = typeof AnyItem.Type
+export type Flag = typeof FlagSchema.Type
+export type Water = typeof WaterSchema.Type
+export type Item = typeof AnyItemSchema.Type
 export const groundFlag = (pos: TPos): Flag => ({
   at: pos,
   in: "world",

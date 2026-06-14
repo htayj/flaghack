@@ -2,7 +2,7 @@
 import React from "react"
 // import blessed from "react-blessed"
 // import { } from "react-blessed"
-import { AppMode } from "../BApp.jsx"
+import type { AppMode } from "../BApp.js"
 
 type Props = {
   mode: AppMode

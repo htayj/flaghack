@@ -3,11 +3,24 @@ import { fileURLToPath } from "node:url"
 import type { UserConfig } from "vitest/config"
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
-const sourceTarget = process.env.TEST_DIST !== undefined
-  ? "dist/dist/esm"
-  : "src"
 
-const packageAlias = (workspaceName: string, importName: string) => ({
+type VitestSourceTarget = "dist/dist/esm" | "src"
+type VitestSourceTargetEnvironment = Readonly<
+  Record<string, string | undefined>
+>
+
+export const getVitestSourceTarget = (
+  env: VitestSourceTargetEnvironment = process.env
+): VitestSourceTarget =>
+  env.TEST_DIST !== undefined
+    ? "dist/dist/esm"
+    : "src"
+
+export const packageAlias = (
+  workspaceName: string,
+  importName: string,
+  sourceTarget = getVitestSourceTarget()
+) => ({
   [`${importName}/test`]: path.join(
     rootDir,
     "packages",

@@ -1,7 +1,7 @@
 # Functional programming / immutability cleanup audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: repo-wide TypeScript/React/server code, beyond Effect-specific idioms.
 
 This complements `EFFECT_TS_OPPORTUNITIES.md`. Some findings overlap because hidden mutable state, stale generated code, and render-time side effects are both Effect problems and general functional-programming problems. The emphasis here is pure reducers, immutable data ownership, total functions, explicit validation boundaries, typed state machines, deterministic generation, and stricter TypeScript guardrails.
@@ -15,6 +15,25 @@ This complements `EFFECT_TS_OPPORTUNITIES.md`. Some findings overlap because hid
 5. **Make UI render functions pure.** React/blessed components should render from immutable UI state; effects, focus, key subscriptions, and network calls should live in explicit interpreters/lifecycle hooks.
 6. **Choose collection boundaries.** Avoid ad-hoc mixing of Effect `HashMap`, Immutable.js collections, mutable arrays, `null`, and `undefined`.
 7. **Turn on stricter TS/lint/tests.** `noUncheckedIndexedAccess`, readonly collections, no `any`, no mutation, no stale generated files, and tests for reducers/schemas/pathfinding/view-models.
+
+## Remediation status (audit-remediation branch)
+
+The findings below remain the original 2026-05-29 `master` audit evidence. This section summarizes the current `audit-remediation` branch and intentionally does not rewrite the historical evidence.
+
+Status terms:
+
+- **Addressed:** this branch has a direct remediation plus targeted tests/gates for the narrow finding.
+- **Partial:** risk was reduced or guardrails/tests were added, but the original recommendation is broader.
+- **Deferred:** intentionally not completed in this branch; keep the finding open.
+
+Validation note: this docs-only closing slice does not require code changes. Later validation may skip root `pnpm check` if artifact-emission risk is not approved; the generated-file guard, dprint check, and smoke gates remain the safe evidence for this documentation change.
+
+| Status      | Findings / category                                                                                                                                         | Remediation evidence                                                                                                                                                                                                  | Remaining / not claimed                                                                                                                                                                                                           | Validation                                                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Partial** | 1-3, 31-32, 49-50, 54: generated/workspace/package boundaries, stricter TS/lint/tests/deps/docs                                                             | Workspace inclusion, generated guardrails, dprint/eslint exclusions, `noUncheckedIndexedAccess`, dependency cleanup, targeted tests, and docs/gate policy reduce risk.                                                | Stale generated schema JS/declarations remain tracked until approved regeneration; source-vs-dist package resolution remains; full CI/readiness pipeline and a complete FP lint/mutation policy are deferred.                     | `pnpm generated:guard`; `pnpm format:check`; `pnpm check`; unit/perf/API/E2E smoke gates as applicable. |
+| **Partial** | 4-6, 16-22, 40-41: server reducer purity, logs, pathfinding, worldgen, unsafe indexing, hidden nondeterminism, and import side effects                      | Action reducer work, capped log snapshots, immutable pathfinding distance handling, UUID key generation, safer indexing, structural position handling, and narrower AI planning reduce risk.                          | A global state owner still exists; atomic/session store, typed failures, deterministic seeded generation, explicit turn model, and deeper world/AI architecture are deferred.                                                     | Reducer/log/pathfinding/world tests plus smoke gates.                                                   |
+| **Partial** | 9-15, 33-39, 47: domain identity/location/actions/API/collections/types/rendering/numeric helpers                                                           | Stats bugs/bounds, tool variants, integer positions, `Schema.is` validation, item collection responses, stale pickup action removal, and exhaustive display handling were addressed.                                  | Branded entity keys, location ADT and world invariant validation, immutable collection boundary policy, public readonly collection cleanup, null/undefined sentinel cleanup, schema annotations, and helper renames are deferred. | Schema/domain/display unit tests plus `pnpm generated:guard`.                                           |
+| **Partial** | 7-8, 23-30, 42-46, 48, 51-53: CLI/web render purity, UI state/input/popups, view layering, duplicate UI/client/util code, terminal/color/debug/static state | Render-time fetches moved to lifecycle hooks, app-scoped runtimes, key cleanup, unknown input ignoring, popup selection/focus fixes, deterministic layering, capped messages, and baseline accessibility reduce risk. | Complete UI state machine/remote-data ADT, shared view-model/UI-core/client extraction, terminal state modeling, layout/view-model cleanup, supervised runtime/error handling, and user-visible error handling are deferred.      | CLI/web unit smoke and API/E2E smoke gates as applicable.                                               |
 
 ---
 

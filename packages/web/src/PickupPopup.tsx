@@ -1,42 +1,79 @@
-import { Key, World } from "@flaghack/domain/schemas"
-import { Match } from "effect"
+import type {
+  Key as KeySchema,
+  World as WorldSchema
+} from "@flaghack/domain/schemas"
 // import { HashMap } from "effect"
 import { Map } from "immutable"
-import React, { useCallback, useMemo, useState } from "react"
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react"
 
-type Key = typeof Key.Type
-type World = typeof World.Type
+type Key = typeof KeySchema.Type
+type World = typeof WorldSchema.Type
 type Props = {
   items: World
   open: boolean
-  onSubmit: (keys: Key[]) => void
+  onSubmit: (keys: ReadonlyArray<Key>) => void
   onCancel: () => void
-  pickupRef: React.RefObject<HTMLElement | null>
-  log: (l: string) => void
 }
 
 export default function PickupPopup(
   { items, onCancel, onSubmit, open }: Props
 ) {
-  const [marked, setMarked] = useState<Key[]>(["asdf"])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const [marked, setMarked] = useState<ReadonlySet<Key>>(
+    () => new Set<Key>()
+  )
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    dialogRef.current?.focus()
+  }, [open])
   const invMap = useMemo(() => Map(items), [items])
   const markAll = useCallback(() =>
     setMarked(
-      () => {
-        const values = invMap.valueSeq()
-        const arr = values.toArray().map((e) => e.key)
-        return arr
-      }
-    ), [marked, invMap, setMarked])
-  // FIXME
-  const handleKeyDown = (event: any) =>
-    Match.value(event.keyCode).pipe(
-      Match.when(32, () => onSubmit(marked)), // space
-      Match.when(81, () => onCancel()), // q
-      Match.when(188, () => markAll()) // ,
-    )
+      () =>
+        new Set<Key>(
+          invMap.valueSeq().toArray().map((e) => e.key)
+        )
+    ), [invMap])
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!open) {
+      return
+    }
+
+    event.stopPropagation()
+
+    if (event.key === " ") {
+      event.preventDefault()
+      onSubmit(Array.from(marked))
+      return
+    }
+    if (event.key.toLowerCase() === "q") {
+      event.preventDefault()
+      onCancel()
+      return
+    }
+    if (event.key === ",") {
+      event.preventDefault()
+      markAll()
+    }
+  }
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-label="Pick up items"
+      aria-hidden={!open}
+      tabIndex={-1}
       style={{
         position: "absolute",
         left: "25vw",
@@ -48,20 +85,20 @@ export default function PickupPopup(
       }}
       onKeyDown={handleKeyDown}
     >
-      {invMap.valueSeq().toArray().map((item, i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            height: "100%",
-            width: "100%",
-            background: marked?.includes(item.key) ? "#aaa" : "#000"
-          }}
-          content={item._tag}
-        />
-      ))}
+      <div role="list">
+        {invMap.valueSeq().toArray().map((item) => (
+          <div
+            role="listitem"
+            key={item.key}
+            style={{
+              display: "block",
+              background: marked.has(item.key) ? "#aaa" : "#000"
+            }}
+          >
+            {item._tag}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

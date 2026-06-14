@@ -1,9 +1,10 @@
 {
   "name": "@flaghack/server",
+  "private": true,
   "version": "0.0.0",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "The server template",
+  "description": "Flag Hack HTTP server and in-process game runtime.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",
@@ -21,31 +22,45 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/platform": "latest",
-    "@effect/platform-node": "latest",
-    "@flaghack/domain": "workspace:^",
+    "@effect/platform": "0.85.2",
+    "@effect/platform-node": "0.86.4",
+    "@flaghack/domain": "workspace:*",
     "effect": "3.16.8",
     "immutable": "^4.0.0-rc.12",
-    "ink": "^4.1.0",
-    "meow": "^11.0.0",
-    "pure-rand": "7.0.1",
-    "react": "^18.2.0",
-    "scala-ts": "^0.1.8"
+    "pure-rand": "7.0.1"
   },
   "devDependencies": {
-    "@types/react": "^19.1.2",
-    "nodemon": "^3.1.10",
-    "scala-ts": "^0.1.8"
+    "nodemon": "^3.1.10"
   },
   "effect": {
     "generateExports": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     },
     "generateIndex": {
       "include": [
         "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
       ]
     }
   }

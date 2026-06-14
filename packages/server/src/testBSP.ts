@@ -1,15 +1,34 @@
+import { resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { simpleDraw } from "./testDrawUtils.js"
-import { BSPGenLevel } from "./world.js"
-console.log("testing bsp")
+import { BSPGenLevel, type World } from "./world.js"
 
-const levels = [
-  BSPGenLevel(77777, 2),
-  BSPGenLevel(77777, 3),
-  BSPGenLevel(77777, 4),
-  BSPGenLevel(69, 2),
-  BSPGenLevel(69, 3),
-  BSPGenLevel(69, 4)
-]
-levels.map(simpleDraw).forEach((w, i) =>
-  console.log("\ni: " + i + "\n" + w)
-)
+const bspDemoSpecs = [
+  [77777, 2],
+  [77777, 3],
+  [77777, 4],
+  [69, 2],
+  [69, 3],
+  [69, 4]
+] as const
+
+type DemoLog = (message: string) => void
+
+export const makeBspDemoLevels = (): Array<World> =>
+  bspDemoSpecs.map(([seed, dlvl]) => BSPGenLevel(seed, dlvl))
+
+export const renderBspDemo = (
+  levels: ReadonlyArray<World> = makeBspDemoLevels()
+): string =>
+  levels.map((level, i) => `\ni: ${i}\n${simpleDraw(level)}`).join("\n")
+
+export const runBspDemo = (log: DemoLog): void => {
+  log(renderBspDemo())
+}
+
+const isDirectEntry = process.argv[1] !== undefined
+  && fileURLToPath(import.meta.url) === resolve(process.argv[1])
+
+if (isDirectEntry) {
+  runBspDemo(console.log)
+}

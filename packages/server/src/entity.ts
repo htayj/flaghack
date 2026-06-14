@@ -1,10 +1,10 @@
-import {
+import type {
   Contain,
   EntityBase,
-  Location,
+  Key,
+  Keyed,
   Position
 } from "@flaghack/domain/schemas"
-import { Key, Keyed } from "@flaghack/domain/schemas"
 import type { TPos } from "./position.js"
 import { shift } from "./position.js"
 // import {hasProperty} from './util.js';
@@ -13,8 +13,6 @@ export type TKey = typeof Key.Type
 export type TKeyed = typeof Keyed.Type
 export type TPositioned = typeof Position.Type
 export type TContained = typeof Contain.Type
-
-export type TLocated = typeof Location.Type
 
 export type TEntityBase = typeof EntityBase.Type
 

@@ -1,9 +1,7 @@
-import { World } from "@flaghack/domain/schemas"
+import type { World as WorldSchema } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
-// @ts-ignore
-import React from "react"
 
-type World = typeof World.Type
+type World = typeof WorldSchema.Type
 type Props = {
   inventory: World
 }
@@ -11,7 +9,8 @@ type Props = {
 export default function Inventory({ inventory }: Props) {
   const invMap = Map(inventory)
   return (
-    <div
+    <section
+      aria-labelledby="inventory-heading"
       style={{
         position: "absolute",
         right: 0,
@@ -21,12 +20,19 @@ export default function Inventory({ inventory }: Props) {
         height: "30em"
       }}
     >
-      INVENTORY
-      {invMap.valueSeq().toArray().map((item, i) => (
-        <div style={{ display: "block" }} key={i}>
-          {item._tag}
-        </div>
-      ))}
-    </div>
+      <h2
+        id="inventory-heading"
+        style={{ fontSize: "inherit", fontWeight: "inherit", margin: 0 }}
+      >
+        INVENTORY
+      </h2>
+      <div role="list">
+        {invMap.valueSeq().toArray().map((item) => (
+          <div role="listitem" style={{ display: "block" }} key={item.key}>
+            {item._tag}
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

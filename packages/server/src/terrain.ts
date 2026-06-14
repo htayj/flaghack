@@ -1,19 +1,19 @@
 import {
   AnyTerrain,
   conforms,
-  DirectionalVariant,
-  Floor,
-  Tunnel,
-  Wall
+  type DirectionalVariant as DirectionalVariantSchema,
+  type Floor as FloorSchema,
+  type Tunnel as TunnelSchema,
+  type Wall as WallSchema
 } from "@flaghack/domain/schemas"
 import { genKey } from "./util.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
-export type Wall = typeof Wall.Type
-export type Floor = typeof Floor.Type
-export type Tunnel = typeof Tunnel.Type
+export type Wall = typeof WallSchema.Type
+export type Floor = typeof FloorSchema.Type
+export type Tunnel = typeof TunnelSchema.Type
 export type Terrain = typeof AnyTerrain.Type
-export type DirectionalVariant = typeof DirectionalVariant.Type
+export type DirectionalVariant = typeof DirectionalVariantSchema.Type
 
 export const isTerrain = conforms(AnyTerrain)
 export const wall = (

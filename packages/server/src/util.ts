@@ -1,22 +1,20 @@
-import { List } from "immutable"
+import { List, type Map } from "immutable"
+import { randomUUID } from "node:crypto"
 
 export type Matrix<T> = List<List<T>>
 
-export type UndefOr<T> = T | undefined
-export const defined = <T>(a: UndefOr<T>) => a !== undefined
+export const defined = <T>(a: T | undefined): a is T => a !== undefined
 
-export const nullMatrix = (h: number, w: number): Matrix<null> => {
-  const rows = Array<Array<null>>(h)
-  const filled = rows.fill(Array<null>(w).fill(null))
-  /* filled.map( row => rownull) */
-
-  return List(filled.map(List))
-}
+export const nullMatrix = (h: number, w: number): Matrix<null> =>
+  List(
+    Array.from({ length: h }, () =>
+      List(Array.from({ length: w }, () => null)))
+  )
 
 export const filterIs = <T, R extends T>(
   u: T,
   f: (a: T) => a is R
-): UndefOr<R> => (f(u) ? u : undefined)
+): R | undefined => (f(u) ? u : undefined)
 
 export const identity = <T>(a: T) => a
 export const noop = <T>(_: T) => undefined
@@ -26,7 +24,21 @@ type CFilterPredicate<K, V, I> = <F extends V>(
   key: K,
   iter: I
 ) => value is F
-type CMapPredicate<K, V, I, R> = (value: V, key: K, iter: I) => R
+type CMapPredicate<V, R> = (value: V, key: never, iter: never) => R
+
+type MappableCollection<V, R> =
+  | List<V>
+  | ReadonlyArray<V>
+  | Map<unknown, V>
+  | { map: (pred: CMapPredicate<V, R>) => unknown }
+
+type MappedCollection<Collection, R> = Collection extends List<unknown>
+  ? List<R>
+  : Collection extends ReadonlyArray<unknown> ? Array<R>
+  : Collection extends Map<infer K, unknown> ? Map<K, R>
+  : Collection extends
+    { map: (pred: CMapPredicate<never, R>) => infer Mapped } ? Mapped
+  : never
 
 export const cfilter = <
   K,
@@ -39,15 +51,11 @@ export const cfilter = <
 ) =>
 (collection: T) => collection.filter(fn)
 
-export const cmap = <
-  K,
-  V,
-  I,
-  R,
-  T extends { filter: (pred: CMapPredicate<K, V, I, R>) => T }
->(
-  fn: CMapPredicate<K, V, I, R>
-) =>
-(collection: T) => collection.filter(fn)
+export const cmap =
+  <V, R>(fn: CMapPredicate<V, R>) =>
+  <Collection extends MappableCollection<V, R>>(
+    collection: Collection
+  ): MappedCollection<Collection, R> =>
+    collection.map(fn as never) as MappedCollection<Collection, R>
 
-export const genKey = () => (Math.random() * 2 ** 8).toString(16)
+export const genKey = (): string => randomUUID()

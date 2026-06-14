@@ -2,73 +2,93 @@ import { HashMap, Logger, LogLevel, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   andThen,
-  catchTag,
   log,
   provide,
   reduce,
   succeed,
   suspend,
+  tap,
   withLogSpan
-  // tap
 } from "effect/Effect"
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
-import { Action, EAction, GameState } from "@flaghack/domain/schemas"
-import { tap } from "effect/Effect"
-import { filter } from "effect/HashMap"
+import { type Action, EAction, GameState } from "@flaghack/domain/schemas"
+import { filter, findFirst } from "effect/HashMap"
 import { match as omatch } from "effect/Option"
-import { List } from "immutable"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
 import { player } from "./creatures.js"
-import { TKey } from "./entity.js"
+import type { TKey } from "./entity.js"
 import {
   getEntitiesAtEntity,
   getEntityById,
   getPlayer
 } from "./gamestate.js"
 import { logger } from "./log.js"
+import type { TPos } from "./position.js"
 import { noop } from "./util.js"
-import { BSPGenLevel, World } from "./world.js"
+import { BSPGenLevel, isItem, type World } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
-// const _state: { gameState: TGameState; log: (s: string) => void } = {
-//   gameState: GameState.make({
-//     world: HashMap.fromIterable(
-//       initWorld.map((e) => [e.key, e])
-//     )
-//   }),
-//   log: noop
-// }
-const testLevel: World = BSPGenLevel(777, 0)
-const testLevelFloors = List(
-  testLevel.pipe(HashMap.filter((e) => e._tag === "floor"), HashMap.values)
-)
-// const testLevelPlayerLocation = testLevelFloors.get(Math.random()*testLevelFloors.size-1)
-const testLevelPlayerLocation = testLevelFloors.first()?.at
-  ?? { x: 0, y: 0, z: 0 }
+const selectRequiredSpawnFloor = (world: World): TPos =>
+  omatch(
+    world.pipe(findFirst((entity) => entity._tag === "floor")),
+    {
+      onNone: () => {
+        throw new Error(
+          "Initial level generation produced no floor tiles; cannot place player"
+        )
+      },
+      onSome: ([, floorEntity]) => floorEntity.at
+    }
+  )
 
-const testPlayer = player(
-  testLevelPlayerLocation.x,
-  testLevelPlayerLocation.y,
-  testLevelPlayerLocation.z
-)
-const testLevelPlayer: World = HashMap.fromIterable([[
-  "player",
-  testPlayer
-]])
-const testLevelReady: World = testLevelPlayer.pipe(
-  HashMap.union(testLevel)
-)
-const _state: { gameState: TGameState; log: (s: string) => void } = {
-  gameState: GameState.make({
-    world: testLevelReady
-  }),
+const _state: {
+  gameState: TGameState | undefined
+  log: (s: string) => void
+} = {
+  gameState: undefined,
   log: noop
+}
+
+const makeInitialGameState = (): TGameState => {
+  const testLevel: World = BSPGenLevel(777, 0)
+  const testLevelPlayerLocation = selectRequiredSpawnFloor(testLevel)
+
+  const testPlayer = player(
+    testLevelPlayerLocation.x,
+    testLevelPlayerLocation.y,
+    testLevelPlayerLocation.z
+  )
+  const testLevelPlayer: World = HashMap.fromIterable([[
+    "player",
+    testPlayer
+  ]])
+  const testLevelReady: World = testLevelPlayer.pipe(
+    HashMap.union(testLevel)
+  )
+
+  return GameState.make({
+    world: testLevelReady
+  })
+}
+
+const getOrInitializeGameState = (): TGameState => {
+  const existing = _state.gameState
+
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const initialized = makeInitialGameState()
+
+  _state.gameState = initialized
+
+  return initialized
 }
 
 const setGameState = (s: TGameState): void => {
@@ -126,7 +146,7 @@ export const actPlayerAction = (
     )
   )
 
-const eGetGameState = suspend(() => succeed(_state.gameState))
+const eGetGameState = suspend(() => succeed(getOrInitializeGameState()))
 const eSetGameState = (gs: TGameState) =>
   suspend(() => succeed(setGameState(gs)))
 
@@ -137,7 +157,7 @@ export const eGetWorld = pipe(
 export const getInventory = (key: TKey) =>
   pipe(
     eGetWorld,
-    andThen((w) => w.pipe(filter((e) => e.in === key)))
+    andThen((w) => w.pipe(filter(isItem), filter((e) => e.in === key)))
   )
 
 export const getPickupItemsFor = (key: TKey) =>
@@ -145,12 +165,13 @@ export const getPickupItemsFor = (key: TKey) =>
     eGetWorld,
     tap(() => log("doing get pickup")),
     andThen((w) =>
-      pipe(
-        succeed(w),
-        andThen(getEntityById(key)),
-        andThen((e) => getEntitiesAtEntity(e)(w)),
-        andThen(pipe(HashMap.filter((e) => e.key !== key)))
-      )
-    ),
-    catchTag("NoSuchElementException", () => succeed(HashMap.empty()))
+      omatch(getEntityById(key)(w), {
+        onNone: () => HashMap.empty(),
+        onSome: (entity) =>
+          getEntitiesAtEntity(entity)(w).pipe(
+            HashMap.filter(isItem),
+            HashMap.filter((e) => e.key !== key)
+          )
+      })
+    )
   )

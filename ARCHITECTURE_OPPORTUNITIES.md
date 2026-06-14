@@ -1,7 +1,7 @@
 # General architecture audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: package layout, build/release architecture, domain/application/server boundaries, API/client contracts, UI architecture, testing/tooling/docs/dependency hygiene.
 
 This complements `EFFECT_TS_OPPORTUNITIES.md` and `FP_IMMUTABILITY_OPPORTUNITIES.md`. Some issues appear in all three reports because they are foundational architectural concerns: stale generated artifacts, unclear state ownership, and UI components doing runtime work.
@@ -25,6 +25,25 @@ A cleaner target shape for this project would be:
 4. **Stabilize API contracts.** Use DTOs, typed errors, version/freshness fields, and mutation responses that return authoritative state/events.
 5. **Extract shared client/UI-core.** CLI and web currently duplicate input handling, rendering projection, API wrappers, and popup logic.
 6. **Make tooling enforce architecture.** Add curated exports, CI/verify, real tests, format/lint coverage, dependency pinning, and docs explaining package ownership.
+
+## Remediation status (audit-remediation branch)
+
+The findings below remain the original 2026-05-29 `master` audit evidence. This section summarizes the current `audit-remediation` branch and intentionally does not rewrite the historical evidence.
+
+Status terms:
+
+- **Addressed:** this branch has a direct remediation plus targeted tests/gates for the narrow finding.
+- **Partial:** risk was reduced or guardrails/tests were added, but the original recommendation is broader.
+- **Deferred:** intentionally not completed in this branch; keep the finding open.
+
+Validation note: this docs-only closing slice does not require code changes. Later validation may skip root `pnpm check` if artifact-emission risk is not approved; the generated-file guard, dprint check, and smoke gates remain the safe evidence for this documentation change.
+
+| Status      | Findings / category                                                                                                                                                                               | Remediation evidence                                                                                                                                                                                                                                  | Remaining / not claimed                                                                                                                                                                                                                                                                                  | Validation                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Partial** | 1-4, 7-9, 31-32, 39-44, 48-49: workspace/build/package/export/test/dependency/docs/CI/deploy/flake architecture                                                                                   | Workspace/build scope alignment, fail-closed TypeScript settings, generated guardrails, lint/format/test gates, dependency cleanup, package ownership/testing docs, and web externalization cleanup reduce risk.                                      | Source-vs-dist resolution, generated artifact regeneration/codegen lifecycle, curated public exports/package smoke, CLI `dist` release architecture, CI/readiness pipeline, Nix flake checks, web deployment architecture, and publish-hardening beyond current gates are deferred.                      | `pnpm generated:guard`; `pnpm format:check`; `pnpm check`; unit/perf/API/E2E smoke gates as applicable. |
+| **Partial** | 10, 15-19, 25, 36, 45-46: domain/API contracts, trust boundaries, location/identity invariants, mutation results, typed errors, versioning, and presentation leakage                              | Narrow domain schema and action response fixes, stale pickup action removal, item collection responses, display exhaustiveness, validation helper cleanup, and dependency cleanup reduce risk.                                                        | A separate contract/application package, DTO split, typed API errors/error UI, authoritative action result/freshness/versioning, branded keys, location ADT, world invariants, and full domain/presentation split are deferred.                                                                          | Schema/domain/API/display tests plus smoke gates.                                                       |
+| **Partial** | 11-14, 20-24, 47: game engine ownership, state/session/persistence, repository/game-loop responsibilities, worldgen, ID generation, AI scheduling, logs/events, and side-effectful server exports | Pure reducer improvements, UUID keys, safer indexing/worldgen fixes, creature-only synchronous AI planning, log snapshots/caps, and lazy state initialization reduce risk.                                                                            | Moving the engine out of `server`, explicit `GameSession`/`GameStateStore`, module-global state replacement, `Ref`/`SynchronizedRef`, atomic concurrency/session/persistence model, turn/version model, event/log architecture, scheduler, and side-effect-free server export architecture are deferred. | Reducer/log/world/API smoke tests as applicable.                                                        |
+| **Partial** | 5-6, 26-30, 33-35, 37-38: UI runtime ownership, render lifecycle, UI state machine, shared view model/input/client wrappers, config/transport boundaries, accessibility/layout                    | App-scoped runtimes, lifecycle initial loads, post-action refresh, key cleanup, ignored unknown inputs, popup selection/focus, deterministic layering, capped messages, browser/server middleware separation, and baseline accessibility reduce risk. | Shared `client`/`ui-core`, complete UI mode/remote-data state machine, config layer for base URL/ports, platform transport boundary, supervised UI runtime/error handling, and layout model are deferred.                                                                                                | CLI/web unit smoke and API/E2E smoke gates as applicable.                                               |
 
 ---
 

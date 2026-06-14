@@ -4,13 +4,14 @@ import {
   filter,
   getOrElse,
   match as omatch,
-  Option,
+  none,
+  type Option,
   some
 } from "effect/Option"
-import { Player } from "./creatures.js"
-import { getKey, TKey } from "./entity.js"
-import { collideP } from "./position.js"
-import { Entity, isPlayer, World } from "./world.js"
+import type { Player } from "./creatures.js"
+import { getKey, type TKey } from "./entity.js"
+import { collideP, type TPos } from "./position.js"
+import { type Entity, isPlayer, type World } from "./world.js"
 
 export type GameState = typeof GameState.Type
 
@@ -26,7 +27,8 @@ export const getEntityById =
     world.pipe(
       get(id)
     )
-export const getLocationOf = (e: Entity) => e.in === "world" && e.at
+export const getLocationOf = (e: Entity): Option<TPos> =>
+  e.in === "world" ? some(e.at) : none()
 
 export const collideE = (a: Entity) => (b: Entity) =>
   collideP(a.at, a.in)(b.at, b.in)
@@ -36,10 +38,8 @@ export const getEntitiesAtEntity = (a: Entity) => (w: World): World =>
   )
 
 export const updateWorld =
-  (gs: GameState) => (fn: (w: World) => World): GameState => {
-    const a = GameState.make({ world: fn(gs.world) }) // fixme
-    return a
-  }
+  (gs: GameState) => (fn: (w: World) => World): GameState =>
+    GameState.make({ world: fn(gs.world) })
 
 const worldEntUp =
   <T extends Entity>(e: Option<T>) =>
@@ -53,7 +53,7 @@ const worldEntUp =
 
 export const updateEntity =
   (gs: GameState) =>
-  <T extends Entity>(e: Option<Entity>) =>
-  <R extends Entity>(
+  <_T extends Entity>(e: Option<Entity>) =>
+  <_R extends Entity>(
     fn: (e: Option<Entity>) => Option<Entity>
   ): GameState => updateWorld(gs)(worldEntUp(e)(fn))

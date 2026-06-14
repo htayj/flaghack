@@ -19,7 +19,27 @@ const compat = new FlatCompat({
 
 export default [
   {
-    ignores: ["**/dist", "**/build", "**/docs", "**/*.md"]
+    ignores: [
+      "**/node_modules",
+      "**/*-lock.json",
+      ".pi/schedule-prompts.json",
+      ".pi/dev-suite/task-graph/current.json",
+      ".pi/dev-suite/task-graph/runs/**",
+      ".pi/dev-suite/task-graph/artifacts/**",
+      ".pi/task-graph-artifacts/**",
+      "packages/**/build/**",
+      "packages/**/dist/**",
+      "**/*.d.ts",
+      "**/*.d.ts.map",
+      "**/*.js.map",
+      "packages/domain/src/schemas/*.js",
+      "pnpm-lock.yaml",
+      "**/*~",
+      "**/#*#",
+      "**/.#*",
+      "**/docs",
+      "**/*.md"
+    ]
   },
   ...compat.extends(
     "eslint:recommended",
@@ -62,7 +82,8 @@ export default [
       "sort-imports": "off",
 
       "no-restricted-syntax": ["error", {
-        selector: "CallExpression[callee.property.name='push'] > SpreadElement.arguments",
+        selector:
+          "CallExpression[callee.property.name='push'] > SpreadElement.arguments",
         message: "Do not use spread arguments in Array.push"
       }],
 
@@ -84,9 +105,9 @@ export default [
       }],
 
       "@typescript-eslint/member-delimiter-style": 0,
-      "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/no-non-null-assertion": "error",
       "@typescript-eslint/ban-types": "off",
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-empty-interface": "off",
       "@typescript-eslint/consistent-type-imports": "warn",
 
@@ -95,7 +116,7 @@ export default [
         varsIgnorePattern: "^_"
       }],
 
-      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/ban-ts-comment": "error",
       "@typescript-eslint/camelcase": "off",
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
@@ -112,7 +133,7 @@ export default [
           quoteStyle: "alwaysDouble",
           trailingCommas: "never",
           operatorPosition: "nextLine",
-    			spaceAround: false,
+          spaceAround: false,
           "arrowFunction.useParentheses": "force"
         }
       }]

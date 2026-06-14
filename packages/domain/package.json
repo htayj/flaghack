@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "The domain template",
+  "description": "Flag Hack shared schemas, API contract, game state types, and display helpers.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",
@@ -24,16 +24,39 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/platform": "latest",
-    "@effect/sql": "latest",
+    "@effect/platform": "0.85.2",
     "effect": "3.16.8"
   },
   "effect": {
     "generateExports": {
-      "include": ["**/*.ts"]
+      "include": [
+        "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
+      ]
     },
     "generateIndex": {
-      "include": ["**/*.ts"]
+      "include": [
+        "**/*.ts"
+      ],
+      "exclude": [
+        "**/*.d.ts",
+        "**/*.test.ts",
+        "**/*.bench.ts",
+        "**/*~",
+        "**/#*#",
+        "schemas/**",
+        "test*.ts",
+        "**/test*.ts"
+      ]
     }
   }
 }

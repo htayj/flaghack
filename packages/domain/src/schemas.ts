@@ -1,4 +1,4 @@
-import { Data, Either, Schema as S } from "effect"
+import { Data, Schema as S } from "effect"
 import { allof, bothof, oneof, prop, struct } from "./util.js"
 
 // using extend and union - cant use .make?
@@ -43,10 +43,12 @@ const tagas = <A extends S.Schema.Any, T extends string>(
 // const allof = (...a: Union[]) =>
 //   a.reduce((acc, curr) => S.compose(acc, curr)) // todo: not sure if this is right
 
+const Coordinate = S.Int
+
 export const Pos = struct({
-  x: S.Number,
-  y: S.Number,
-  z: S.Number
+  x: Coordinate,
+  y: Coordinate,
+  z: Coordinate
 })
 
 export const Key = S.String
@@ -54,17 +56,10 @@ export const Keyed = prop("key", Key)
 
 export const Contain = struct({ in: Key })
 export const Position = struct({ at: Pos })
-export const Location = oneof(Contain, Position)
 
-// export const EntityPositioned = struct({
-//   ...Keyed.fields,
-//   loc: Position
-// })
-// export const EntityContained = struct({
-//   ...Keyed.fields,
-//   loc: Contain
-// })
-// export const EntityBase = S.Union(Keyed, Located)
+// Current entities intentionally include `key`, `at`, and `in`. The larger
+// `{InWorld|InContainer}` ADT, branded EntityKey, map-key/entity-key
+// consistency, and containment-reference validation cleanup is deferred.
 export const EntityBase = allof(
   Keyed,
   Position,
@@ -137,7 +132,8 @@ export const AnyTool = oneof(
 
 // <<<<<<
 
-export const AnyItem = oneof(Flag, AnyFood, AnyDrink)
+export const AnyItem = oneof(Flag, AnyFood, AnyDrink, AnyTool)
+export const ItemCollection = S.HashMap({ key: Key, value: AnyItem })
 // ===========================
 // Creatures
 // ===========================
@@ -245,7 +241,6 @@ export const Direction = S.Literal(
 //   apply: {}
 //   noop: {}
 //   move: { dir: typeof Direction.Type }
-//   pickup: { readonly object: typeof Entity.Type }
 // }>
 
 // export const EAction = Data.taggedEnum<Action>()
@@ -254,19 +249,12 @@ const ActionOptions = [
   S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
-  S.TaggedStruct("pickup", { object: Entity }),
   S.TaggedStruct("pickupMulti", { keys: S.Array(Key) }),
   S.TaggedStruct("dropMulti", { keys: S.Array(Key) })
 ]
 export const SAction = S.Union(
   ...ActionOptions
 )
-// export const SAction = S.Union(
-//   S.TaggedStruct("apply", {}),
-//   S.TaggedStruct("noop", {}),
-//   S.TaggedStruct("move", { dir: Direction }),
-//   S.TaggedStruct("pickup", { object: Entity })
-// )
 export const SEAction = S.Data(SAction)
 export const EAction = Data.taggedEnum<typeof SEAction.Type>()
 export type Action = typeof SAction.Type
@@ -288,15 +276,11 @@ export type Action = typeof SAction.Type
 export const SEEntity = S.Data(Entity)
 export const EEntity = Data.taggedEnum<typeof SEEntity.Type>()
 
-export const conforms = <T>(
-  schema: S.Schema<any, T, never>
-) =>
-(u: unknown): u is T =>
-  S.validateEither(schema)(u).pipe(
-    Either.match({ onLeft: () => false, onRight: () => true })
-  )
+export const conforms = <A, I>(
+  schema: S.Schema<A, I, never>
+): (u: unknown) => u is A => S.is(schema)
 
-export const World = S.HashMap({ key: S.String, value: Entity })
+export const World = S.HashMap({ key: Key, value: Entity })
 export const GameState = S.Struct({ world: World })
 
 // const flatten = <A, B, C>(s: S.Schema<A, B, C>) => {

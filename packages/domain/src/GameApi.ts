@@ -1,6 +1,6 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
 import { Schema } from "effect"
-import { Key, SAction, World } from "./schemas.js"
+import { ItemCollection, Key, SAction, World } from "./schemas.js"
 
 export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
@@ -13,12 +13,12 @@ export class GameApiGroup extends HttpApiGroup.make("game")
   )
   .add(
     HttpApiEndpoint.get("getInventory", "/inventory").addSuccess(
-      World
+      ItemCollection
     )
   )
   .add(
     HttpApiEndpoint.get("getPickupItemsFor", "/getPickupFor").addSuccess(
-      World
+      ItemCollection
     ).setUrlParams(Schema.Struct({ key: Key }))
   )
   .add(

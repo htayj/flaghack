@@ -1,9 +1,9 @@
 import { HttpApiClient } from "@effect/platform"
 import { BrowserHttpClient } from "@effect/platform-browser"
 import { GameApi } from "@flaghack/domain/GameApi"
-import { Key } from "@flaghack/domain/schemas"
-import type { Action } from "@flaghack/domain/schemas"
+import type { Action, Key } from "@flaghack/domain/schemas"
 import { Effect, Layer, ManagedRuntime } from "effect"
+import { resolveWebApiBaseUrl } from "./config.js"
 
 type Key = typeof Key.Type
 
@@ -12,7 +12,7 @@ export class GameClient
     accessors: true,
     effect: Effect.gen(function*() {
       const client = yield* HttpApiClient.make(GameApi, {
-        baseUrl: "http://localhost:3000"
+        baseUrl: resolveWebApiBaseUrl(import.meta.env)
       })
 
       const getLogs = client.game.getLogs()
@@ -41,25 +41,8 @@ export const MainLive = GameClient.Default.pipe(
 )
 export const LiveRuntime = ManagedRuntime.make(MainLive)
 
-// const apiDoPlayerAction = pipe(GameClient.doPlayerAction, Effect.provide(LiveRuntime))
-// const apiDoPlayerAction = pipe(GameClient.doPlayerAction, Effect.provide(MainLive))
-export const doPlayerAction = (
-  action: Action
-) =>
-  GameClient.doPlayerAction(action).pipe(
-    Effect.provide(MainLive)
-  )
-
-export const getLogs = GameClient.getLogs.pipe(
-  Effect.provide(MainLive)
-)
-export const getPickupItemsFor = (key: string) =>
-  GameClient.getPickupItemsFor(key).pipe(
-    Effect.provide(MainLive)
-  )
-export const getInventory = GameClient.getInventory.pipe(
-  Effect.provide(MainLive)
-)
-export const getWorld = GameClient.getWorld.pipe(
-  Effect.provide(MainLive)
-)
+export const doPlayerAction = GameClient.doPlayerAction
+export const getLogs = GameClient.getLogs
+export const getPickupItemsFor = GameClient.getPickupItemsFor
+export const getInventory = GameClient.getInventory
+export const getWorld = GameClient.getWorld

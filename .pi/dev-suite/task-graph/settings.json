@@ -1,11 +1,14 @@
 {
-  "defaultGraph": "flag-hack-audit-gated",
+  "defaultGraph": "flag-hack-feature-gated",
   "agentInstructions": {
     "all": [
       "Audit-remediation work must read ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md before choosing fixes.",
       "Do not edit generated artifacts: packages/**/build/**, packages/**/dist/**, generated *.d.ts, *.d.ts.map, *.js.map, editor backups, or packages/domain/src/schemas/*.js.",
       "Use pnpm/corepack when available. Do not run build/codegen commands that write build/ or dist/ artifacts unless a stage explicitly approves it.",
-      "Run audit gates serially because API and tmux E2E use the hard-coded local server port 3000."
+      "Run audit gates serially because API and tmux E2E use the hard-coded local server port 3000.",
+      "For Flag Hack feature work, use the project default graph flag-hack-feature-gated unless the user explicitly asks for the audit graph or a one-off custom graph.",
+      "Use PI_NPX_OK=1 npx -y pnpm@9.10.0 for pnpm commands in this repository.",
+      "Feature verification must include a real tmux run of the CLI that exercises the requested behavior, not just unit tests or static review."
     ]
   },
   "routing": {
@@ -101,7 +104,9 @@
           "kind": "IMPLEMENT",
           "title": "Implement bounded audit remediation",
           "description": "Make the smallest source/config/docs/test change for the planned audit finding while preserving generated-file guardrails.",
-          "dependsOn": ["plan-audit"],
+          "dependsOn": [
+            "plan-audit"
+          ],
           "subagentType": "implementer",
           "sideEffects": "write",
           "skills": [
@@ -162,7 +167,9 @@
           "kind": "COMPILE",
           "title": "Run generated guardrails and typecheck",
           "description": "Run pnpm generated:guard and pnpm check, then classify failures as code, pre-existing, or environmental.",
-          "dependsOn": ["implement"],
+          "dependsOn": [
+            "implement"
+          ],
           "subagentType": "compile-verifier",
           "sideEffects": "shell",
           "skills": [
@@ -199,7 +206,9 @@
           "kind": "UNIT_TEST",
           "title": "Run unit gate",
           "description": "Run pnpm test:unit for package smoke/unit coverage.",
-          "dependsOn": ["guardrails"],
+          "dependsOn": [
+            "guardrails"
+          ],
           "subagentType": "unit-tester",
           "sideEffects": "shell",
           "skills": [
@@ -235,7 +244,9 @@
           "kind": "PERF_TEST",
           "title": "Run performance smoke gate",
           "description": "Run pnpm test:perf and capture benchmark smoke output.",
-          "dependsOn": ["unit"],
+          "dependsOn": [
+            "unit"
+          ],
           "subagentType": "perf-tester",
           "sideEffects": "shell",
           "skills": [
@@ -271,7 +282,9 @@
           "kind": "API_TEST",
           "title": "Run Effect API smoke gate",
           "description": "Run pnpm test:api against a disposable server and validate getWorld/getLogs/getInventory/noop action.",
-          "dependsOn": ["performance"],
+          "dependsOn": [
+            "performance"
+          ],
           "subagentType": "api-tester",
           "sideEffects": "network",
           "skills": [
@@ -310,7 +323,9 @@
           "kind": "E2E_TEST",
           "title": "Run tmux CLI E2E smoke gate",
           "description": "Run pnpm test:e2e:tmux, capture terminal output, and clean up the tmux session.",
-          "dependsOn": ["api"],
+          "dependsOn": [
+            "api"
+          ],
           "subagentType": "e2e-tester",
           "sideEffects": "network",
           "skills": [
@@ -351,7 +366,9 @@
           "kind": "CODE_REVIEW",
           "title": "Review audit remediation and gate evidence",
           "description": "Review the diff, generated-file guardrails, four audit-doc alignment, and unit/perf/API/tmux evidence.",
-          "dependsOn": ["tmux-e2e"],
+          "dependsOn": [
+            "tmux-e2e"
+          ],
           "subagentType": "code-review-enforcer",
           "sideEffects": "read",
           "skills": [
@@ -384,6 +401,409 @@
             "Do not commit or push"
           ],
           "order": 8
+        }
+      ]
+    },
+    "flag-hack-feature-gated": {
+      "description": "Flag Hack default feature workflow with planning, implementation, typecheck, unit, disposable server restart, lint, tmux smoke E2E, feature-specific tmux use verification, and code review.",
+      "stages": [
+        {
+          "id": "plan-feature",
+          "kind": "PLAN",
+          "title": "Plan Flag Hack feature/change",
+          "description": "Create an implementation-ready plan for the requested Flag Hack change, including touched files, focused tests, tmux feature verification strategy, and gate commands.",
+          "runnerKind": "chain",
+          "runnerName": "general-dev-plan",
+          "sideEffects": "read",
+          "skills": [
+            "build-test-procedures",
+            "tdd",
+            "client-server-typescript-architecture"
+          ],
+          "promptInstructions": [
+            "Inspect current git status and preserve unrelated dirty/untracked files, especially chatgpt.txt.",
+            "Plan source/config/test changes only; do not edit generated/build/dist/declaration/map/schema JS artifacts.",
+            "Identify focused unit tests and a real tmux feature verification scenario using pnpm test:feature:tmux or equivalent tmux automation.",
+            "Name required gates: generated:guard, check, test:unit, format:check, lint, test:api, test:e2e:tmux, and feature tmux verification."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.plan-feature",
+          "purpose": "Plan a bounded Flag Hack feature/change before editing.",
+          "inputs": [
+            "Original user request",
+            "Repository status",
+            "Current source/tests"
+          ],
+          "outputs": [
+            "Implementation plan",
+            "Validation and tmux feature verification plan"
+          ],
+          "acceptanceChecks": [
+            "Plan names touched files and tests",
+            "Plan includes feature-specific tmux use verification"
+          ],
+          "writeScope": [
+            "read-only planning notes"
+          ],
+          "isolationBoundary": [
+            "Do not edit implementation files during planning",
+            "Do not commit or push"
+          ],
+          "order": 1
+        },
+        {
+          "id": "implement",
+          "kind": "IMPLEMENT",
+          "title": "Implement Flag Hack feature/change",
+          "description": "Make the planned source/config/test changes with focused tests and generated-file guardrails.",
+          "dependsOn": [
+            "plan-feature"
+          ],
+          "subagentType": "implementer",
+          "sideEffects": "write",
+          "skills": [
+            "build-test-procedures",
+            "tdd",
+            "implementer",
+            "typescript-strict-fp"
+          ],
+          "expectedWritePaths": [
+            "AGENTS.md",
+            "package.json",
+            "pnpm-workspace.yaml",
+            "pnpm-lock.yaml",
+            "tsconfig*.json",
+            "vitest*.ts",
+            "docs/**",
+            "scripts/**",
+            "packages/*/src/**",
+            "packages/*/test/**",
+            "packages/*/vitest.config.ts",
+            "packages/*/package.json",
+            ".pi/dev-suite/task-graph/settings.json"
+          ],
+          "promptInstructions": [
+            "Use TDD for behavior changes. Add or update focused tests before or alongside implementation.",
+            "Do not edit packages/**/build/**, packages/**/dist/**, *.d.ts, *.d.ts.map, *.js.map, editor backups, or packages/domain/src/schemas/*.js.",
+            "Preserve unrelated dirty/untracked files and do not stage chatgpt.txt.",
+            "If a requested verification stage lacks tooling, add minimal project tooling under scripts/ and package.json to make it possible."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.implement",
+          "purpose": "Implement the planned Flag Hack change within the approved source/test/tooling scope.",
+          "inputs": [
+            "Feature plan",
+            "Current source/config/tests"
+          ],
+          "outputs": [
+            "Implementation diff",
+            "Focused test evidence"
+          ],
+          "acceptanceChecks": [
+            "Focused tests cover changed behavior",
+            "Generated artifacts are untouched"
+          ],
+          "writeScope": [
+            "source/config/docs/tests/tooling only",
+            "pnpm-lock.yaml only via pnpm install"
+          ],
+          "isolationBoundary": [
+            "Do not commit or push",
+            "Do not run build/codegen that writes build/dist artifacts unless explicitly approved"
+          ],
+          "order": 2
+        },
+        {
+          "id": "compile",
+          "kind": "COMPILE",
+          "title": "Run generated guard and TypeScript check",
+          "description": "Run generated-file guardrails and root TypeScript project check.",
+          "dependsOn": [
+            "implement"
+          ],
+          "subagentType": "compile-verifier",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "compile-verifier"
+          ],
+          "promptInstructions": [
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 generated:guard.",
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 check.",
+            "Do not edit generated artifacts while diagnosing failures."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.compile",
+          "purpose": "Verify generated-file guardrails and TypeScript health.",
+          "inputs": [
+            "Implementation diff"
+          ],
+          "outputs": [
+            "Generated guard and typecheck evidence"
+          ],
+          "acceptanceChecks": [
+            "generated:guard attempted",
+            "check attempted"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during verification"
+          ],
+          "order": 3
+        },
+        {
+          "id": "unit",
+          "kind": "UNIT_TEST",
+          "title": "Run focused and full unit tests",
+          "description": "Run focused tests for touched behavior and the root unit suite.",
+          "dependsOn": [
+            "compile"
+          ],
+          "subagentType": "unit-tester",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "unit-tester"
+          ],
+          "promptInstructions": [
+            "Run focused tests for changed files/behavior first when applicable.",
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:unit.",
+            "Report exact failures and test files."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.unit",
+          "purpose": "Verify unit coverage for the change.",
+          "inputs": [
+            "Implementation diff",
+            "Compile result"
+          ],
+          "outputs": [
+            "Focused and full unit test evidence"
+          ],
+          "acceptanceChecks": [
+            "Focused tests attempted when relevant",
+            "test:unit attempted"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during verification"
+          ],
+          "order": 4
+        },
+        {
+          "id": "restart-server",
+          "kind": "API_TEST",
+          "title": "Restart disposable Flag Hack server",
+          "description": "Verify the Flag Hack server can start cleanly from the current workspace and then shut it down to leave port 3000 free.",
+          "dependsOn": [
+            "unit"
+          ],
+          "runnerKind": "direct_safe",
+          "runnerName": "flaghack-server-restart-smoke",
+          "sideEffects": "network",
+          "skills": [
+            "build-test-procedures",
+            "api-testing"
+          ],
+          "promptInstructions": [
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:api as the disposable server restart/API smoke gate.",
+            "This gate owns localhost:3000 only for its duration and must leave no server running.",
+            "If port 3000 is already occupied, report an environmental blocker rather than killing unrelated processes."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.restart-server",
+          "purpose": "Verify a fresh Flag Hack server process can start, serve API requests, and stop cleanly.",
+          "inputs": [
+            "Unit test result"
+          ],
+          "outputs": [
+            "Disposable server restart/API smoke evidence"
+          ],
+          "acceptanceChecks": [
+            "test:api attempted",
+            "Server cleanup reported or environmental blocker recorded"
+          ],
+          "writeScope": [
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Do not reuse or kill unrelated local servers",
+            "Do not edit files during verification"
+          ],
+          "order": 5
+        },
+        {
+          "id": "lint",
+          "kind": "COMPILE",
+          "title": "Run format and lint gates",
+          "description": "Run repository formatting check and lint after compile/unit/server smoke.",
+          "dependsOn": [
+            "restart-server"
+          ],
+          "runnerKind": "direct_safe",
+          "runnerName": "format-and-lint",
+          "sideEffects": "shell",
+          "skills": [
+            "build-test-procedures",
+            "biome-code-quality"
+          ],
+          "promptInstructions": [
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 format:check.",
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 lint.",
+            "If formatting fails only for touched files, format only touched files and rerun."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.lint",
+          "purpose": "Verify format and lint health.",
+          "inputs": [
+            "Implementation diff",
+            "Restart/API smoke result"
+          ],
+          "outputs": [
+            "Format and lint evidence"
+          ],
+          "acceptanceChecks": [
+            "format:check attempted",
+            "lint attempted"
+          ],
+          "writeScope": [
+            "validation report only, or touched-file formatting if needed"
+          ],
+          "isolationBoundary": [
+            "Do not edit unrelated files during verification"
+          ],
+          "order": 6
+        },
+        {
+          "id": "tmux-e2e",
+          "kind": "E2E_TEST",
+          "title": "Run tmux CLI smoke E2E",
+          "description": "Run the repository tmux E2E smoke script against a disposable server and CLI.",
+          "dependsOn": [
+            "lint"
+          ],
+          "subagentType": "e2e-tester",
+          "sideEffects": "network",
+          "skills": [
+            "build-test-procedures",
+            "e2e-test",
+            "e2e-tester"
+          ],
+          "promptInstructions": [
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:e2e:tmux.",
+            "This gate owns localhost:3000 while running and must clean up tmux sessions/server children.",
+            "Report terminal capture paths and exact blockers."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.tmux-e2e",
+          "purpose": "Verify baseline terminal CLI behavior through tmux automation.",
+          "inputs": [
+            "Implementation diff",
+            "Lint result"
+          ],
+          "outputs": [
+            "tmux smoke E2E evidence and capture paths"
+          ],
+          "acceptanceChecks": [
+            "test:e2e:tmux attempted",
+            "Terminal capture path reported when tmux runs"
+          ],
+          "writeScope": [
+            "temporary artifacts outside the repo",
+            "validation report only"
+          ],
+          "isolationBoundary": [
+            "Clean up tmux sessions on success and failure",
+            "Do not edit files during verification"
+          ],
+          "order": 7
+        },
+        {
+          "id": "feature-tmux",
+          "kind": "E2E_TEST",
+          "title": "Exercise the requested feature in tmux",
+          "description": "Run the actual CLI in tmux and exercise the requested feature with observable terminal assertions, extending the feature harness when needed.",
+          "dependsOn": [
+            "tmux-e2e"
+          ],
+          "subagentType": "e2e-tester",
+          "sideEffects": "network",
+          "skills": [
+            "build-test-procedures",
+            "e2e-test",
+            "e2e-tester",
+            "tmux-task-graph-dogfooding"
+          ],
+          "promptInstructions": [
+            "Design a feature-specific terminal scenario for the user request.",
+            "Prefer PI_NPX_OK=1 npx -y pnpm@9.10.0 test:feature:tmux with FLAGHACK_TMUX_KEYS as a JSON array and FLAGHACK_TMUX_EXPECT/FLAGHACK_TMUX_REJECT regexes.",
+            "If the requested feature needs richer assertions than scripts/tmux-feature-check.ts supports, add minimal tooling before marking this stage passed.",
+            "This stage must run the project in tmux and exercise the feature itself. Unit tests or code review alone are not sufficient.",
+            "Report tmux session/pane identifiers when available and the terminal capture path."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.feature-tmux",
+          "purpose": "Verify the specific requested feature in a real terminal session.",
+          "inputs": [
+            "Implementation diff",
+            "tmux smoke E2E result",
+            "Feature verification plan"
+          ],
+          "outputs": [
+            "Feature-specific tmux evidence, keys/scenario, and capture path"
+          ],
+          "acceptanceChecks": [
+            "Feature-specific tmux run attempted",
+            "Terminal output/assertions demonstrate the requested behavior or exact blocker"
+          ],
+          "writeScope": [
+            "temporary artifacts outside the repo",
+            "validation report only",
+            "scripts/** if harness extension is necessary"
+          ],
+          "isolationBoundary": [
+            "Clean up project-created tmux sessions",
+            "Do not kill unrelated processes",
+            "Do not edit product code during verification unless rerouting to implementation"
+          ],
+          "order": 8
+        },
+        {
+          "id": "review",
+          "kind": "CODE_REVIEW",
+          "title": "Code review diff and gate evidence",
+          "description": "Review the implementation, tests, generated-file hygiene, server restart evidence, lint, e2e, and feature-specific tmux evidence.",
+          "dependsOn": [
+            "feature-tmux"
+          ],
+          "subagentType": "code-review-enforcer",
+          "sideEffects": "read",
+          "skills": [
+            "code-review",
+            "build-test-procedures"
+          ],
+          "promptInstructions": [
+            "Review the diff for bugs, type-safety, generated-file hygiene, and project conventions.",
+            "Confirm compile, unit, server restart/API smoke, format/lint, tmux E2E, and feature-specific tmux evidence is present or blockers are exact.",
+            "Do not commit or push."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.review",
+          "purpose": "Review the Flag Hack change and validation evidence before handoff.",
+          "inputs": [
+            "Implementation diff",
+            "All gate results"
+          ],
+          "outputs": [
+            "Prioritized review findings or PASS report"
+          ],
+          "acceptanceChecks": [
+            "Generated-file policy is reviewed",
+            "All requested verification stages are reviewed"
+          ],
+          "writeScope": [
+            "review report only"
+          ],
+          "isolationBoundary": [
+            "Do not edit files during review",
+            "Do not commit or push"
+          ],
+          "order": 9
         }
       ]
     }

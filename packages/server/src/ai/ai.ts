@@ -1,23 +1,36 @@
-import { Action, EAction } from "@flaghack/domain/schemas"
-import { HashMap, Match, pipe } from "effect"
+import {
+  type Action,
+  AnyCreature,
+  conforms,
+  EAction
+} from "@flaghack/domain/schemas"
+import { Match, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   all,
   andThen,
   log,
-  promise,
   succeed,
   tap,
   withLogSpan
 } from "effect/Effect"
-import { map, values } from "effect/HashMap"
+import type { HashMap } from "effect/HashMap"
+import { filter, map, values } from "effect/HashMap"
 import type { Creature } from "../creatures.js"
-import { GameState, worldFrom } from "../gamestate.js"
-import { Entity } from "../world.js"
+import { type GameState, worldFrom } from "../gamestate.js"
+import type { Entity } from "../world.js"
 
 // class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 
 export type PlannedAction = { entity: Entity; action: Action }
+
+type NonPlayerCreature = Exclude<Creature, { readonly _tag: "player" }>
+
+const isCreature = conforms(AnyCreature)
+const isNonPlayerCreature = (e: Entity): e is NonPlayerCreature =>
+  isCreature(e) && e._tag !== "player"
+const nonPlayerCreaturesFrom = (w: HashMap<string, Entity>) =>
+  w.pipe(filter(isNonPlayerCreature))
 
 // export const distanceStupid = (a: Entity, b: Entity): TPos => ({
 //   x: a.at.x - b.at.x,
@@ -42,29 +55,31 @@ const acidCopAi = (_: GameState) => (e: Creature): Action => {
   if (e.at.y == 5 && e.at.x > 50) return EAction.move({ dir: "W" })
   else return EAction.noop()
 }
-const noAi = (_: GameState) => (_: Entity): Action => (EAction.noop())
+const noAi =
+  (_: GameState) => (_: NonPlayerCreature): Action => (EAction.noop())
 
 const ai = (gs: GameState) =>
-  Match.type<Entity>().pipe(
+  Match.type<NonPlayerCreature>().pipe(
     Match.tag("hippie", hippieAi(gs)),
     Match.tag("acidcop", acidCopAi(gs)),
     Match.orElse(noAi(gs))
   )
 
-const eAi = (gs: GameState) => (e: Entity) =>
-  promise(async () => ({ entity: e, action: ai(gs)(e) }))
+const eAi = (gs: GameState) => (e: NonPlayerCreature) =>
+  succeed({ entity: e, action: ai(gs)(e) })
 const planAllAi =
-  (gs: GameState) => (w: HashMap.HashMap<string, Entity>) =>
+  (gs: GameState) => (w: HashMap<string, NonPlayerCreature>) =>
     w.pipe(map((e) => eAi(gs)(e)), values)
 export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
   pipe(
     succeed(gs),
     tap(() => log("planning ai for world")),
     andThen(worldFrom),
-    tap(() => log("narrowed to creatures")),
+    andThen(nonPlayerCreaturesFrom),
+    tap(() => log("narrowed to non-player creatures")),
     andThen(planAllAi(gs)),
     tap(() => log("setup planned all ai")),
-    andThen(all), // todo: set concurrency
+    andThen((plannedEffects) => all(plannedEffects, { concurrency: 1 })),
     tap(() => log("executed planning all ai")),
     withLogSpan(`planning`)
   )

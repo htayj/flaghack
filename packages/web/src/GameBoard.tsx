@@ -1,6 +1,3 @@
-// @ts-ignore
-import React from "react"
-
 type Props = {
   tiles: Tiles
 }
@@ -10,7 +7,7 @@ export type Tile = {
   bright?: boolean
   bg?: boolean
 }
-export type Tiles = Tile[][]
+export type Tiles = ReadonlyArray<ReadonlyArray<Tile>>
 
 type Color =
   | "black"
@@ -21,14 +18,13 @@ type Color =
   | "magenta"
   | "cyan"
   | "white"
-const hcolor = (color: Color = "white") =>
-  (char: string, key: string) => (
-    <span style={{ color }} key={key}>
-      {`${char === " " ? " " : char}`}
-    </span>
-  )
+const hcolor = (color: Color = "white") => (char: string, key: string) => (
+  <span style={{ color }} key={key}>
+    {`${char === " " ? " " : char}`}
+  </span>
+)
 
-const tileToText = ({ color, char }: Tile, key: string) =>
+const tileToText = ({ char, color }: Tile, key: string) =>
   hcolor(color)(char, key)
 export default function({ tiles }: Props) {
   // const content = tiles.map((row) => row.map(tileToText).join("")).join(
@@ -41,6 +37,8 @@ export default function({ tiles }: Props) {
   )
   return (
     <div
+      role="region"
+      aria-label="Game map"
       style={{
         position: "absolute",
         bottom: 0,

@@ -1,7 +1,7 @@
 # Build system / generated files audit
 
-Date: 2026-05-29  
-Branch audited: `master`  
+Date: 2026-05-29\
+Branch audited: `master`\
 Scope: pnpm workspace/build lifecycle, Effect build-utils/codegen, TypeScript project references, package publish artifacts, Vite/Vitest, lint/format/CI/docs, and agent guardrails.
 
 This report is intentionally focused on the build system because it is currently fragile and confusing to agents. The recurring root problem is that generated files, source files, package outputs, and workspace links are not clearly separated. As a result, agents can see stale generated files, edit the wrong artifacts, run the wrong command order, and get misleading results.
@@ -42,6 +42,25 @@ pnpm run package:smoke
 ```
 
 Adjust names as desired, but the key is: one command, one order, fail-fast, documented.
+
+## Remediation status (audit-remediation branch)
+
+The findings below remain the original 2026-05-29 `master` audit evidence. This section summarizes the current `audit-remediation` branch and intentionally does not rewrite the historical evidence.
+
+Status terms:
+
+- **Addressed:** this branch has a direct remediation plus targeted tests/gates for the narrow finding.
+- **Partial:** risk was reduced or guardrails/tests were added, but the original recommendation is broader.
+- **Deferred:** intentionally not completed in this branch; keep the finding open.
+
+Validation note: this docs-only closing slice does not require code changes. Later validation may skip root `pnpm check` if artifact-emission risk is not approved; the generated-file guard, dprint check, and smoke gates remain the safe evidence for this documentation change.
+
+| Status        | Findings / category                                                                                                           | Remediation evidence                                                                                                                                                                                                                                                 | Remaining / not claimed                                                                                                                                                                                                                                                                                                                                                                | Validation                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Addressed** | 1, 6-7, 18-19, 21-22, 25-26: workspace scope, fail-closed emit/indexing, TSX import suffixes, lint/format/web/test guardrails | `pnpm-workspace.yaml` now uses `packages/*`; `web` participates in root package scope; `noEmitOnError` and `noUncheckedIndexedAccess` are enabled; TSX imports use emitted `.js` specifiers; root lint/format/test scripts and generated-file exclusions were added. | CI, flake checks, canonical build lifecycle, and package smoke coverage are not claimed here.                                                                                                                                                                                                                                                                                          | `pnpm generated:guard`; `pnpm format:check`; `pnpm check`; unit/API/E2E smoke gates as applicable. |
+| **Partial**   | 8, 27: verify/docs workflow and generated-file rules                                                                          | Root verify aliases, `AGENTS.md`, and `docs/testing-gates.md` document the current gate policy and generated-file guardrails.                                                                                                                                        | No CI pipeline is claimed, `README`/package docs can still be improved, and the one-command cleanup workflow from the original recommendation remains broader than current gates.                                                                                                                                                                                                      | `pnpm generated:guard`; `pnpm format:check`; documented smoke gates.                               |
+| **Partial**   | 2-5, 9, 15-17, 23: source-vs-dist, codegen lifecycle, generated schemas, exports, and source/test/build boundaries            | Generated-file guardrails, dprint exclusions, lint coverage, and documented gate policy reduce accidental edits to generated/build artifacts.                                                                                                                        | Root `build` still does not run codegen in a deterministic sorted lifecycle; `pnpm-lock.yaml` still resolves consumers to `../domain/dist`; existing generated schema JS/declarations under `packages/domain/src/schemas/` remain tracked/stale until approved regeneration; no freshness check, complete export allowlist, source-vs-dist overhaul, or package smoke gate is claimed. | `pnpm generated:guard`; future `pnpm check`, export checks, and package smoke tests.               |
+| **Deferred**  | 10-14, 20, 24: CLI `dist` collision, CLI/server publish shape, publish metadata, toolchain bootstrap/Nix, and engine guard    | No direct branch remediation is claimed beyond dependency/docs guardrails.                                                                                                                                                                                           | Package/release/toolchain work is future scope, including CLI/server publish architecture, semver/manifest validation, Nix checks, engine guards, and CI/Nix/publish-hardening beyond current gates.                                                                                                                                                                                   | Not covered by this docs-only slice; future pack dry-run, Nix, and CI validation are needed.       |
 
 ---
 
@@ -130,7 +149,7 @@ Adjust names as desired, but the key is: one command, one order, fail-fast, docu
 - **Recommended fix/guardrail:** Choose release shape:
   - build-utils package with generated `dist/package.json` and `bin`, or
   - Vite single-file CLI package with generated `dist/package.json`, dependencies, and `bin`.
-  Add pack dry-run assertion that tarball contains `package.json` and bin target.
+    Add pack dry-run assertion that tarball contains `package.json` and bin target.
 - **Rationale:** Publish/build artifacts should be installable and executable.
 
 ### 12. Server appears publishable but lacks clear publish intent

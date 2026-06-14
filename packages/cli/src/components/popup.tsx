@@ -1,69 +1,83 @@
-import { Key, World } from "@flaghack/domain/schemas"
-// import { HashMap } from "effect"
+import type {
+  Key as KeySchema,
+  World as WorldSchema
+} from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { BoxElement, DetailedBlessedProps } from "react-blessed"
+import type { BoxElement, DetailedBlessedProps } from "react-blessed"
 
-type Key = typeof Key.Type
-type World = typeof World.Type
+type Key = typeof KeySchema.Type
+type World = typeof WorldSchema.Type
 type Props = {
   items: World
-  onSubmit: (keys: Key[]) => void
+  onSubmit: (keys: ReadonlyArray<Key>) => void
   onCancel: () => void
   boxRef: React.RefObject<BoxElement | null>
 } & DetailedBlessedProps<BoxElement>
 
+const controlKeys: Array<string> = ["q", "r", ","]
+const submitKeys: Array<string> = [" ", "space"]
+
 export default function Popup(
   props: Props
 ) {
-  const { items, onSubmit, onCancel, boxRef, ...boxProps } = props
-  const [marked, setMarked] = useState<Key[]>(["asdf"])
+  const { boxRef, items, onCancel, onSubmit, ...boxProps } = props
+  const [marked, setMarked] = useState<ReadonlySet<Key>>(() => new Set())
   const itemMap = useMemo(() => Map(items), [items])
-  const markAll = useCallback(() =>
+  const markAll = useCallback(() => {
     setMarked(
-      () => {
-        const values = itemMap.valueSeq()
-        const arr = values.toArray().map((e) => e.key)
-        return arr
-      }
-    ), [marked, itemMap, setMarked])
-  useEffect(() => {
-    ;["q", "r", ","].forEach((key) =>
-      boxRef.current?.unkey(
-        key,
-        () => undefined
-      )
-    )
-    boxRef.current?.key(
-      ["q", "r", ","],
-      (input: string) => {
-        if (["q", "r"].includes(input)) {
-          setMarked([])
-          onCancel()
-        } else if ([" ", "space"].includes(input)) {
-          onSubmit(marked)
-        } else if ([","].includes(input)) markAll()
-        else {
-        }
-      }
+      new Set(itemMap.valueSeq().toArray().map((item) => item.key))
     )
   }, [itemMap])
+
   useEffect(() => {
-    ;[" ", "space"].forEach((key) =>
-      boxRef.current?.unkey(
-        key,
-        () => undefined
-      )
-    )
-    boxRef.current?.key(
-      [" ", "space"],
-      (input: string) => {
-        if ([" ", "space"].includes(input)) {
-          onSubmit(marked)
-        }
+    const popup = boxRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleControlKey = (input: string) => {
+      if (input === "q" || input === "r") {
+        setMarked(new Set())
+        onCancel()
+        return
       }
-    )
-  }, [marked])
+
+      if (input === ",") {
+        markAll()
+      }
+    }
+
+    popup.key(controlKeys, handleControlKey)
+
+    return () => {
+      for (const key of controlKeys) {
+        popup.removeListener(`key ${key}`, handleControlKey)
+      }
+    }
+  }, [boxRef, markAll, onCancel])
+
+  useEffect(() => {
+    const popup = boxRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleSubmitKey = (input: string) => {
+      if (input === " " || input === "space") {
+        onSubmit(Array.from(marked))
+      }
+    }
+
+    popup.key(submitKeys, handleSubmitKey)
+
+    return () => {
+      for (const key of submitKeys) {
+        popup.removeListener(`key ${key}`, handleSubmitKey)
+      }
+    }
+  }, [boxRef, marked, onSubmit])
+
   return (
     <box
       ref={boxRef}
@@ -77,11 +91,11 @@ export default function Popup(
     >
       {itemMap.valueSeq().toArray().map((item, i) => (
         <box
-          key={i}
+          key={item.key}
           top={i}
           height={1}
           style={{
-            inverse: marked?.includes(item.key)
+            inverse: marked.has(item.key)
           }}
           left={1}
           width={27} // todo: actual width

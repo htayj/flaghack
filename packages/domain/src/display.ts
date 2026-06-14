@@ -1,33 +1,30 @@
-import { DirectionalVariant, EEntity, Entity } from "./schemas.js"
-type Entity = typeof Entity.Type
-const getWallVariantChar = (v: typeof DirectionalVariant.Type) => {
-  switch (v) {
-    case "vertical":
-      return "│"
-    case "horizontal":
-      return "─"
-    case "topLeft":
-      return "┌"
-    case "topRight":
-      return "┐"
-    case "bottomLeft":
-      return "└"
-    case "bottomRight":
-      return "┘"
-    case "cross":
-      return "┼"
-    case "t-up":
-      return "┴"
-    case "t-down":
-      return "┬"
-    case "t-left":
-      return "┤"
-    case "t-right":
-      return "├"
-    default:
-      return " "
-  }
-}
+import {
+  type DirectionalVariant as DirectionalVariantSchema,
+  EEntity,
+  type Entity as EntitySchema
+} from "./schemas.js"
+
+type Entity = typeof EntitySchema.Type
+type WallVariant = typeof DirectionalVariantSchema.Type
+
+const wallVariantChars = {
+  vertical: "│",
+  horizontal: "─",
+  topLeft: "┌",
+  topRight: "┐",
+  bottomLeft: "└",
+  bottomRight: "┘",
+  cross: "┼",
+  "t-up": "┴",
+  "t-down": "┬",
+  "t-left": "┤",
+  "t-right": "├",
+  none: " "
+} satisfies Record<WallVariant, string>
+
+const getWallVariantChar = (variant: WallVariant): string =>
+  wallVariantChars[variant]
+
 export type Color =
   | "black"
   | "red"
@@ -43,31 +40,37 @@ export type Tile = {
   bright?: boolean
   bg?: boolean
 }
+
+const tile = (value: Tile): Tile => value
+
 export const getTile = (e: Entity): Tile =>
   EEntity.$match({
-    player: () => ({ color: "white", char: "@" }),
-    ranger: () => ({ color: "magenta", char: "@" }),
-    hippie: () => ({ color: "yellow", char: "h" }),
-    wook: () => ({ color: "cyan", char: "h" }),
-    acidcop: () => ({ color: "magenta", char: "K" }),
-    lesser_egregore: () => ({ color: "green", char: "e" }),
-    greater_egregore: () => ({ color: "green", char: "E" }),
-    collective_egregore: () => ({ color: "green", char: "E" }),
-    flag: () => ({ color: "yellow", bright: true, char: "F" }),
-    water: () => ({ color: "cyan", char: "!" }),
-    booze: () => ({ color: "yellow", char: "!" }),
-    milk: () => ({ color: "white", char: "!" }),
-    acid: () => ({ color: "green", char: "!" }),
-    bacon: () => ({ color: "red", bright: true, char: "%" }),
-    poptart: () => ({ color: "yellow", bright: true, char: "%" }),
-    trailmix: () => ({ color: "yellow", char: "%" }),
-    pancake: () => ({ color: "white", bright: true, char: "%" }),
-    soup: () => ({ color: "red", char: "%" }),
-    wall: ({ variant }) => ({
-      color: "white",
-      bright: false,
-      char: getWallVariantChar(variant)
-    }),
-    tunnel: () => ({ color: "white", bright: false, char: "#" }),
-    floor: () => ({ color: "black", bright: true, char: "·" })
-  })(e) as Tile
+    player: () => tile({ color: "white", char: "@" }),
+    ranger: () => tile({ color: "magenta", char: "@" }),
+    hippie: () => tile({ color: "yellow", char: "h" }),
+    wook: () => tile({ color: "cyan", char: "h" }),
+    acidcop: () => tile({ color: "magenta", char: "K" }),
+    lesser_egregore: () => tile({ color: "green", char: "e" }),
+    greater_egregore: () => tile({ color: "green", char: "E" }),
+    collective_egregore: () => tile({ color: "green", char: "E" }),
+    flag: () => tile({ color: "yellow", bright: true, char: "F" }),
+    water: () => tile({ color: "cyan", char: "!" }),
+    booze: () => tile({ color: "yellow", char: "!" }),
+    milk: () => tile({ color: "white", char: "!" }),
+    acid: () => tile({ color: "green", char: "!" }),
+    bacon: () => tile({ color: "red", bright: true, char: "%" }),
+    poptart: () => tile({ color: "yellow", bright: true, char: "%" }),
+    trailmix: () => tile({ color: "yellow", char: "%" }),
+    pancake: () => tile({ color: "white", bright: true, char: "%" }),
+    soup: () => tile({ color: "red", char: "%" }),
+    hammer: () => tile({ color: "white", bright: true, char: "T" }),
+    nails: () => tile({ color: "cyan", bright: true, char: ":" }),
+    wall: ({ variant }) =>
+      tile({
+        color: "white",
+        bright: false,
+        char: getWallVariantChar(variant)
+      }),
+    tunnel: () => tile({ color: "white", bright: false, char: "#" }),
+    floor: () => tile({ color: "black", bright: true, char: "·" })
+  })(e)

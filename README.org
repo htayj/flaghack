@@ -14,8 +14,8 @@ Audit-remediation work should use the project gates documented in [[file:docs/te
   pnpm test:unit
   pnpm test:charm
   pnpm test:perf
-  pnpm test:api
-  pnpm test:e2e:tmux
+  pnpm test:api:bot
+  pnpm test:e2e:tmux:bot
 #+END_SRC
 
 For the smoke aggregate, run =pnpm verify:smoke=. For the stricter readiness gate that also runs =pnpm check=, run =pnpm verify:gates=.
@@ -50,6 +50,13 @@ and then in a second terminal run:
   pnpm run cli
 #+END_SRC
 to start the default Charmbracelet terminal client
+
+For agent/bot testing while a human server is already running on port 3000, use the bot port commands:
+#+BEGIN_SRC bash
+  pnpm run bot:serve
+  pnpm run bot:cli
+#+END_SRC
+These use port 3100.
 
 *** TODO:  hotreloading
 

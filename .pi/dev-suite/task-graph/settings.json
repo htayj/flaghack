@@ -5,7 +5,7 @@
       "Audit-remediation work must read ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md before choosing fixes.",
       "Do not edit generated artifacts: packages/**/build/**, packages/**/dist/**, generated *.d.ts, *.d.ts.map, *.js.map, editor backups, or packages/domain/src/schemas/*.js.",
       "Use pnpm/corepack when available. Do not run build/codegen commands that write build/ or dist/ artifacts unless a stage explicitly approves it.",
-      "Run audit gates serially because API and tmux E2E use the hard-coded local server port 3000.",
+      "Run API and tmux gates through bot scripts on localhost:3100 so user-owned localhost:3000 servers can keep running; keep network gates serial.",
       "For Flag Hack feature work, use the project default graph flag-hack-feature-gated unless the user explicitly asks for the audit graph or a one-off custom graph.",
       "Use PI_NPX_OK=1 npx -y pnpm@9.10.0 for pnpm commands in this repository.",
       "Feature verification must include a real tmux run of the CLI that exercises the requested behavior, not just unit tests or static review."
@@ -48,8 +48,8 @@
     },
     "lockConflictGroups": {
       "IMPLEMENT": "workspace-write",
-      "API_TEST": "dev-server-3000",
-      "E2E_TEST": "dev-server-3000"
+      "API_TEST": "dev-server-bot-3100",
+      "E2E_TEST": "dev-server-bot-3100"
     }
   },
   "graphs": {
@@ -71,7 +71,7 @@
           "promptInstructions": [
             "Read ARCHITECTURE_OPPORTUNITIES.md, BUILD_SYSTEM_OPPORTUNITIES.md, EFFECT_TS_OPPORTUNITIES.md, and FP_IMMUTABILITY_OPPORTUNITIES.md.",
             "Plan only source/config/docs/test changes. Do not edit packages/**/build/**, packages/**/dist/**, generated declarations/maps, editor backups, or packages/domain/src/schemas/*.js.",
-            "Name the expected gates: pnpm generated:guard, pnpm check, pnpm test:unit, pnpm test:perf, pnpm test:api, and pnpm test:e2e:tmux."
+            "Name the expected gates: pnpm generated:guard, pnpm check, pnpm test:unit, pnpm test:perf, pnpm test:api:bot, and pnpm test:e2e:tmux:bot."
           ],
           "stableKey": "custom.flag-hack-audit-gated.plan-audit",
           "purpose": "Plan bounded remediation for selected audit findings before editing.",
@@ -281,7 +281,7 @@
           "id": "api",
           "kind": "API_TEST",
           "title": "Run Effect API smoke gate",
-          "description": "Run pnpm test:api against a disposable server and validate getWorld/getLogs/getInventory/noop action.",
+          "description": "Run pnpm test:api:bot against a disposable bot-port server and validate getWorld/getLogs/getInventory/noop action.",
           "dependsOn": [
             "performance"
           ],
@@ -293,8 +293,8 @@
             "api-tester"
           ],
           "promptInstructions": [
-            "Run pnpm test:api. It owns localhost:3000 for the duration of the gate and must clean up the server child process.",
-            "If port 3000 is already occupied, report it as an environmental blocker rather than using the existing process."
+            "Run pnpm test:api:bot. It owns localhost:3100 for the duration of the gate and must clean up the server child process.",
+            "If port 3100 is already occupied, report it as an environmental blocker rather than using the existing process; do not kill a user-owned server on port 3000."
           ],
           "stableKey": "custom.flag-hack-audit-gated.api",
           "purpose": "Verify the Effect HttpApi smoke runner against a disposable server.",
@@ -306,7 +306,7 @@
             "API smoke evidence"
           ],
           "acceptanceChecks": [
-            "pnpm test:api is attempted",
+            "pnpm test:api:bot is attempted",
             "Disposable server cleanup is reported"
           ],
           "writeScope": [
@@ -322,7 +322,7 @@
           "id": "tmux-e2e",
           "kind": "E2E_TEST",
           "title": "Run tmux CLI E2E smoke gate",
-          "description": "Run pnpm test:e2e:tmux, capture terminal output, and clean up the tmux session.",
+          "description": "Run pnpm test:e2e:tmux:bot, capture terminal output, and clean up the tmux session.",
           "dependsOn": [
             "api"
           ],
@@ -334,7 +334,7 @@
             "e2e-tester"
           ],
           "promptInstructions": [
-            "Run pnpm test:e2e:tmux. It requires tmux and owns localhost:3000 while running.",
+            "Run pnpm test:e2e:tmux:bot. It requires tmux and owns localhost:3100 while running.",
             "Report the terminal capture path and whether the unique tmux session was cleaned up.",
             "If tmux is unavailable, run tmux -V when possible and report the exact blocker."
           ],
@@ -348,7 +348,7 @@
             "tmux E2E evidence and capture path"
           ],
           "acceptanceChecks": [
-            "pnpm test:e2e:tmux is attempted",
+            "pnpm test:e2e:tmux:bot is attempted",
             "Terminal capture path is reported when tmux runs"
           ],
           "writeScope": [
@@ -423,8 +423,8 @@
           "promptInstructions": [
             "Inspect current git status and preserve unrelated dirty/untracked files, especially chatgpt.txt.",
             "Plan source/config/test changes only; do not edit generated/build/dist/declaration/map/schema JS artifacts.",
-            "Identify focused unit tests and a real tmux feature verification scenario using pnpm test:feature:tmux or equivalent tmux automation.",
-            "Name required gates: generated:guard, check, test:unit, format:check, lint, test:api, test:e2e:tmux, and feature tmux verification."
+            "Identify focused unit tests and a real tmux feature verification scenario using pnpm test:feature:tmux:bot or equivalent bot-port tmux automation.",
+            "Name required gates: generated:guard, check, test:unit, format:check, lint, test:api:bot, test:e2e:tmux:bot, and test:feature:tmux:bot."
           ],
           "stableKey": "custom.flag-hack-feature-gated.plan-feature",
           "purpose": "Plan a bounded Flag Hack feature/change before editing.",
@@ -594,7 +594,7 @@
           "id": "restart-server",
           "kind": "API_TEST",
           "title": "Restart disposable Flag Hack server",
-          "description": "Verify the Flag Hack server can start cleanly from the current workspace and then shut it down to leave port 3000 free.",
+          "description": "Verify the Flag Hack server can start cleanly on the bot port from the current workspace and then shut it down to leave user port 3000 free.",
           "dependsOn": [
             "unit"
           ],
@@ -606,9 +606,9 @@
             "api-testing"
           ],
           "promptInstructions": [
-            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:api as the disposable server restart/API smoke gate.",
-            "This gate owns localhost:3000 only for its duration and must leave no server running.",
-            "If port 3000 is already occupied, report an environmental blocker rather than killing unrelated processes."
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:api:bot as the disposable server restart/API smoke gate.",
+            "This gate owns localhost:3100 only for its duration, must leave no server running, and must not disturb user-owned localhost:3000.",
+            "If port 3100 is already occupied, report an environmental blocker rather than killing unrelated processes; do not kill a user-owned server on port 3000."
           ],
           "stableKey": "custom.flag-hack-feature-gated.restart-server",
           "purpose": "Verify a fresh Flag Hack server process can start, serve API requests, and stop cleanly.",
@@ -619,7 +619,7 @@
             "Disposable server restart/API smoke evidence"
           ],
           "acceptanceChecks": [
-            "test:api attempted",
+            "test:api:bot attempted",
             "Server cleanup reported or environmental blocker recorded"
           ],
           "writeScope": [
@@ -688,8 +688,8 @@
             "e2e-tester"
           ],
           "promptInstructions": [
-            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:e2e:tmux.",
-            "This gate owns localhost:3000 while running and must clean up tmux sessions/server children.",
+            "Run PI_NPX_OK=1 npx -y pnpm@9.10.0 test:e2e:tmux:bot.",
+            "This gate owns localhost:3100 while running and must clean up tmux sessions/server children without disturbing localhost:3000.",
             "Report terminal capture paths and exact blockers."
           ],
           "stableKey": "custom.flag-hack-feature-gated.tmux-e2e",
@@ -702,7 +702,7 @@
             "tmux smoke E2E evidence and capture paths"
           ],
           "acceptanceChecks": [
-            "test:e2e:tmux attempted",
+            "test:e2e:tmux:bot attempted",
             "Terminal capture path reported when tmux runs"
           ],
           "writeScope": [
@@ -733,7 +733,7 @@
           ],
           "promptInstructions": [
             "Design a feature-specific terminal scenario for the user request.",
-            "Prefer PI_NPX_OK=1 npx -y pnpm@9.10.0 test:feature:tmux with FLAGHACK_TMUX_KEYS as a JSON array and FLAGHACK_TMUX_EXPECT/FLAGHACK_TMUX_REJECT regexes.",
+            "Prefer PI_NPX_OK=1 npx -y pnpm@9.10.0 test:feature:tmux:bot with FLAGHACK_TMUX_KEYS as a JSON array and FLAGHACK_TMUX_EXPECT/FLAGHACK_TMUX_REJECT regexes.",
             "If the requested feature needs richer assertions than scripts/tmux-feature-check.ts supports, add minimal tooling before marking this stage passed.",
             "This stage must run the project in tmux and exercise the feature itself. Unit tests or code review alone are not sufficient.",
             "Report tmux session/pane identifiers when available and the terminal capture path."
@@ -749,7 +749,7 @@
             "Feature-specific tmux evidence, keys/scenario, and capture path"
           ],
           "acceptanceChecks": [
-            "Feature-specific tmux run attempted",
+            "Feature-specific bot-port tmux run attempted",
             "Terminal output/assertions demonstrate the requested behavior or exact blocker"
           ],
           "writeScope": [
@@ -780,7 +780,7 @@
           ],
           "promptInstructions": [
             "Review the diff for bugs, type-safety, generated-file hygiene, and project conventions.",
-            "Confirm compile, unit, server restart/API smoke, format/lint, tmux E2E, and feature-specific tmux evidence is present or blockers are exact.",
+            "Confirm compile, unit, bot-port server restart/API smoke, format/lint, bot-port tmux E2E, and feature-specific bot tmux evidence is present or blockers are exact.",
             "Do not commit or push."
           ],
           "stableKey": "custom.flag-hack-feature-gated.review",

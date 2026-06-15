@@ -31,10 +31,10 @@ pnpm format:check
 pnpm check
 pnpm test:unit
 pnpm test:perf
-pnpm test:api
-pnpm test:e2e:tmux
+pnpm test:api:bot
+pnpm test:e2e:tmux:bot
 ```
 
 `pnpm verify:smoke` runs the generated-file guard plus the unit, performance, API, and tmux E2E smoke gates. `pnpm verify:gates` additionally runs `pnpm check` as the stricter readiness gate.
 
-`pnpm test:api` and `pnpm test:e2e:tmux` use the hard-coded development server port `3000`, so run them serially and stop any other local Flag Hack server first.
+Agents should use the bot gates (`pnpm test:api:bot`, `pnpm test:e2e:tmux:bot`, and `pnpm test:feature:tmux:bot`) so user-owned servers can keep port `3000`. Bot gates use port `3100`; run them serially and stop only project-created bot processes if cleanup is needed.

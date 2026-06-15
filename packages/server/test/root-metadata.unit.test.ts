@@ -19,6 +19,11 @@ const rootTsconfigBuildJsonPath = join(
   "tsconfig.build.json"
 )
 const rootVitestSharedTsPath = join(repositoryRoot, "vitest.shared.ts")
+const apiSmokePath = join(repositoryRoot, "scripts/api-smoke.ts")
+const taskGraphSettingsPath = join(
+  repositoryRoot,
+  ".pi/dev-suite/task-graph/settings.json"
+)
 const tmuxE2eSmokePath = join(repositoryRoot, "scripts/tmux-e2e-smoke.ts")
 const tmuxFeatureCheckPath = join(
   repositoryRoot,
@@ -147,6 +152,11 @@ const readRootEslintConfigMjs = (): string =>
 const readRootVitestSharedTs = (): string =>
   readFileSync(rootVitestSharedTsPath, "utf8")
 
+const readApiSmokeSource = (): string => readFileSync(apiSmokePath, "utf8")
+
+const readTaskGraphSettings = (): string =>
+  readFileSync(taskGraphSettingsPath, "utf8")
+
 const readTmuxScriptSources = (): ReadonlyArray<string> => [
   readFileSync(tmuxE2eSmokePath, "utf8"),
   readFileSync(tmuxFeatureCheckPath, "utf8")
@@ -206,6 +216,18 @@ describe("root package metadata", () => {
     expect(rootPackageJson.scripts?.["cli:termkit"]).toBe(
       "pnpm run cli:terminal-kit"
     )
+    expect(rootPackageJson.scripts?.["bot:serve"]).toBe(
+      "FLAGHACK_PORT=3100 pnpm run serve"
+    )
+    expect(rootPackageJson.scripts?.["serve:bot"]).toBe(
+      "pnpm run bot:serve"
+    )
+    expect(rootPackageJson.scripts?.["bot:cli"]).toBe(
+      "FLAGHACK_API_URL=http://127.0.0.1:3100 pnpm run cli"
+    )
+    expect(rootPackageJson.scripts?.["cli:bot"]).toBe(
+      "pnpm run bot:cli"
+    )
     expect(rootPackageJson.scripts?.["test:charm"]).toBe(
       "cd packages/cli/charm && go test ./..."
     )
@@ -215,16 +237,69 @@ describe("root package metadata", () => {
     expect(rootPackageJson.scripts?.["verify:gates"]).toContain(
       "pnpm test:charm"
     )
+    expect(rootPackageJson.scripts?.["verify:smoke"]).toContain(
+      "pnpm test:api:bot"
+    )
+    expect(rootPackageJson.scripts?.["verify:gates"]).toContain(
+      "pnpm test:e2e:tmux:bot"
+    )
   })
 
-  it("runs tmux CLI smoke checks through the default Charmbracelet launcher", () => {
+  it("exposes bot validation gates on the alternate development port", () => {
+    const rootPackageJson = readRootPackageJson()
+
+    expect(rootPackageJson.scripts?.["test:api:bot"]).toBe(
+      "FLAGHACK_TEST_PORT=3100 pnpm run test:api"
+    )
+    expect(rootPackageJson.scripts?.["test:e2e:tmux:bot"]).toBe(
+      "FLAGHACK_TEST_PORT=3100 pnpm run test:e2e:tmux"
+    )
+    expect(rootPackageJson.scripts?.["test:feature:tmux:bot"]).toBe(
+      "FLAGHACK_TEST_PORT=3100 pnpm run test:feature:tmux"
+    )
+  })
+
+  it("lets API and tmux smoke scripts target a bot port without reusing the user server", () => {
+    const apiSmokeSource = readApiSmokeSource()
+
+    expect(apiSmokeSource).toContain("FLAGHACK_TEST_PORT")
+    expect(apiSmokeSource).toContain("FLAGHACK_PORT: String(PORT)")
+    expect(apiSmokeSource).not.toContain(
+      "const BASE_URL = \"http://127.0.0.1:3000\""
+    )
+
     for (const source of readTmuxScriptSources()) {
+      expect(source).toContain("FLAGHACK_TEST_PORT")
+      expect(source).toContain("FLAGHACK_TMUX_CLI_COMMAND")
       expect(source).toContain(
         "const DEFAULT_CLI_COMMAND = \"pnpm run cli\""
       )
-      expect(source).toContain("FLAGHACK_TMUX_CLI_COMMAND")
+      expect(source).toContain(
+        "const shellQuote = (value: string): string"
+      )
+      expect(source).toContain(
+        "const cliCommandWithApiUrl = `export FLAGHACK_API_URL=${"
+      )
+      expect(source).toContain("shellQuote(BASE_URL)")
+      expect(source).toContain("}; ${cliCommand}`")
+      expect(source).toContain("cliCommandWithApiUrl")
+      expect(source).toContain("FLAGHACK_PORT=${")
+      expect(source).toContain("String(PORT)")
       expect(source).not.toContain("\"pnpm run cli:tsx\"")
     }
+  })
+
+  it("wires task graph verification prompts to bot gates instead of the user port", () => {
+    const taskGraphSettings = readTaskGraphSettings()
+
+    expect(taskGraphSettings).toContain("test:api:bot")
+    expect(taskGraphSettings).toContain("test:e2e:tmux:bot")
+    expect(taskGraphSettings).toContain("test:feature:tmux:bot")
+    expect(taskGraphSettings).toContain("localhost:3100")
+    expect(taskGraphSettings).toContain("user-owned localhost:3000")
+    expect(taskGraphSettings).not.toContain(
+      "hard-coded local server port 3000"
+    )
   })
 
   it("uses bounded source globs for root lint", () => {

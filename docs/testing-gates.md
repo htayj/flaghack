@@ -54,7 +54,7 @@ This task intentionally does not claim that full `pnpm build` is fixed. Avoid co
 
 ## Gate commands
 
-Run gates serially; the API and tmux E2E gates both use the development server on port `3000`.
+For agent/task-graph work, run the bot variants of API and tmux gates so a user's interactive server can keep using port `3000`. Bot gates use port `3100` and should still run serially.
 
 ```sh
 pnpm generated:guard
@@ -63,10 +63,10 @@ pnpm check
 pnpm test:unit
 pnpm test:charm
 pnpm test:perf
-pnpm test:api
-pnpm test:e2e:tmux
+pnpm test:api:bot
+pnpm test:e2e:tmux:bot
 # For feature-specific terminal checks, provide scenario env vars:
-FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux
+FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux:bot
 ```
 
 `pnpm verify:smoke` runs the generated-file guard plus the smoke gates:
@@ -108,28 +108,29 @@ Runs Vitest benchmarks from `packages/*/test/**/*.bench.ts`. Current benchmarks 
 ### API smoke gate
 
 ```sh
-pnpm test:api
+pnpm test:api:bot
 ```
 
-Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, exercises `getWorld`, `getLogs`, `getInventory`, and a no-op action, then terminates the child process. Stop any existing process on port `3000` first.
+Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, exercises `getWorld`, `getLogs`, `getInventory`, and a no-op action, then terminates the child process. The bot variant sets `FLAGHACK_TEST_PORT=3100` and starts the server with `FLAGHACK_PORT=3100`, so a user-owned port `3000` server can keep running. Use `pnpm test:api` only when you intentionally want the normal port `3000` gate.
 
 ### tmux E2E smoke gate
 
 ```sh
-pnpm test:e2e:tmux
+pnpm test:e2e:tmux:bot
 ```
 
-Requires `tmux`. The runner creates a unique session, starts the server in one pane, waits for API readiness, starts the default Charmbracelet CLI in another pane, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
+Requires `tmux`. The runner creates a unique session, starts the server in one pane, waits for API readiness, starts the default Charmbracelet CLI in another pane, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
 
 ### Feature-specific tmux gate
 
 ```sh
-FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux
+FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux:bot
 ```
 
 The feature gate also starts a disposable server and CLI in a unique tmux session, but the sent keys and assertions are configurable:
 
-- `FLAGHACK_TMUX_CLI_COMMAND`: optional launch command; defaults to `pnpm run cli`, the Charmbracelet frontend.
+- `FLAGHACK_TEST_PORT`: optional disposable server port; bot scripts set this to `3100`.
+- `FLAGHACK_TMUX_CLI_COMMAND`: optional launch command; defaults to `pnpm run cli`. The tmux runner exports `FLAGHACK_API_URL=<test base URL>` before the selected command so custom compound legacy/experimental commands target the disposable server.
 - `FLAGHACK_TMUX_KEYS`: JSON array of tmux `send-keys` tokens, for example `'["g", "l"]'`.
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.

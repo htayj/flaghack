@@ -10,16 +10,42 @@ import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import * as path from "node:path"
 
-const BASE_URL = "http://127.0.0.1:3000"
-const PORT = 3000
+const DEFAULT_TEST_PORT = 3000
 const HOST = "127.0.0.1"
-const DEFAULT_CLI_COMMAND = "pnpm run cli"
+const TEST_PORT_ENV = "FLAGHACK_TEST_PORT"
 const API_WAIT_TIMEOUT_MS = 20_000
 const CLI_WAIT_TIMEOUT_MS = 15_000
 const POLL_INTERVAL_MS = 250
 
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
+
+const parsePort = (name: string, value: string): number => {
+  const port = Number(value)
+  if (
+    !Number.isFinite(port)
+    || !Number.isInteger(port)
+    || port < 1
+    || port > 65_535
+  ) {
+    throw new Error(`${name} must be an integer from 1 to 65535`)
+  }
+  return port
+}
+
+const resolveTestPort = (env: NodeJS.ProcessEnv): number => {
+  const value = env[TEST_PORT_ENV]?.trim()
+  return value === undefined || value === ""
+    ? DEFAULT_TEST_PORT
+    : parsePort(TEST_PORT_ENV, value)
+}
+
+const PORT = resolveTestPort(process.env)
+const BASE_URL = `http://${HOST}:${PORT}`
+const DEFAULT_CLI_COMMAND = "pnpm run cli"
+
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", `'"'"'`)}'`
 
 const tmux = (args: Array<string>) =>
   execFileSync("tmux", args, {
@@ -117,6 +143,9 @@ const run = async () => {
   const tmuxVersion = tmux(["-V"]).trim()
   const cliCommand = process.env.FLAGHACK_TMUX_CLI_COMMAND
     ?? DEFAULT_CLI_COMMAND
+  const cliCommandWithApiUrl = `export FLAGHACK_API_URL=${
+    shellQuote(BASE_URL)
+  }; ${cliCommand}`
   if (await isTcpPortOpen(PORT, HOST)) {
     throw new Error(
       `localhost:${PORT} is already in use; stop the existing server before running the tmux E2E gate`
@@ -142,7 +171,9 @@ const run = async () => {
       "100",
       "-y",
       "36",
-      "pnpm exec tsx packages/server/src/server.ts"
+      `FLAGHACK_PORT=${
+        String(PORT)
+      } pnpm exec tsx packages/server/src/server.ts`
     ])
     sessionCreated = true
     serverPane = tmux([
@@ -165,7 +196,7 @@ const run = async () => {
       "-P",
       "-F",
       "#{pane_id}",
-      cliCommand
+      cliCommandWithApiUrl
     ]).trim()
 
     await waitForPaneOutput(cliPane)

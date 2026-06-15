@@ -10,9 +10,9 @@ import {
 } from "node:child_process"
 import { Socket } from "node:net"
 
-const BASE_URL = "http://127.0.0.1:3000"
-const PORT = 3000
+const DEFAULT_TEST_PORT = 3000
 const HOST = "127.0.0.1"
+const TEST_PORT_ENV = "FLAGHACK_TEST_PORT"
 const WAIT_TIMEOUT_MS = 20_000
 const POLL_INTERVAL_MS = 250
 const TAIL_LIMIT = 8_000
@@ -24,6 +24,29 @@ type ProcessTail = {
 
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
+
+const parsePort = (name: string, value: string): number => {
+  const port = Number(value)
+  if (
+    !Number.isFinite(port)
+    || !Number.isInteger(port)
+    || port < 1
+    || port > 65_535
+  ) {
+    throw new Error(`${name} must be an integer from 1 to 65535`)
+  }
+  return port
+}
+
+const resolveTestPort = (env: NodeJS.ProcessEnv): number => {
+  const value = env[TEST_PORT_ENV]?.trim()
+  return value === undefined || value === ""
+    ? DEFAULT_TEST_PORT
+    : parsePort(TEST_PORT_ENV, value)
+}
+
+const PORT = resolveTestPort(process.env)
+const BASE_URL = `http://${HOST}:${PORT}`
 
 const tailProcess = (
   child: ChildProcessWithoutNullStreams
@@ -145,7 +168,11 @@ const run = async () => {
     ["exec", "tsx", "packages/server/src/server.ts"],
     {
       cwd: process.cwd(),
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: {
+        ...process.env,
+        FLAGHACK_PORT: String(PORT),
+        FORCE_COLOR: "0"
+      },
       stdio: ["ignore", "pipe", "pipe"]
     }
   )

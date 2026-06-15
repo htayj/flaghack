@@ -17,6 +17,7 @@ const API_WAIT_TIMEOUT_MS = 20_000
 const CLI_WAIT_TIMEOUT_MS = 15_000
 const POLL_INTERVAL_MS = 250
 const DEFAULT_KEY_WAIT_MS = 500
+const DEFAULT_CLI_COMMAND = "pnpm run cli"
 
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -186,6 +187,8 @@ const assertCapture = (
 
 const run = async () => {
   const tmuxVersion = tmux(["-V"]).trim()
+  const cliCommand = process.env.FLAGHACK_TMUX_CLI_COMMAND
+    ?? DEFAULT_CLI_COMMAND
   if (await isTcpPortOpen(PORT, HOST)) {
     throw new Error(
       `localhost:${PORT} is already in use; stop the existing server before running the tmux feature gate`
@@ -248,7 +251,7 @@ const run = async () => {
       "-P",
       "-F",
       "#{pane_id}",
-      "pnpm run cli:tsx"
+      cliCommand
     ]).trim()
 
     await waitForPaneOutput(cliPane)

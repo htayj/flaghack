@@ -1,21 +1,24 @@
 # @flaghack/cli
 
-`@flaghack/cli` owns the Flag Hack terminal client and Node HTTP client
-runtime. It provides Effect CLI commands and a blessed/react-blessed
-terminal renderer that talks to the server through the shared domain
-contract.
+`@flaghack/cli` owns the Flag Hack terminal clients. The default player
+UI is the Go Charmbracelet Bubble Tea/Lip Gloss frontend, and the package
+also keeps the Node HTTP client runtime plus legacy/experimental terminal
+renderers that talk to the server through the shared domain contract.
 
 ## Current responsibilities
 
-- `src/Cli.ts` defines the `flag-hack` command tree, including debug
-  movement, inventory, and terminal play commands.
+- `charm/` provides the default Charmbracelet Bubble Tea/Lip Gloss player
+  UI. Root `pnpm run cli` and package-local `pnpm run dev` / `pnpm run
+  play` launch this frontend.
+- `src/Cli.ts` defines the legacy `flag-hack` command tree, including
+  debug movement, inventory, and the old blessed play command.
 - `src/GameClient.ts` implements the Node HTTP client runtime using
   `HttpApiClient` against `GameApi` and the CLI base URL configuration.
 - `src/cliBlessed.tsx`, `src/BApp.tsx`, and `src/components/` provide
-  the blessed and react-blessed terminal UI.
-- `src/components/BPlaying.tsx` maps shared domain state and display
-  metadata from `@flaghack/domain` into terminal tiles, while helpers
-  such as `src/gameboard.ts` render already-prepared tile text.
+  the legacy blessed and react-blessed terminal UI, still available via
+  root `pnpm run cli:blessed` / `pnpm run cli:tsx`.
+- `src/cliInk.tsx` and `src/cliTerminalKit.ts` are retained comparison
+  experiments; they are not the default CLI.
 
 ## Validation and workflow notes
 

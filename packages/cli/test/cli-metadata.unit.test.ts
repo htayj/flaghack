@@ -10,6 +10,7 @@ const cliPackagePath = join(
 )
 const cliSourcePath = join(cliPackagePath, "src/Cli.ts")
 const cliPackageJsonPath = join(cliPackagePath, "package.json")
+const cliDevScriptPath = join(cliPackagePath, "dev.js")
 const cliViteConfigPath = join(cliPackagePath, "vite.config.js")
 
 const deprecatedTemplateMetadata = [
@@ -49,6 +50,7 @@ type PackageDependencySectionName =
 type PackageJsonWithMetadata = {
   readonly dependencies?: PackageDependencyMap
   readonly devDependencies?: PackageDependencyMap
+  readonly scripts?: Readonly<Record<string, unknown>>
   readonly optionalDependencies?: PackageDependencyMap
   readonly peerDependencies?: PackageDependencyMap
   readonly engines?: {
@@ -183,7 +185,24 @@ describe("CLI metadata", () => {
     )
   })
 
-  it("declares the selected experimental TUI frameworks", () => {
+  it("uses Charmbracelet for package-local play and dev scripts", () => {
+    const cliPackageJson = readCliPackageJson()
+
+    expect(cliPackageJson.scripts?.dev).toBe("cd charm && go run .")
+    expect(cliPackageJson.scripts?.play).toBe("cd charm && go run .")
+    expect(cliPackageJson.scripts?.["test:charm"]).toBe(
+      "cd charm && go test ./..."
+    )
+    expect(cliPackageJson.scripts?.["dev:blessed"]).toBe("node dev.js")
+    expect(cliPackageJson.scripts?.["play:blessed"]).toBe(
+      "vite build && node dist/bin.js playB"
+    )
+    expect(readFileSync(cliDevScriptPath, "utf8")).toContain(
+      "spawn(\"pnpm\", [\"run\", \"play:blessed\"]"
+    )
+  })
+
+  it("keeps comparison TUI framework dependencies explicit", () => {
     const cliPackageJson = readCliPackageJson()
 
     expect(cliPackageJson.dependencies?.ink).toBe("5.2.1")

@@ -6,7 +6,7 @@
   "engines": {
     "node": ">=21"
   },
-  "description": "Flag Hack terminal client and Node HTTP client runtime.",
+  "description": "Flag Hack Charmbracelet terminal client and Node HTTP client runtime.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",
@@ -23,9 +23,12 @@
     "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
     "check": "tsc -b tsconfig.json",
-    "dev": "node dev.js",
+    "dev": "cd charm && go run .",
+    "dev:blessed": "node dev.js",
     "test": "vitest",
-    "play": "vite build && node dist/bin.js playB",
+    "test:charm": "cd charm && go test ./...",
+    "play": "cd charm && go run .",
+    "play:blessed": "vite build && node dist/bin.js playB",
     "coverage": "vitest --coverage"
   },
   "dependencies": {

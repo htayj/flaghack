@@ -1,6 +1,6 @@
 # TUI framework experiments
 
-This branch keeps the existing blessed/react-blessed frontend and adds three complete experimental frontends. The TypeScript frontends share the same Flag Hack API client and game input semantics; the Go/Charmbracelet frontend mirrors the same HTTP API contract and controls.
+This branch keeps the existing blessed/react-blessed frontend as an explicit legacy fallback, but the active/default terminal UI is now the Go Charmbracelet Bubble Tea/Lip Gloss frontend. The earlier Ink and terminal-kit implementations remain available as experiments; production-style launch and tmux validation use Charmbracelet.
 
 ## Research sources
 
@@ -10,29 +10,36 @@ This branch keeps the existing blessed/react-blessed frontend and adds three com
 - OpenTUI documentation/GitHub: TypeScript bindings over a native Zig core with React/Solid integration.
 - Smaller/newer alternatives found during research: Glyph, Rezi, TermUI, Melker-style component frameworks, and neo-blessed/blessed forks.
 
-## Selected frameworks
+## Cutover decision
+
+Charmbracelet is the selected CLI renderer for this branch. Use `pnpm run cli` for the default Charmbracelet UI, or `pnpm run cli:charm` / `pnpm run cli:charmbracelet` explicitly.
+
+The old blessed/react-blessed frontend is still available through `pnpm run cli:blessed` / `pnpm run cli:tsx` while the cutover settles. Ink and terminal-kit remain comparison experiments, not the default.
+
+## Frameworks evaluated
+
+### Charmbracelet Bubble Tea / Lip Gloss
+
+- Default script: `pnpm run cli`
+- Explicit scripts: `pnpm run cli:charm` and `pnpm run cli:charmbracelet`
+- Test script: `pnpm run test:charm`
+- Go module: `packages/cli/charm`
+- Why selected: it produced the best UI fit for Flag Hack, with a clear Elm-style update loop, mature terminal input/rendering behavior, and first-class styling via Lip Gloss.
+- Tradeoff: this is a cross-language frontend. It cannot share TypeScript helpers directly, so it mirrors the HTTP API and TUI control semantics in Go.
 
 ### Ink
 
 - Script: `pnpm run cli:ink`
 - Package: `ink@5.2.1`
-- Why: mature React terminal renderer, high adoption, active maintenance, and a component model close to the existing React-based CLI.
-- Tradeoff: newest Ink requires React 19; this branch pins Ink 5 so it can coexist with the existing `react-blessed` React 18 peer constraint.
+- Why considered: mature React terminal renderer, high adoption, active maintenance, and a component model close to the existing React-based CLI.
+- Why not selected: the UI fit was less compelling than Charmbracelet, and Ink keeps the project in the React terminal-rendering tradeoff space that motivated the replacement experiment.
 
 ### terminal-kit
 
 - Scripts: `pnpm run cli:terminal-kit` and `pnpm run cli:termkit`
 - Package: `terminal-kit@3.1.2`
-- Why: mature Node terminal toolkit with fullscreen rendering and keyboard input, no ncurses dependency, and a long-lived package history.
-- Tradeoff: imperative rather than React-like; useful as a control experiment for how much framework machinery Flag Hack actually needs.
-
-### Charmbracelet Bubble Tea / Lip Gloss
-
-- Scripts: `pnpm run cli:charm` and `pnpm run cli:charmbracelet`
-- Test script: `pnpm run test:charm`
-- Go module: `packages/cli/charm`
-- Why: popular, actively maintained Go TUI ecosystem with a clear Elm-style update loop and first-class terminal styling via Lip Gloss.
-- Tradeoff: this is a cross-language experiment. It cannot share TypeScript helpers directly, so it mirrors the HTTP API and TUI control semantics in Go.
+- Why considered: mature Node terminal toolkit with fullscreen rendering and keyboard input, no ncurses dependency, and a long-lived package history.
+- Why not selected: imperative rendering was useful as a control experiment, but the resulting UI and update model were less attractive than Bubble Tea for the main client.
 
 ## Discarded for now
 
@@ -52,7 +59,7 @@ This branch keeps the existing blessed/react-blessed frontend and adds three com
 
 ## Feature parity target
 
-The experimental frontends implement the core blessed CLI behavior:
+The Charmbracelet frontend implements the core CLI behavior:
 
 - world rendering and inventory display
 - NetHack movement keys: `h/j/k/l/y/u/b/n`, Shift-direction, Ctrl-direction, `g`/`G`, `m`/`M`
@@ -63,4 +70,4 @@ The experimental frontends implement the core blessed CLI behavior:
 - extended `#quit`
 - cancellation of active automovement on new input
 
-The popup UI is intentionally simple: `,` marks all, `space` submits, and `q`/`r`/`Esc` cancels, matching the currently implemented blessed popup controls.
+The popup UI is intentionally simple: `,` marks all, `space` submits, and `q`/`r`/`Esc` cancels.

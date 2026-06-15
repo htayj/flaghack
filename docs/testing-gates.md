@@ -2,7 +2,7 @@
 
 This project has two project-local task graphs:
 
-- `flag-hack-feature-gated` is the default graph for feature work. It follows the normal implementation pipeline, then verifies generated-file guardrails, compile, unit tests, a disposable server restart/API smoke, format/lint, baseline tmux E2E, feature-specific tmux execution, and code review.
+- `flag-hack-feature-gated` is the default graph for feature work. It follows the normal implementation pipeline, then verifies generated-file guardrails, compile, unit tests, a disposable server restart/API smoke, format/lint, baseline tmux E2E, feature-specific tmux execution, code review, and an explicitly approved commit stage. The final `COMMIT` stage is mechanically skipped unless task graph commit approval is granted for that run; pushing remains outside this graph.
 - `flag-hack-audit-gated` is retained for audit-remediation work against:
   - `ARCHITECTURE_OPPORTUNITIES.md`
   - `BUILD_SYSTEM_OPPORTUNITIES.md`

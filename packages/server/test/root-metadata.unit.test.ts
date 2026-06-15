@@ -154,8 +154,30 @@ const readRootVitestSharedTs = (): string =>
 
 const readApiSmokeSource = (): string => readFileSync(apiSmokePath, "utf8")
 
+type TaskGraphStageSettings = {
+  readonly id?: string
+  readonly kind?: string
+  readonly dependsOn?: ReadonlyArray<string>
+  readonly description?: string
+  readonly promptInstructions?: ReadonlyArray<string>
+  readonly isolationBoundary?: ReadonlyArray<string>
+}
+
+type TaskGraphSettings = {
+  readonly graphs?: Record<
+    string,
+    {
+      readonly description?: string
+      readonly stages?: ReadonlyArray<TaskGraphStageSettings>
+    }
+  >
+}
+
 const readTaskGraphSettings = (): string =>
   readFileSync(taskGraphSettingsPath, "utf8")
+
+const readTaskGraphSettingsJson = (): TaskGraphSettings =>
+  JSON.parse(readTaskGraphSettings()) as TaskGraphSettings
 
 const readTmuxScriptSources = (): ReadonlyArray<string> => [
   readFileSync(tmuxE2eSmokePath, "utf8"),
@@ -300,6 +322,30 @@ describe("root package metadata", () => {
     expect(taskGraphSettings).not.toContain(
       "hard-coded local server port 3000"
     )
+  })
+
+  it("ends the feature task graph with a mechanically approval-gated commit stage", () => {
+    const featureGraph = readTaskGraphSettingsJson().graphs?.[
+      "flag-hack-feature-gated"
+    ]
+    const commitStage = featureGraph?.stages?.at(-1)
+
+    expect(featureGraph?.description).toContain(
+      "explicitly approved commit stage"
+    )
+    expect(commitStage?.id).toBe("commit")
+    expect(commitStage?.kind).toBe("COMMIT")
+    expect(commitStage?.dependsOn).toEqual(["review"])
+    expect(commitStage?.description).toContain(
+      "commit approval is explicitly granted"
+    )
+    expect(commitStage?.promptInstructions).toContain(
+      "This stage is mechanically gated by task graph commit approval and must remain skipped unless commit approval is explicitly granted for the run."
+    )
+    expect(commitStage?.promptInstructions).toContain(
+      "Before committing, inspect git status and ensure unrelated files such as chatgpt.txt are not staged."
+    )
+    expect(commitStage?.isolationBoundary).toContain("Do not push")
   })
 
   it("uses bounded source globs for root lint", () => {

@@ -405,7 +405,7 @@
       ]
     },
     "flag-hack-feature-gated": {
-      "description": "Flag Hack default feature workflow with planning, implementation, typecheck, unit, disposable server restart, lint, tmux smoke E2E, feature-specific tmux use verification, and code review.",
+      "description": "Flag Hack default feature workflow with planning, implementation, typecheck, unit, disposable server restart, lint, tmux smoke E2E, feature-specific tmux use verification, code review, and an explicitly approved commit stage.",
       "stages": [
         {
           "id": "plan-feature",
@@ -804,6 +804,51 @@
             "Do not commit or push"
           ],
           "order": 9
+        },
+        {
+          "id": "commit",
+          "kind": "COMMIT",
+          "title": "Commit approved Flag Hack feature/change",
+          "description": "Create a git commit for the completed, reviewed, and validated change when commit approval is explicitly granted.",
+          "dependsOn": [
+            "review"
+          ],
+          "runnerKind": "direct_safe",
+          "runnerName": "git-commit",
+          "sideEffects": "git",
+          "skills": [
+            "git-workflow"
+          ],
+          "promptInstructions": [
+            "This stage is mechanically gated by task graph commit approval and must remain skipped unless commit approval is explicitly granted for the run.",
+            "Before committing, inspect git status and ensure unrelated files such as chatgpt.txt are not staged.",
+            "Commit only the reviewed implementation and validation-supporting changes from this task graph.",
+            "Use a concise conventional commit message that matches the completed change.",
+            "Do not push; pushing requires a separate explicit approval/stage."
+          ],
+          "stableKey": "custom.flag-hack-feature-gated.commit",
+          "purpose": "Commit the completed Flag Hack feature/change after validation and code review when explicitly approved.",
+          "inputs": [
+            "Reviewed implementation diff",
+            "Validation and code review evidence"
+          ],
+          "outputs": [
+            "Git commit hash or explicit skipped/blocked report"
+          ],
+          "acceptanceChecks": [
+            "Commit approval is present before staging or committing",
+            "Unrelated files are not staged",
+            "Commit hash is recorded when the stage runs"
+          ],
+          "writeScope": [
+            "git index and commit metadata for reviewed task changes only"
+          ],
+          "isolationBoundary": [
+            "Do not modify source files during commit stage",
+            "Do not stage chatgpt.txt or unrelated local files",
+            "Do not push"
+          ],
+          "order": 10
         }
       ]
     }

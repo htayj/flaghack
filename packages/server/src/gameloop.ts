@@ -1,20 +1,17 @@
-import { HashMap, Logger, LogLevel, pipe } from "effect"
-import type { Effect } from "effect/Effect"
+import { type Action, EAction, GameState } from "@flaghack/domain/schemas"
+import { Effect, HashMap, Logger, LogLevel, pipe } from "effect"
 import {
   andThen,
   log,
   provide,
   reduce,
-  succeed,
-  suspend,
   tap,
   withLogSpan
 } from "effect/Effect"
-// import { Map, Record } from "immutable"
-// import type { Verb } from "./actions.js"
-import { type Action, EAction, GameState } from "@flaghack/domain/schemas"
 import { filter, findFirst } from "effect/HashMap"
 import { match as omatch } from "effect/Option"
+// import { Map, Record } from "immutable"
+// import type { Verb } from "./actions.js"
 import { doAction } from "./actions.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
@@ -25,84 +22,79 @@ import {
   getEntityById,
   getPlayer
 } from "./gamestate.js"
+import { GameStateStore } from "./GameStateStore.js"
 import { logger } from "./log.js"
 import type { TPos } from "./position.js"
-import { noop } from "./util.js"
 import { BSPGenLevel, isItem, type World } from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
-const selectRequiredSpawnFloor = (world: World): TPos =>
+const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> =>
   omatch(
     world.pipe(findFirst((entity) => entity._tag === "floor")),
     {
-      onNone: () => {
-        throw new Error(
+      onNone: () =>
+        Effect.dieMessage(
           "Initial level generation produced no floor tiles; cannot place player"
-        )
-      },
-      onSome: ([, floorEntity]) => floorEntity.at
+        ),
+      onSome: ([, floorEntity]) => Effect.succeed(floorEntity.at)
     }
   )
 
-const _state: {
-  gameState: TGameState | undefined
-  log: (s: string) => void
-} = {
-  gameState: undefined,
-  log: noop
-}
+const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
+  function*() {
+    const testLevel: World = yield* BSPGenLevel(777, 0).pipe(Effect.orDie)
+    const testLevelPlayerLocation = yield* selectRequiredSpawnFloor(
+      testLevel
+    )
 
-const makeInitialGameState = (): TGameState => {
-  const testLevel: World = BSPGenLevel(777, 0)
-  const testLevelPlayerLocation = selectRequiredSpawnFloor(testLevel)
+    const testPlayer = player(
+      testLevelPlayerLocation.x,
+      testLevelPlayerLocation.y,
+      testLevelPlayerLocation.z
+    )
+    const testLevelPlayer: World = HashMap.fromIterable([[
+      "player",
+      testPlayer
+    ]])
+    const testLevelReady: World = testLevelPlayer.pipe(
+      HashMap.union(testLevel)
+    )
 
-  const testPlayer = player(
-    testLevelPlayerLocation.x,
-    testLevelPlayerLocation.y,
-    testLevelPlayerLocation.z
-  )
-  const testLevelPlayer: World = HashMap.fromIterable([[
-    "player",
-    testPlayer
-  ]])
-  const testLevelReady: World = testLevelPlayer.pipe(
-    HashMap.union(testLevel)
-  )
-
-  return GameState.make({
-    world: testLevelReady
-  })
-}
-
-const getOrInitializeGameState = (): TGameState => {
-  const existing = _state.gameState
-
-  if (existing !== undefined) {
-    return existing
+    return GameState.make({
+      world: testLevelReady
+    })
   }
+)
 
-  const initialized = makeInitialGameState()
+export const DefaultGameStateStoreLive = GameStateStore.Default(
+  makeInitialGameState
+)
 
-  _state.gameState = initialized
+const eGetGameState = pipe(
+  GameStateStore,
+  andThen((store) => store.get)
+)
 
-  return initialized
-}
-
-const setGameState = (s: TGameState): void => {
-  _state.gameState = s
-}
-
-const eWithGameState = (fn: (gs: TGameState) => Effect<TGameState>) =>
+const eWithGameState = (
+  fn: (gs: TGameState) => Effect.Effect<TGameState>
+) =>
   pipe(
-    eGetGameState,
-    tap(() => log("gotgamestate")),
-    andThen((gs) => fn(gs)),
-    tap(() => log("altered gamestate")),
-    andThen((gs) => eSetGameState(gs)),
-    tap(() => log("set gamestate")),
+    GameStateStore,
+    andThen((store) =>
+      store.modifyEffect((gs) =>
+        pipe(
+          Effect.succeed(gs),
+          tap(() => log("gotgamestate")),
+          andThen((gs) => fn(gs)),
+          tap(() => log("altered gamestate")),
+          tap(() => log("set gamestate")),
+          andThen((nextGs) => Effect.succeed([undefined, nextGs] as const))
+        )
+      )
+    ),
     Logger.withMinimumLogLevel(LogLevel.Debug),
     provide(layer),
     withLogSpan("with.gs")
@@ -145,10 +137,6 @@ export const actPlayerAction = (
       withLogSpan(`playeract.${action._tag}`)
     )
   )
-
-const eGetGameState = suspend(() => succeed(getOrInitializeGameState()))
-const eSetGameState = (gs: TGameState) =>
-  suspend(() => succeed(setGameState(gs)))
 
 export const eGetWorld = pipe(
   eGetGameState,

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { doAction } from "../src/actions.js"
 import { player } from "../src/creatures.js"
-import { groundFlag, waterbottle } from "../src/items.js"
+import { makeGroundFlag, makeWaterBottle } from "../src/items.js"
 import type { Entity } from "../src/world.js"
 
 const actionsSourcePath = fileURLToPath(
@@ -40,8 +40,8 @@ describe("server actions", () => {
 
   it("moves pickupMulti item keys into the player container", () => {
     const actor = player(2, 3, 0)
-    const item = groundFlag({ x: 2, y: 3, z: 0 })
-    const secondItem = waterbottle(2, 3, 0)
+    const item = makeGroundFlag("flag-1", { x: 2, y: 3, z: 0 })
+    const secondItem = makeWaterBottle("water-1", 2, 3, 0)
     const gs = GameState.make({
       world: HashMap.fromIterable<string, Entity>([
         [actor.key, actor],
@@ -63,8 +63,8 @@ describe("server actions", () => {
 
   it("moves dropMulti inventory item keys to the player's location", () => {
     const actor = player(5, 6, 0)
-    const item = waterbottle(0, 0, 0, actor.key)
-    const secondItem = waterbottle(1, 1, 0, actor.key)
+    const item = makeWaterBottle("water-1", 0, 0, 0, actor.key)
+    const secondItem = makeWaterBottle("water-2", 1, 1, 0, actor.key)
     const gs = GameState.make({
       world: HashMap.fromIterable<string, Entity>([
         [actor.key, actor],

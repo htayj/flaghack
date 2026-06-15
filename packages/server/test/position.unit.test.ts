@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { HashMap } from "effect"
-import { groundFlag } from "../src/items.js"
+import { makeGroundFlag } from "../src/items.js"
 import { collideP } from "../src/position.js"
 import { type Entity, itemsAt } from "../src/world.js"
 
@@ -12,7 +12,7 @@ describe("structural position equality", () => {
   })
 
   it("finds items at a fresh coordinate object with the same x/y/z", () => {
-    const item = groundFlag({ x: 1, y: 2, z: 3 })
+    const item = makeGroundFlag("flag-1", { x: 1, y: 2, z: 3 })
     const world = HashMap.fromIterable<string, Entity>([[item.key, item]])
 
     const found = Array.from(

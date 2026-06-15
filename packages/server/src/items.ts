@@ -6,8 +6,8 @@ import type {
 import { Data, Effect } from "effect"
 import { match as omatch, none, type Option, some } from "effect/Option"
 import type { TKey } from "./entity.js"
+import { KeyGenerator } from "./keyGenerator.js"
 import type { TPos } from "./position.js"
-import { genKey } from "./util.js"
 import type { Entity } from "./world.js"
 
 class ErrTriedToPickupNothing
@@ -19,13 +19,14 @@ class ErrNothingTriedToPickup
 export type Flag = typeof FlagSchema.Type
 export type Water = typeof WaterSchema.Type
 export type Item = typeof AnyItemSchema.Type
-export const groundFlag = (pos: TPos): Flag => ({
+export const makeGroundFlag = (key: string, pos: TPos): Flag => ({
   at: pos,
   in: "world",
   _tag: "flag",
-  key: genKey()
+  key
 })
-export const waterbottle = (
+export const makeWaterBottle = (
+  key: string,
   x: number,
   y: number,
   z: number,
@@ -34,8 +35,29 @@ export const waterbottle = (
   at: { x, y, z },
   in: container,
   _tag: "water",
-  key: genKey()
+  key
 })
+export const groundFlag = (
+  pos: TPos
+): Effect.Effect<Flag, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeGroundFlag(key, pos)
+  })
+export const waterbottle = (
+  x: number,
+  y: number,
+  z: number,
+  container: TKey = "world"
+): Effect.Effect<Water, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeWaterBottle(key, x, y, z, container)
+  })
 
 export const ePickup =
   <C extends Entity>(by: Option<C>) =>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { HashMap } from "effect"
+import { Effect, HashMap } from "effect"
 import { readFileSync } from "node:fs"
-import { BSPGenLevel } from "../src/world.js"
+import { BSPGenLevel, makeBspLevel, type World } from "../src/world.js"
 
 describe("BSPGenLevel", () => {
   it("does not use a tuple assertion in randBool", () => {
@@ -67,7 +67,7 @@ describe("BSPGenLevel", () => {
 
   it("places every generated entity on the requested dungeon level", () => {
     const dlvl = 7
-    const world = BSPGenLevel(777, dlvl)
+    const world = Effect.runSync(BSPGenLevel(777, dlvl))
     const entities = Array.from(world.pipe(HashMap.values))
 
     const zLevels = [...new Set(entities.map(({ at }) => at.z))].sort(
@@ -76,5 +76,47 @@ describe("BSPGenLevel", () => {
 
     expect(entities.length).toBeGreaterThan(0)
     expect(zLevels).toEqual([dlvl])
+  })
+
+  it("returns Effect values for unseeded and seeded BSP generation", () => {
+    const seededLevel = BSPGenLevel(777, 0)
+    const unseededLevel = makeBspLevel(0)
+
+    expect(Effect.isEffect(seededLevel)).toBe(true)
+    expect(Effect.isEffect(unseededLevel)).toBe(true)
+  })
+
+  it("generates deterministic worlds for the same seed and dungeon level", () => {
+    const serialize = (world: World) =>
+      Array.from(world.pipe(HashMap.values)).sort((a, b) => {
+        if (a.key < b.key) return -1
+        if (a.key > b.key) return 1
+        return 0
+      })
+
+    const first = Effect.runSync(BSPGenLevel(4242, 3))
+    const second = Effect.runSync(BSPGenLevel(4242, 3))
+
+    expect(serialize(second)).toEqual(serialize(first))
+  })
+
+  it("keeps level generation free of pure-rand and hidden UUID keys", () => {
+    const sourceUrls = [
+      "../src/world.ts",
+      "../src/terrain.ts",
+      "../src/items.ts",
+      "../src/creatures.ts"
+    ] as const
+
+    for (const sourceUrl of sourceUrls) {
+      const source = readFileSync(
+        new URL(sourceUrl, import.meta.url),
+        "utf8"
+      )
+
+      expect(source).not.toContain("pure-rand")
+      expect(source).not.toContain("randomUUID")
+      expect(source).not.toContain("genKey")
+    }
   })
 })

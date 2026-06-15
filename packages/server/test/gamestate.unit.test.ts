@@ -3,12 +3,12 @@ import { GameState } from "@flaghack/domain/schemas"
 import { HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { getLocationOf, updateWorld } from "../src/gamestate.js"
-import { waterbottle } from "../src/items.js"
+import { makeWaterBottle } from "../src/items.js"
 import type { Entity } from "../src/world.js"
 
 describe("updateWorld", () => {
   it("returns a GameState using the transformed world", () => {
-    const item = waterbottle(1, 2, 3, "world")
+    const item = makeWaterBottle("water-1", 1, 2, 3, "world")
     const replacement = { ...item, at: { x: 7, y: 8, z: 0 } }
     const initialWorld = HashMap.fromIterable<string, Entity>([
       [item.key, item]
@@ -38,7 +38,7 @@ describe("updateWorld", () => {
 
 describe("getLocationOf", () => {
   it("returns Some containing the position for a world entity", () => {
-    const entity = waterbottle(1, 2, 3, "world")
+    const entity = makeWaterBottle("water-1", 1, 2, 3, "world")
 
     const location = getLocationOf(entity)
 
@@ -49,7 +49,7 @@ describe("getLocationOf", () => {
   })
 
   it("returns None for a contained entity", () => {
-    const entity = waterbottle(1, 2, 3, "player")
+    const entity = makeWaterBottle("water-1", 1, 2, 3, "player")
 
     expect(Option.isNone(getLocationOf(entity))).toBe(true)
   })

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -42,6 +43,7 @@ describe("debug BSP modules", () => {
     expect(bspSource).toContain("export const makeBspDemoLevels")
     expect(bspSource).toContain("export const renderBspDemo")
     expect(bspSource).toContain("export const runBspDemo")
+    expect(bspSource).toContain("Effect.forEach")
     expect(bspSource).toMatch(
       /fileURLToPath\s*\(\s*import\.meta\.url\s*\)/
     )
@@ -59,13 +61,13 @@ describe("debug BSP modules", () => {
     const bspSource = readBspSource()
 
     expect(bspSource).toMatch(
-      /export const runBspDemo\s*=\s*\(\s*log\s*:\s*DemoLog\s*\)\s*:\s*void\s*=>/
+      /export const runBspDemo\s*=\s*\(\s*log\s*:\s*DemoLog\s*\)\s*:\s*Effect\.Effect<void,\s*LevelGenerationError>\s*=>/
     )
     expect(bspSource).not.toMatch(
       /export const runBspDemo\s*=\s*\([^)]*=\s*console\.log/
     )
     expect(bspSource).toMatch(
-      /if\s*\(\s*isDirectEntry\s*\)\s*{\s*runBspDemo\s*\(\s*console\.log\s*\)\s*}/
+      /if\s*\(\s*isDirectEntry\s*\)\s*{\s*Effect\.runSync\(runBspDemo\(console\.log\)\)\s*}/
     )
   })
 
@@ -80,11 +82,11 @@ describe("debug BSP modules", () => {
     const { runBspDemo } = await import(
       "../src/testBSP.js"
     ) as unknown as {
-      runBspDemo: (log: (message: string) => void) => void
+      runBspDemo: (log: (message: string) => void) => Effect.Effect<void>
     }
     const output: Array<string> = []
 
-    runBspDemo((message) => output.push(message))
+    Effect.runSync(runBspDemo((message) => output.push(message)))
 
     const renderedOutput = output.join("\n")
     expect(renderedOutput).toContain("i: 0")

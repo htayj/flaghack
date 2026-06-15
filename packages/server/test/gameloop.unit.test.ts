@@ -19,11 +19,23 @@ const readGameloopSource = (): string =>
 
 const importGameloop = async () => await import("../src/gameloop.js")
 
-const runGetWorld = async () =>
-  Effect.runSync((await importGameloop()).eGetWorld)
+const runGetWorld = async () => {
+  const module = await importGameloop()
 
-const runGetPickupItemsFor = async (key: string) =>
-  Effect.runSync((await importGameloop()).getPickupItemsFor(key))
+  return Effect.runSync(
+    module.eGetWorld.pipe(Effect.provide(module.DefaultGameStateStoreLive))
+  )
+}
+
+const runGetPickupItemsFor = async (key: string) => {
+  const module = await importGameloop()
+
+  return Effect.runSync(
+    module.getPickupItemsFor(key).pipe(
+      Effect.provide(module.DefaultGameStateStoreLive)
+    )
+  )
+}
 
 const exportedConstBody = (source: string, constName: string): string => {
   const start = source.indexOf(`export const ${constName}`)
@@ -78,11 +90,12 @@ describe("initial world", () => {
 
       expect(bspCalls).toBe(0)
 
-      Effect.runSync(module.eGetWorld)
-
-      expect(bspCalls).toBe(1)
-
-      Effect.runSync(module.eGetWorld)
+      Effect.runSync(
+        Effect.gen(function*() {
+          yield* module.eGetWorld
+          yield* module.eGetWorld
+        }).pipe(Effect.provide(module.DefaultGameStateStoreLive))
+      )
 
       expect(bspCalls).toBe(1)
     } finally {
@@ -131,12 +144,11 @@ describe("initial world", () => {
 
     expect(eagerSource).not.toContain("BSPGenLevel(")
     expect(eagerSource).not.toContain("GameState.make(")
-    expect(gameloopSource).toMatch(
-      /const _state:\s*\{\s*gameState:\s*TGameState\s*\|\s*undefined\s*log:\s*\(s:\s*string\)\s*=>\s*void\s*\}\s*=\s*\{\s*gameState:\s*undefined,/u
-    )
-    expect(gameloopSource).toContain(
-      "const eGetGameState = suspend(() => succeed(getOrInitializeGameState()))"
-    )
+    expect(gameloopSource).not.toContain("const _state")
+    expect(gameloopSource).not.toContain("gameState: undefined")
+    expect(gameloopSource).toContain("GameStateStore")
+    expect(gameloopSource).toContain("DefaultGameStateStoreLive")
+    expect(gameloopSource).toContain("store.modifyEffect")
   })
 })
 

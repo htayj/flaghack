@@ -14,8 +14,18 @@ type VEntity = { readonly dist: number; readonly entity: Entity }
 const posEq = (a: TPos, b: TPos) =>
   a.x === b.x && a.y === b.y && a.z === b.z
 
-const compareDistance = (a: VEntity, b: VEntity) =>
-  a.dist < b.dist ? -1 : b.dist < a.dist ? 1 : 0
+const compareOrdinal = (a: string, b: string) => {
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
+const compareDistance = (a: VEntity, b: VEntity) => {
+  if (a.dist < b.dist) return -1
+  if (b.dist < a.dist) return 1
+
+  return compareOrdinal(a.entity.key, b.entity.key)
+}
 
 const neighbors = (
   e: Entity,

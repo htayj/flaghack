@@ -11,14 +11,17 @@ state until narrower runtime/domain refactors land.
   repository service.
 - `src/GameRepository.ts` exposes `GameRepository`, the Effect service
   used by handlers to read logs, world state, inventory, pickup data,
-  and player actions.
+  and player actions. It depends on the default `GameStateStore` layer
+  for lazy, atomic in-process state updates.
 - `src/server.ts` composes the Node HTTP server layer with CORS,
   `HttpMiddleware.logger`, configuration, `ApiLive`, and
   `GameRepository.Default`.
 - The current in-process game loop, state/log storage, world generation,
   action handling, and AI planning live under `src/gameloop.ts`,
-  `src/gamestate.ts`, `src/log.ts`, `src/world*.ts`, `src/actions.ts`,
-  and `src/ai/`.
+  `src/GameStateStore.ts`, `src/gamestate.ts`, `src/log.ts`,
+  `src/keyGenerator.ts`, `src/world*.ts`, `src/actions.ts`, and
+  `src/ai/`. BSP level generation uses Effect `Random` plus the
+  deterministic counter key generator at its runtime boundary.
 
 ## Validation and workflow notes
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { HashMap } from "effect"
 import { readFileSync } from "node:fs"
-import { floor, wall } from "../src/terrain.js"
+import { makeFloor, makeWall } from "../src/terrain.js"
 import type { Entity } from "../src/world.js"
 import { dijkstraPath } from "../src/worldUtil.js"
 
@@ -27,8 +27,8 @@ describe("dijkstraPath", () => {
   })
 
   it("reaches a diagonal neighbor only when diagonals are allowed", () => {
-    const start = floor(0, 0, 0)
-    const end = floor(1, 1, 0)
+    const start = makeFloor("start", 0, 0, 0)
+    const end = makeFloor("end", 1, 1, 0)
     const world = worldFrom([start, end])
 
     expect(
@@ -42,9 +42,9 @@ describe("dijkstraPath", () => {
   })
 
   it("returns reverse backtrack entities excluding end and including start", () => {
-    const start = floor(0, 0, 0)
-    const wallCandidate = wall(1, 0, 0)
-    const end = floor(2, 0, 0)
+    const start = makeFloor("start", 0, 0, 0)
+    const wallCandidate = makeWall("wall-candidate", 1, 0, 0)
+    const end = makeFloor("end", 2, 0, 0)
     const world = worldFrom([start, wallCandidate, end])
     const path = dijkstraPath(start.at, end.at, unitCost, world, true)
 
@@ -54,8 +54,8 @@ describe("dijkstraPath", () => {
   })
 
   it("returns an empty path for missing or unreachable endpoints", () => {
-    const start = floor(0, 0, 0)
-    const unreachableEnd = floor(3, 0, 0)
+    const start = makeFloor("start", 0, 0, 0)
+    const unreachableEnd = makeFloor("unreachable-end", 3, 0, 0)
     const world = worldFrom([start, unreachableEnd])
 
     expect(
@@ -68,12 +68,12 @@ describe("dijkstraPath", () => {
   })
 
   it("prefers a longer floor-only route over a shorter high-cost wall route", () => {
-    const start = floor(0, 0, 0)
-    const directWall = wall(1, 0, 0)
-    const end = floor(2, 0, 0)
-    const detourA = floor(0, 1, 0)
-    const detourB = floor(1, 1, 0)
-    const detourC = floor(2, 1, 0)
+    const start = makeFloor("start", 0, 0, 0)
+    const directWall = makeWall("direct-wall", 1, 0, 0)
+    const end = makeFloor("end", 2, 0, 0)
+    const detourA = makeFloor("detour-a", 0, 1, 0)
+    const detourB = makeFloor("detour-b", 1, 1, 0)
+    const detourC = makeFloor("detour-c", 2, 1, 0)
     const world = worldFrom([
       start,
       directWall,

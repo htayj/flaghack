@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const bPlayingSourcePath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../src/components/BPlaying.tsx"
-)
+const testDir = dirname(fileURLToPath(import.meta.url))
+const bPlayingSourcePath = join(testDir, "../src/components/BPlaying.tsx")
+const tuiGameSourcePath = join(testDir, "../src/tuiGame.ts")
 
 const readBPlayingSource = () => readFileSync(bPlayingSourcePath, "utf8")
+const readTuiGameSource = () => readFileSync(tuiGameSourcePath, "utf8")
 
 const capturedGameBox = /const\s+gameBox\s*=\s*gameref\.current/
 const gameBoxFocus = /gameBox\?\.focus\s*\(\s*\)/
@@ -33,9 +33,9 @@ const modeUseStateInitializer =
 const modeUseStateBinding =
   /const\s*\[\s*mode\b[\s\S]*?\]\s*=\s*useState\b/
 const drawWorldHelperSource =
-  /const\s+drawWorld\s*=\s*\([\s\S]*?\n}\nexport\s+default\s+function\s+BPlaying\b/
+  /export\s+const\s+drawWorld\s*=\s*\([\s\S]*?\n}\n/
 const drawWorldWorldOnlySignature =
-  /const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*,\s*travelTarget\?\s*:\s*Pos\s*\)\s*:\s*Tiles\s*=>\s*{/
+  /export\s+const\s+drawWorld\s*=\s*\(\s*world\s*:\s*World\s*,\s*travelTarget\?\s*:\s*Pos\s*\)\s*:\s*Tiles\s*=>\s*{/
 const consoleLogReference = /console\s*\.\s*log/
 
 const expectedGameKeys = [
@@ -123,7 +123,7 @@ describe("CLI BPlaying key subscription static guards", () => {
   })
 
   it("keeps drawWorld free of default console.log debug dependencies", () => {
-    const source = readBPlayingSource()
+    const source = readTuiGameSource()
     const helperSource = source.match(drawWorldHelperSource)?.[0] ?? ""
 
     expect(helperSource).not.toBe("")

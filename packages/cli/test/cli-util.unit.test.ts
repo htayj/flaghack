@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const utilSourcePath = join(testDir, "../src/util.ts")
-const bPlayingSourcePath = join(testDir, "../src/components/BPlaying.tsx")
+const tuiGameSourcePath = join(testDir, "../src/tuiGame.ts")
 
 const getExportedConstSource = (source: string, name: string) => {
   const exportStart = source.indexOf(`export const ${name}`)
@@ -99,13 +99,13 @@ describe("CLI nullMatrix", () => {
       readFileSync(utilSourcePath, "utf8"),
       "nullMatrix"
     )
-    const bPlayingSource = getExportedConstSource(
-      readFileSync(bPlayingSourcePath, "utf8"),
+    const tuiGameSource = getExportedConstSource(
+      readFileSync(tuiGameSourcePath, "utf8"),
       "nullMatrix"
     )
 
     expectNoAliasedRowFill(utilSource)
-    expectNoAliasedRowFill(bPlayingSource)
+    expectNoAliasedRowFill(tuiGameSource)
   })
 })
 

@@ -56,6 +56,17 @@ describe("CLI popup selection static guards", () => {
     }
   })
 
+  it("cancels with escape and filters stale marked keys before submit", () => {
+    for (const path of popupComponentPaths) {
+      const source = readSource(path)
+
+      expect(source).toContain("\"escape\"")
+      expect(source).toContain("setMarked(new Set())")
+      expect(source).toContain(".filter((key) =>")
+      expect(source).toContain(".has(key)")
+    }
+  })
+
   it("does not keep empty else branches in popup keyboard handlers", () => {
     for (const path of popupComponentPaths) {
       expect(readSource(path)).not.toMatch(emptyElseBranch)

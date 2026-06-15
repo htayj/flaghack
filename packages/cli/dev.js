@@ -8,7 +8,7 @@ function restart() {
     child.kill("SIGTERM")
   }
   process.stdout.write("\x1Bc")
-  child = spawn("pnpm", ["run", "play"], {
+  child = spawn("pnpm", ["run", "play:blessed"], {
     stdio: "inherit"
   })
 }

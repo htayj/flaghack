@@ -19,6 +19,11 @@ const rootTsconfigBuildJsonPath = join(
   "tsconfig.build.json"
 )
 const rootVitestSharedTsPath = join(repositoryRoot, "vitest.shared.ts")
+const tmuxE2eSmokePath = join(repositoryRoot, "scripts/tmux-e2e-smoke.ts")
+const tmuxFeatureCheckPath = join(
+  repositoryRoot,
+  "scripts/tmux-feature-check.ts"
+)
 
 const packageManifests = [
   {
@@ -142,6 +147,11 @@ const readRootEslintConfigMjs = (): string =>
 const readRootVitestSharedTs = (): string =>
   readFileSync(rootVitestSharedTsPath, "utf8")
 
+const readTmuxScriptSources = (): ReadonlyArray<string> => [
+  readFileSync(tmuxE2eSmokePath, "utf8"),
+  readFileSync(tmuxFeatureCheckPath, "utf8")
+]
+
 const readPackageManifest = (path: string): PackageManifest =>
   JSON.parse(readFileSync(path, "utf8")) as PackageManifest
 
@@ -169,6 +179,52 @@ describe("root package metadata", () => {
     const rootPackageJson = readRootPackageJson()
 
     expect(rootPackageJson.scripts?.verify).toBe("pnpm verify:gates")
+  })
+
+  it("uses Charmbracelet as the default CLI while retaining explicit legacy and experiment launch scripts", () => {
+    const rootPackageJson = readRootPackageJson()
+
+    expect(rootPackageJson.scripts?.cli).toBe("pnpm run cli:charm")
+    expect(rootPackageJson.scripts?.["cli:charm"]).toBe(
+      "cd packages/cli/charm && go run ."
+    )
+    expect(rootPackageJson.scripts?.["cli:charmbracelet"]).toBe(
+      "pnpm run cli:charm"
+    )
+    expect(rootPackageJson.scripts?.["cli:blessed"]).toBe(
+      "tsx packages/cli/src/bin.ts playB"
+    )
+    expect(rootPackageJson.scripts?.["cli:tsx"]).toBe(
+      "pnpm run cli:blessed"
+    )
+    expect(rootPackageJson.scripts?.["cli:ink"]).toBe(
+      "tsx packages/cli/src/cliInk.tsx"
+    )
+    expect(rootPackageJson.scripts?.["cli:terminal-kit"]).toBe(
+      "tsx packages/cli/src/cliTerminalKit.ts"
+    )
+    expect(rootPackageJson.scripts?.["cli:termkit"]).toBe(
+      "pnpm run cli:terminal-kit"
+    )
+    expect(rootPackageJson.scripts?.["test:charm"]).toBe(
+      "cd packages/cli/charm && go test ./..."
+    )
+    expect(rootPackageJson.scripts?.["verify:smoke"]).toContain(
+      "pnpm test:charm"
+    )
+    expect(rootPackageJson.scripts?.["verify:gates"]).toContain(
+      "pnpm test:charm"
+    )
+  })
+
+  it("runs tmux CLI smoke checks through the default Charmbracelet launcher", () => {
+    for (const source of readTmuxScriptSources()) {
+      expect(source).toContain(
+        "const DEFAULT_CLI_COMMAND = \"pnpm run cli\""
+      )
+      expect(source).toContain("FLAGHACK_TMUX_CLI_COMMAND")
+      expect(source).not.toContain("\"pnpm run cli:tsx\"")
+    }
   })
 
   it("uses bounded source globs for root lint", () => {

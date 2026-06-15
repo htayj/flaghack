@@ -12,6 +12,7 @@ Audit-remediation work should use the project gates documented in [[file:docs/te
   pnpm format:check
   pnpm check
   pnpm test:unit
+  pnpm test:charm
   pnpm test:perf
   pnpm test:api
   pnpm test:e2e:tmux
@@ -32,7 +33,7 @@ The full build/codegen lifecycle is still known to be fragile; this setup does n
   pnpm install
 #+END_SRC
 
-For the Nix development shell, run:
+The default CLI uses the Go Charmbracelet frontend. Use the Nix development shell for the matching Node, pnpm, Go, Python, and tmux toolchain:
 
 #+BEGIN_SRC bash
   nix develop
@@ -48,7 +49,7 @@ and then in a second terminal run:
 #+BEGIN_SRC bash
   pnpm run cli
 #+END_SRC
-to start the client
+to start the default Charmbracelet terminal client
 
 *** TODO:  hotreloading
 

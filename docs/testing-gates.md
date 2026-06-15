@@ -32,7 +32,7 @@ corepack prepare pnpm@9.10.0 --activate
 pnpm install --frozen-lockfile
 ```
 
-The Nix shell includes Node, Corepack, Python for `node-gyp`, and `tmux` for the terminal E2E smoke gate.
+The Nix shell includes Node, Corepack, Go for the default Charmbracelet CLI, Python for `node-gyp`, and `tmux` for the terminal E2E smoke gate.
 
 ## Generated-file policy
 
@@ -61,6 +61,7 @@ pnpm generated:guard
 pnpm format:check
 pnpm check
 pnpm test:unit
+pnpm test:charm
 pnpm test:perf
 pnpm test:api
 pnpm test:e2e:tmux
@@ -68,7 +69,7 @@ pnpm test:e2e:tmux
 FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux
 ```
 
-`pnpm verify:smoke` runs the generated-file guard plus the four smoke gates:
+`pnpm verify:smoke` runs the generated-file guard plus the smoke gates:
 
 ```sh
 pnpm verify:smoke
@@ -87,6 +88,14 @@ pnpm test:unit
 ```
 
 Runs Vitest in non-watch workspace mode across `packages/*/vitest.config.ts`, including web smoke tests.
+
+### Charmbracelet CLI gate
+
+```sh
+pnpm test:charm
+```
+
+Runs `go test ./...` in `packages/cli/charm`. This verifies the Go Bubble Tea/Lip Gloss frontend and requires the Go toolchain from `nix develop` or an equivalent local install.
 
 ### Performance gate
 
@@ -110,7 +119,7 @@ Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, w
 pnpm test:e2e:tmux
 ```
 
-Requires `tmux`. The runner creates a unique session, starts the server in one pane, waits for API readiness, starts the CLI in another pane, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup.
+Requires `tmux`. The runner creates a unique session, starts the server in one pane, waits for API readiness, starts the default Charmbracelet CLI in another pane, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
 
 ### Feature-specific tmux gate
 
@@ -120,6 +129,7 @@ FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux
 
 The feature gate also starts a disposable server and CLI in a unique tmux session, but the sent keys and assertions are configurable:
 
+- `FLAGHACK_TMUX_CLI_COMMAND`: optional launch command; defaults to `pnpm run cli`, the Charmbracelet frontend.
 - `FLAGHACK_TMUX_KEYS`: JSON array of tmux `send-keys` tokens, for example `'["g", "l"]'`.
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.

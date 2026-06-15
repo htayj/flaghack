@@ -16,7 +16,7 @@ type Props = {
   log: (l: string) => void
 }
 
-const controlKeys: Array<string> = ["q", "r", ","]
+const controlKeys: Array<string> = ["q", "r", ",", "escape"]
 const submitKeys: Array<string> = [" ", "space"]
 
 export default function PickupPopup(
@@ -37,7 +37,7 @@ export default function PickupPopup(
     }
 
     const handleControlKey = (input: string) => {
-      if (input === "q" || input === "r") {
+      if (input === "q" || input === "r" || input === "escape") {
         setMarked(new Set())
         onCancel()
         return
@@ -58,6 +58,10 @@ export default function PickupPopup(
   }, [markAll, onCancel, pickupRef])
 
   useEffect(() => {
+    setMarked(new Set())
+  }, [items])
+
+  useEffect(() => {
     const popup = pickupRef.current
     if (!popup) {
       return undefined
@@ -65,7 +69,11 @@ export default function PickupPopup(
 
     const handleSubmitKey = (input: string) => {
       if (input === " " || input === "space") {
-        onSubmit(Array.from(marked))
+        const validMarked = Array.from(marked).filter((key) =>
+          invMap.has(key)
+        )
+        setMarked(new Set())
+        onSubmit(validMarked)
       }
     }
 
@@ -76,7 +84,7 @@ export default function PickupPopup(
         popup.removeListener(`key ${key}`, handleSubmitKey)
       }
     }
-  }, [marked, onSubmit, pickupRef])
+  }, [invMap, marked, onSubmit, pickupRef])
 
   return (
     <box

@@ -17,6 +17,7 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             corepack
+            go
             nodejs
             tmux
             # For systems that do not ship with Python by default (required by `node-gyp`)

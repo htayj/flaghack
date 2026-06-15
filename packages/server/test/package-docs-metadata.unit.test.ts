@@ -44,14 +44,15 @@ const packageDocs = [
     name: "@flaghack/cli",
     manifestPath: "packages/cli/package.json",
     readmePath: "packages/cli/README.md",
-    description: "Flag Hack terminal client and Node HTTP client runtime.",
+    description:
+      "Flag Hack Charmbracelet terminal client and Node HTTP client runtime.",
     expectedHeading: "# @flaghack/cli",
     requiredPhrases: [
+      "charm/",
+      "Charmbracelet",
       "src/Cli.ts",
       "src/GameClient.ts",
-      "Node HTTP client runtime",
-      "blessed",
-      "react-blessed"
+      "Node HTTP client runtime"
     ]
   },
   {

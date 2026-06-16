@@ -405,7 +405,7 @@
       ]
     },
     "flag-hack-feature-gated": {
-      "description": "Flag Hack default feature workflow with planning, implementation, typecheck, unit, disposable server restart, lint, tmux smoke E2E, feature-specific tmux use verification, code review, and an explicitly approved commit stage.",
+      "description": "Flag Hack default feature workflow with planning, implementation, typecheck, unit, disposable server restart, lint, tmux smoke E2E, feature-specific tmux use verification, code review, and an automatic commit stage.",
       "stages": [
         {
           "id": "plan-feature",
@@ -808,8 +808,8 @@
         {
           "id": "commit",
           "kind": "COMMIT",
-          "title": "Commit approved Flag Hack feature/change",
-          "description": "Create a git commit for the completed, reviewed, and validated change when commit approval is explicitly granted.",
+          "title": "Commit Flag Hack feature/change",
+          "description": "Create a git commit for the completed, reviewed, and validated change when the commit stage becomes ready.",
           "dependsOn": [
             "review"
           ],
@@ -820,14 +820,14 @@
             "git-workflow"
           ],
           "promptInstructions": [
-            "This stage is mechanically gated by task graph commit approval and must remain skipped unless commit approval is explicitly granted for the run.",
+            "Run this stage automatically when it becomes ready after validation and code review.",
             "Before committing, inspect git status and ensure unrelated files such as chatgpt.txt are not staged.",
             "Commit only the reviewed implementation and validation-supporting changes from this task graph.",
             "Use a concise conventional commit message that matches the completed change.",
             "Do not push; pushing requires a separate explicit approval/stage."
           ],
           "stableKey": "custom.flag-hack-feature-gated.commit",
-          "purpose": "Commit the completed Flag Hack feature/change after validation and code review when explicitly approved.",
+          "purpose": "Commit the completed Flag Hack feature/change after validation and code review.",
           "inputs": [
             "Reviewed implementation diff",
             "Validation and code review evidence"
@@ -836,7 +836,7 @@
             "Git commit hash or explicit skipped/blocked report"
           ],
           "acceptanceChecks": [
-            "Commit approval is present before staging or committing",
+            "Review and validation stages succeeded before staging or committing",
             "Unrelated files are not staged",
             "Commit hash is recorded when the stage runs"
           ],

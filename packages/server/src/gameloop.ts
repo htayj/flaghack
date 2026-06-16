@@ -8,7 +8,7 @@ import {
   tap,
   withLogSpan
 } from "effect/Effect"
-import { filter, findFirst } from "effect/HashMap"
+import { filter } from "effect/HashMap"
 import { match as omatch } from "effect/Option"
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
@@ -25,27 +25,49 @@ import {
 import { GameStateStore } from "./GameStateStore.js"
 import { logger } from "./log.js"
 import type { TPos } from "./position.js"
-import { BSPGenLevel, isItem, type World } from "./world.js"
+import {
+  CampgroundGenLevel,
+  type Entity,
+  isItem,
+  type World
+} from "./world.js"
 
 type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
-const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> =>
-  omatch(
-    world.pipe(findFirst((entity) => entity._tag === "floor")),
-    {
-      onNone: () =>
-        Effect.dieMessage(
-          "Initial level generation produced no floor tiles; cannot place player"
-        ),
-      onSome: ([, floorEntity]) => Effect.succeed(floorEntity.at)
-    }
-  )
+const campgroundSpawnAnchor: TPos = { x: 60, y: 24, z: 0 }
+
+const spawnDistanceSquared = (entity: Entity): number =>
+  (entity.at.x - campgroundSpawnAnchor.x) ** 2
+  + (entity.at.y - campgroundSpawnAnchor.y) ** 2
+  + (entity.at.z - campgroundSpawnAnchor.z) ** 2
+
+const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> => {
+  const spawnFloor = Array.from(world.pipe(HashMap.values))
+    .filter((entity) => entity._tag === "floor")
+    .reduce<Entity | undefined>(
+      (closest, candidate) =>
+        closest === undefined
+          || spawnDistanceSquared(candidate)
+            < spawnDistanceSquared(closest)
+          ? candidate
+          : closest,
+      undefined
+    )
+
+  return spawnFloor === undefined
+    ? Effect.dieMessage(
+      "Initial level generation produced no floor tiles; cannot place player"
+    )
+    : Effect.succeed(spawnFloor.at)
+}
 
 const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
   function*() {
-    const testLevel: World = yield* BSPGenLevel(777, 0).pipe(Effect.orDie)
+    const testLevel: World = yield* CampgroundGenLevel(777, 0).pipe(
+      Effect.orDie
+    )
     const testLevelPlayerLocation = yield* selectRequiredSpawnFloor(
       testLevel
     )

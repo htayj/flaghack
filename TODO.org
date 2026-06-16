@@ -1,0 +1,27 @@
+* DONE add eslint rules to enforce Effect-ts on the backend and domain. We should use Effect-ts whenever possible and write in a functional-programming style, using Effect schemas and effect api layers, as well as effect data structures and effect logic (eg for option, either, etc). When they are added, fix all current violations.
+* DONE the event log should be at the top of the playing screen, above the map
+* DONE there should be a status box at the bottom of the screen, showing character name, stats, dungeon level, etc, similar to how it is in nethack.
+* DONE add the ability to "look" at the content of other tiles similar to how it works in nethack. ESC should exit look mode.
+* DONE add a campground level as the starting level.
+It should look like a burn (eg burning man).
+
+The campground should contain roads, treated like a corridor is inside the dungeon.
+There should be tents
+There should be field, treated like the inside of a room is inside the dungeon
+
+There should be camps group tents, but the player should not see camp boundaries. Camps can be theme camps, in which case there should be a sign in front of the camp saying the camp name.
+
+It should generate one or more interconnected loops of road.
+
+It should always include one effigy (which is an open air, multi tile sculpture) and one temple (which is also an effigy but is constructed more like a building, eg the user can go "inside" of it in some way).
+
+there are KMZ maps of burns in ~/Downloads (all .kmz files in the folder) that you should reference
+
+Unlike the dungeon, the campground can (and should) be multiple "screen"s large, and when in the campground the camera centers on the player at all time, following the player
+
+The campground must be randomly generated, but it should use a different method than the dungeon (eg probably shouldnt use binary partition) - research various level generation techniques and for now choose one that is suitable to implement, but make a note of the various options (we may want to try them and compare and contrast them later)
+
+The status bar dungeon level when in the campground should say "burn"
+
+* DONE add coolers as containers. Coolers should be spawned in camps on the campground. They should contain comestibles and drinks. They should mostly contain beer. The food should mostly be camping-related food that requires refridgeration
+* DONE npcs should spawn on the campground. Most of them should be hippies, but some of them should be named humans. the names of the humans should be either first names or "burn names" (nicknames). we should not show the user whether it is a real name or burn name. Some humans are known by their real name, some are known by their burn name.

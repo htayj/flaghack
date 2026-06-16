@@ -40,6 +40,7 @@ const getTile = (e: Entity | undefined): Tile =>
       flag: () => tile({ color: "yellow", bright: true, char: "F" }),
       water: () => tile({ color: "cyan", char: "!" }),
       booze: () => tile({ color: "yellow", char: "!" }),
+      beer: () => tile({ color: "yellow", bright: true, char: "!" }),
       milk: () => tile({ color: "white", char: "!" }),
       acid: () => tile({ color: "green", char: "!" }),
       bacon: () => tile({ color: "red", bright: true, char: "%" }),
@@ -47,11 +48,19 @@ const getTile = (e: Entity | undefined): Tile =>
       trailmix: () => tile({ color: "yellow", char: "%" }),
       pancake: () => tile({ color: "white", bright: true, char: "%" }),
       soup: () => tile({ color: "red", char: "%" }),
+      hotdog: () => tile({ color: "red", bright: true, char: "%" }),
+      cheese: () => tile({ color: "yellow", bright: true, char: "%" }),
+      salsa: () => tile({ color: "red", char: "%" }),
+      cooler: () => tile({ color: "cyan", bright: true, char: "C" }),
       hammer: () => tile({ color: "white", bright: true, char: "T" }),
       nails: () => tile({ color: "cyan", bright: true, char: ":" }),
       wall: () => tile({ color: "white", char: "#" }),
       tunnel: () => tile({ color: "black", bright: true, char: "," }),
-      floor: () => tile({ color: "black", bright: true, char: "." })
+      floor: () => tile({ color: "black", bright: true, char: "." }),
+      tent: () => tile({ color: "yellow", bright: true, char: "^" }),
+      sign: () => tile({ color: "cyan", bright: true, char: "?" }),
+      effigy: () => tile({ color: "red", bright: true, char: "Y" }),
+      temple: () => tile({ color: "magenta", bright: true, char: "Ω" })
     })(e)
     : { color: "black", char: ".", bright: true }
 

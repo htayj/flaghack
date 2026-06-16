@@ -17,6 +17,23 @@ const entityByKey = (gs: typeof GameState.Type, key: string) =>
     entity.key === key
   )
 
+const floorAt = (key: string, x: number, y: number): Entity => ({
+  _tag: "floor",
+  at: { x, y, z: 0 },
+  in: "world",
+  key
+})
+
+const campgroundMarkerAt = (
+  tag: "tent" | "sign" | "effigy" | "temple"
+): Entity => ({
+  _tag: tag,
+  at: { x: 1, y: 0, z: 0 },
+  in: "world",
+  key: `${tag}-1`,
+  ...(tag === "sign" ? { name: "Camp Functional" } : {})
+} as Entity)
+
 describe("server actions", () => {
   it("does not run nested effects in action handlers", () => {
     const actionsSource = readFileSync(actionsSourcePath, "utf8")
@@ -59,6 +76,48 @@ describe("server actions", () => {
 
     expect(entityByKey(next, item.key)?.in).toBe(actor.key)
     expect(entityByKey(next, secondItem.key)?.in).toBe(actor.key)
+  })
+
+  it("blocks movement into ungenerated void outside terrain bounds", () => {
+    const actor = player(0, 0, 0)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        ["floor-0", floorAt("floor-0", 0, 0)]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.move({ dir: "W" }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
+  })
+
+  it("allows movement onto passable campground marker terrain", () => {
+    for (const tag of ["tent", "sign", "effigy", "temple"] as const) {
+      const actor = player(0, 0, 0)
+      const marker = campgroundMarkerAt(tag)
+      const gs = GameState.make({
+        world: HashMap.fromIterable<string, Entity>([
+          [actor.key, actor],
+          ["floor-0", floorAt("floor-0", 0, 0)],
+          [marker.key, marker]
+        ])
+      })
+
+      const next = Effect.runSync(
+        doAction(gs, {
+          action: EAction.move({ dir: "E" }),
+          entity: actor
+        })
+      )
+
+      expect(entityByKey(next, actor.key)?.at).toEqual(marker.at)
+    }
   })
 
   it("moves dropMulti inventory item keys to the player's location", () => {

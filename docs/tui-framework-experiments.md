@@ -62,6 +62,7 @@ The old blessed/react-blessed frontend is still available through `pnpm run cli:
 The Charmbracelet frontend implements the core CLI behavior:
 
 - world rendering and inventory display
+- a top event log plus a bottom NetHack-style status box with player name, placeholder stats/health, and dungeon level
 - NetHack movement keys: `h/j/k/l/y/u/b/n`, Shift-direction, Ctrl-direction, `g`/`G`, `m`/`M`
 - rest with `.`
 - travel mode with `_`

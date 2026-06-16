@@ -15,9 +15,25 @@ import { Data, Effect, HashMap, Option, Random } from "effect"
 import { range } from "effect/Array"
 import { filter, findFirst } from "effect/HashMap"
 import { Set } from "immutable"
-import { makeAcidcop, makeHippie, player } from "./creatures.js"
+import {
+  campgroundHumanDisplayNames,
+  hippie,
+  makeAcidcop,
+  makeHippie,
+  player,
+  ranger
+} from "./creatures.js"
 import { movePosition } from "./entity.js"
-import { makeGroundFlag, makeWaterBottle } from "./items.js"
+import {
+  beer,
+  cheese,
+  type Cooler,
+  cooler,
+  hotdog,
+  makeGroundFlag,
+  makeWaterBottle,
+  salsa
+} from "./items.js"
 import {
   CounterKeyGeneratorLive,
   type KeyGenerator
@@ -25,7 +41,17 @@ import {
 // import { log } from "./log.js"
 import { collideP, shift } from "./position.js"
 import type { TPos } from "./position.js"
-import { floor, isTerrain, testWalls, tunnel, wall } from "./terrain.js"
+import {
+  effigy,
+  floor,
+  isTerrain,
+  sign,
+  temple,
+  tent,
+  testWalls,
+  tunnel,
+  wall
+} from "./terrain.js"
 import { dijkstraPath } from "./worldUtil.js"
 
 export type Entity = typeof EntitySchema.Type
@@ -60,6 +86,8 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
 ) => container.key === contained.in
 export const isCreature = conforms(AnyCreature)
 export const isImpassable = (e: Entity) => e._tag === "wall"
+export const isPassableTerrain = (e: Entity) =>
+  isTerrain(e) && !isImpassable(e)
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
 export const isHippie = conforms(Hippie)
 export const isItem = conforms(AnyItem)
@@ -80,18 +108,23 @@ export const actPosition =
       onSome: (e: T) => {
         const newPosition = shift(e.at, by)
         const eCollides = collideP(newPosition)
-        const collidedEntity = w.pipe(
-          filter((o) => eCollides(o.at)),
+        const destinationEntities = w.pipe(filter((o) => eCollides(o.at)))
+        const destinationTerrain = destinationEntities.pipe(
+          findFirst(isPassableTerrain)
+        )
+        const collidedEntity = destinationEntities.pipe(
           findFirst((e) =>
             isCreature(e) || (isTerrain(e) && isImpassable(e))
-          ) // todo: find a better way of detecting collision
-        )
+          )
+        ) // todo: find a better way of detecting collision
 
         // log(`collided entity ${JSON.stringify(collidedEntity)}`)
-        if (Option.isNone(collidedEntity)) {
+        if (
+          Option.isSome(destinationTerrain)
+          && Option.isNone(collidedEntity)
+        ) {
           return Option.some(movePosition(e, by))
         }
-        if (isTerrain(collidedEntity)) return Option.some(e)
         return Option.some(e)
       }
     })(e)
@@ -502,6 +535,600 @@ const _BSPGenLevel = (
 
     return yield* _linkLeaves(doneA, doneB)
   })
+
+const CAMPGROUND_WIDTH = 120
+const CAMPGROUND_HEIGHT = 48
+const CAMPGROUND_HIPPIE_COUNT = 18
+const CAMPGROUND_NAMED_HUMAN_COUNT = 5
+
+type GridPosition = {
+  readonly x: number
+  readonly y: number
+}
+
+type CampgroundGeometry = {
+  readonly centerX: number
+  readonly centerY: number
+  readonly outerLeft: number
+  readonly outerRight: number
+  readonly outerTop: number
+  readonly outerBottom: number
+  readonly innerLeft: number
+  readonly innerRight: number
+  readonly innerTop: number
+  readonly innerBottom: number
+  readonly templeLeft: number
+  readonly templeRight: number
+  readonly templeTop: number
+  readonly templeBottom: number
+}
+
+type ThemeCampLayout = {
+  readonly name: string
+  readonly signPosition: GridPosition
+  readonly tentPositions: ReadonlyArray<GridPosition>
+  readonly coolerPosition: GridPosition
+}
+
+const gridKey = ({ x, y }: GridPosition): string => `${x},${y}`
+
+const uniqueGridPositions = (
+  coordinates: ReadonlyArray<GridPosition>
+): Array<GridPosition> =>
+  Array.from(
+    new globalThis.Map(
+      coordinates.map((coordinate) =>
+        [gridKey(coordinate), coordinate] as const
+      )
+    ).values()
+  )
+
+const horizontalLineCoordinates = (
+  left: number,
+  right: number,
+  y: number
+): Array<GridPosition> =>
+  range(Math.min(left, right), Math.max(left, right)).map((x) => ({
+    x,
+    y
+  }))
+
+const verticalLineCoordinates = (
+  x: number,
+  top: number,
+  bottom: number
+): Array<GridPosition> =>
+  range(Math.min(top, bottom), Math.max(top, bottom)).map((y) => ({
+    x,
+    y
+  }))
+
+const rectangularLoopCoordinates = (
+  left: number,
+  right: number,
+  top: number,
+  bottom: number
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    horizontalLineCoordinates(left, right, top)
+      .concat(horizontalLineCoordinates(left, right, bottom))
+      .concat(verticalLineCoordinates(left, top, bottom))
+      .concat(verticalLineCoordinates(right, top, bottom))
+  )
+
+const makeCampgroundGeometry: Effect.Effect<
+  CampgroundGeometry,
+  LevelGenerationError
+> = Effect.gen(function*() {
+  const centerX = yield* randomIntInclusive(
+    56,
+    64,
+    "campground center x"
+  )
+  const centerY = yield* randomIntInclusive(
+    23,
+    25,
+    "campground center y"
+  )
+  const outerRadiusX = yield* randomIntInclusive(
+    44,
+    48,
+    "outer road loop width"
+  )
+  const outerRadiusY = yield* randomIntInclusive(
+    16,
+    18,
+    "outer road loop height"
+  )
+  const innerRadiusX = yield* randomIntInclusive(
+    23,
+    27,
+    "inner road loop width"
+  )
+  const innerRadiusY = yield* randomIntInclusive(
+    7,
+    9,
+    "inner road loop height"
+  )
+
+  return {
+    centerX,
+    centerY,
+    outerLeft: centerX - outerRadiusX,
+    outerRight: centerX + outerRadiusX,
+    outerTop: centerY - outerRadiusY,
+    outerBottom: centerY + outerRadiusY,
+    innerLeft: centerX - innerRadiusX,
+    innerRight: centerX + innerRadiusX,
+    innerTop: centerY - innerRadiusY,
+    innerBottom: centerY + innerRadiusY,
+    templeLeft: centerX - 6,
+    templeRight: centerX + 6,
+    templeTop: centerY - 4,
+    templeBottom: centerY + 4
+  }
+})
+
+const connectedRoadLoopCoordinates = (
+  geometry: CampgroundGeometry
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    rectangularLoopCoordinates(
+      geometry.outerLeft,
+      geometry.outerRight,
+      geometry.outerTop,
+      geometry.outerBottom
+    )
+      .concat(
+        rectangularLoopCoordinates(
+          geometry.innerLeft,
+          geometry.innerRight,
+          geometry.innerTop,
+          geometry.innerBottom
+        )
+      )
+      .concat(
+        verticalLineCoordinates(
+          geometry.centerX,
+          geometry.outerTop,
+          geometry.innerTop
+        )
+      )
+      .concat(
+        verticalLineCoordinates(
+          geometry.centerX,
+          geometry.innerBottom,
+          geometry.outerBottom
+        )
+      )
+      .concat(
+        horizontalLineCoordinates(
+          geometry.outerLeft,
+          geometry.innerLeft,
+          geometry.centerY
+        )
+      )
+      .concat(
+        horizontalLineCoordinates(
+          geometry.innerRight,
+          geometry.outerRight,
+          geometry.centerY
+        )
+      )
+  )
+
+const themeCampNames = [
+  "Camp Type Safety",
+  "Null Pointer Lounge",
+  "Dusty Generators",
+  "Temple of Tests",
+  "Static Mirage",
+  "The Side Effect"
+] as const
+
+const themeCampNameAt = (offset: number): string =>
+  themeCampNames.at(offset % themeCampNames.length) ?? "Camp Type Safety"
+
+const makeThemeCampLayouts = (
+  geometry: CampgroundGeometry
+): Effect.Effect<Array<ThemeCampLayout>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    const nameOffset = yield* randomIntInclusive(
+      0,
+      themeCampNames.length - 1,
+      "theme camp name offset"
+    )
+
+    return [
+      {
+        name: themeCampNameAt(nameOffset),
+        signPosition: {
+          x: geometry.centerX - 24,
+          y: geometry.outerTop + 2
+        },
+        tentPositions: [
+          { x: geometry.centerX - 30, y: geometry.outerTop + 3 },
+          { x: geometry.centerX - 27, y: geometry.outerTop + 4 },
+          { x: geometry.centerX - 24, y: geometry.outerTop + 3 },
+          { x: geometry.centerX - 21, y: geometry.outerTop + 4 }
+        ],
+        coolerPosition: {
+          x: geometry.centerX - 24,
+          y: geometry.outerTop + 5
+        }
+      },
+      {
+        name: themeCampNameAt(nameOffset + 1),
+        signPosition: {
+          x: geometry.innerRight + 9,
+          y: geometry.centerY - 5
+        },
+        tentPositions: [
+          { x: geometry.innerRight + 7, y: geometry.centerY - 7 },
+          { x: geometry.innerRight + 10, y: geometry.centerY - 7 },
+          { x: geometry.innerRight + 8, y: geometry.centerY + 5 },
+          { x: geometry.innerRight + 11, y: geometry.centerY + 6 }
+        ],
+        coolerPosition: {
+          x: geometry.innerRight + 9,
+          y: geometry.centerY - 4
+        }
+      },
+      {
+        name: themeCampNameAt(nameOffset + 2),
+        signPosition: {
+          x: geometry.centerX + 24,
+          y: geometry.outerBottom - 2
+        },
+        tentPositions: [
+          { x: geometry.centerX + 18, y: geometry.outerBottom - 4 },
+          { x: geometry.centerX + 21, y: geometry.outerBottom - 3 },
+          { x: geometry.centerX + 24, y: geometry.outerBottom - 4 },
+          { x: geometry.centerX + 27, y: geometry.outerBottom - 3 }
+        ],
+        coolerPosition: {
+          x: geometry.centerX + 24,
+          y: geometry.outerBottom - 5
+        }
+      }
+    ]
+  })
+
+const themeCampStructureCoordinates = (
+  layouts: ReadonlyArray<ThemeCampLayout>
+): Array<GridPosition> =>
+  layouts.flatMap((layout) =>
+    [layout.signPosition].concat(layout.tentPositions)
+  )
+
+const makeCoolerContents = (
+  container: Cooler
+): Effect.Effect<Array<Entity>, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const { x, y, z } = container.at
+    const beers = yield* Effect.forEach(
+      range(0, 4),
+      () => beer(x, y, z, container.key),
+      { concurrency: 1 }
+    )
+    const foods = yield* Effect.all([
+      hotdog(x, y, z, container.key),
+      cheese(x, y, z, container.key),
+      salsa(x, y, z, container.key)
+    ], { concurrency: 1 })
+
+    return [...beers, ...foods]
+  })
+
+const campgroundPlayerSpawnAnchor: GridPosition = { x: 60, y: 24 }
+
+const campgroundPlayerSpawnDistanceSquared = (
+  coordinate: GridPosition
+): number =>
+  (coordinate.x - campgroundPlayerSpawnAnchor.x) ** 2
+  + (coordinate.y - campgroundPlayerSpawnAnchor.y) ** 2
+
+const selectReservedPlayerSpawnCoordinate = (
+  fieldCoordinates: ReadonlyArray<GridPosition>
+): Effect.Effect<GridPosition, LevelGenerationError> => {
+  const spawnCoordinate = fieldCoordinates.reduce<
+    GridPosition | undefined
+  >(
+    (closest, candidate) =>
+      closest === undefined
+        || campgroundPlayerSpawnDistanceSquared(candidate)
+          < campgroundPlayerSpawnDistanceSquared(closest)
+        ? candidate
+        : closest,
+    undefined
+  )
+
+  return spawnCoordinate === undefined
+    ? Effect.fail(levelGenerationError("campground player spawn floor"))
+    : Effect.succeed(spawnCoordinate)
+}
+
+const chooseRandomCoordinate = (
+  availableCoordinates: ReadonlyArray<GridPosition>,
+  description: string
+): Effect.Effect<
+  readonly [GridPosition, Array<GridPosition>],
+  LevelGenerationError
+> =>
+  Effect.gen(function*() {
+    if (availableCoordinates.length === 0) {
+      return yield* Effect.fail(levelGenerationError(description))
+    }
+
+    const index = yield* randomIntInclusive(
+      0,
+      availableCoordinates.length - 1,
+      description
+    )
+    const coordinate = yield* getRequiredAt(
+      availableCoordinates,
+      index,
+      description
+    )
+
+    return [
+      coordinate,
+      availableCoordinates.filter((_, coordinateIndex) =>
+        coordinateIndex !== index
+      )
+    ] as const
+  })
+
+const chooseRandomCoordinates = (
+  availableCoordinates: ReadonlyArray<GridPosition>,
+  count: number,
+  description: string
+): Effect.Effect<Array<GridPosition>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    let remainingCoordinates = [...availableCoordinates]
+    const selectedCoordinates: Array<GridPosition> = []
+
+    for (const offset of range(0, count - 1)) {
+      const [coordinate, nextRemainingCoordinates] =
+        yield* chooseRandomCoordinate(
+          remainingCoordinates,
+          `${description} ${offset}`
+        )
+
+      selectedCoordinates.push(coordinate)
+      remainingCoordinates = nextRemainingCoordinates
+    }
+
+    return selectedCoordinates
+  })
+
+const campgroundHumanDisplayNameAt = (offset: number): string =>
+  campgroundHumanDisplayNames.at(
+    offset % campgroundHumanDisplayNames.length
+  ) ?? "Alex"
+
+const makeCampgroundNpcs = (
+  availableCoordinates: ReadonlyArray<GridPosition>,
+  dlvl: number
+): Effect.Effect<Array<Entity>, LevelGenerationError, KeyGenerator> =>
+  Effect.gen(function*() {
+    const spawnCoordinates = yield* chooseRandomCoordinates(
+      availableCoordinates,
+      CAMPGROUND_HIPPIE_COUNT + CAMPGROUND_NAMED_HUMAN_COUNT,
+      "campground npc spawn"
+    )
+    const nameOffset = yield* randomIntInclusive(
+      0,
+      campgroundHumanDisplayNames.length - 1,
+      "campground human display name offset"
+    )
+    const hippieCoordinates = spawnCoordinates.slice(
+      0,
+      CAMPGROUND_HIPPIE_COUNT
+    )
+    const humanCoordinates = spawnCoordinates.slice(
+      CAMPGROUND_HIPPIE_COUNT
+    )
+    const hippies = yield* Effect.forEach(
+      hippieCoordinates,
+      ({ x, y }) => hippie(x, y, dlvl, "hippie"),
+      { concurrency: 1 }
+    )
+    const humans = yield* Effect.forEach(
+      humanCoordinates.map((coordinate, offset) => ({
+        coordinate,
+        name: campgroundHumanDisplayNameAt(nameOffset + offset)
+      })),
+      ({ coordinate, name }) =>
+        ranger(coordinate.x, coordinate.y, dlvl, name),
+      { concurrency: 1 }
+    )
+
+    return [...hippies, ...humans]
+  })
+
+const openAirEffigyCoordinates = (
+  geometry: CampgroundGeometry
+): Array<GridPosition> => {
+  const center = {
+    x: geometry.outerLeft + 6,
+    y: geometry.outerTop + 3
+  }
+
+  return uniqueGridPositions([
+    center,
+    { x: center.x - 1, y: center.y },
+    { x: center.x + 1, y: center.y },
+    { x: center.x - 2, y: center.y + 1 },
+    { x: center.x + 2, y: center.y + 1 },
+    { x: center.x, y: center.y - 1 },
+    { x: center.x, y: center.y + 1 }
+  ])
+}
+
+const templeWallCoordinates = (
+  geometry: CampgroundGeometry
+): Array<GridPosition> =>
+  rectangularLoopCoordinates(
+    geometry.templeLeft,
+    geometry.templeRight,
+    geometry.templeTop,
+    geometry.templeBottom
+  ).filter(
+    ({ x, y }) =>
+      !(y === geometry.templeBottom && Math.abs(x - geometry.centerX) <= 1)
+  )
+
+const templeMarkerCoordinate = (
+  geometry: CampgroundGeometry
+): GridPosition => ({
+  x: geometry.centerX,
+  y: geometry.centerY
+})
+
+const templeWallVariant = (
+  geometry: CampgroundGeometry,
+  coordinate: GridPosition
+): typeof DirectionalVariantSchema.Type => {
+  if (coordinate.x === geometry.templeLeft) {
+    if (coordinate.y === geometry.templeTop) return "topLeft"
+    if (coordinate.y === geometry.templeBottom) return "bottomLeft"
+    return "vertical"
+  }
+  if (coordinate.x === geometry.templeRight) {
+    if (coordinate.y === geometry.templeTop) return "topRight"
+    if (coordinate.y === geometry.templeBottom) return "bottomRight"
+    return "vertical"
+  }
+  return "horizontal"
+}
+
+const allCampgroundCoordinates = (): Array<GridPosition> =>
+  range(0, CAMPGROUND_HEIGHT - 1).flatMap((y) =>
+    range(0, CAMPGROUND_WIDTH - 1).map((x) => ({ x, y }))
+  )
+
+export const makeCampgroundLevel = (
+  dlvl: number
+): Effect.Effect<World, LevelGenerationError, KeyGenerator> =>
+  Effect.gen(function*() {
+    const geometry = yield* makeCampgroundGeometry
+    const themeCamps = yield* makeThemeCampLayouts(geometry)
+    const roadCoordinates = connectedRoadLoopCoordinates(geometry)
+    const effigyCoordinates = openAirEffigyCoordinates(geometry)
+    const templeWalls = templeWallCoordinates(geometry)
+    const templeMarker = templeMarkerCoordinate(geometry)
+    const occupiedCoordinates = new globalThis.Set(
+      roadCoordinates
+        .concat(effigyCoordinates)
+        .concat(templeWalls)
+        .concat([templeMarker])
+        .concat(themeCampStructureCoordinates(themeCamps))
+        .map(gridKey)
+    )
+    const fieldCoordinates = allCampgroundCoordinates().filter(
+      (coordinate) => !occupiedCoordinates.has(gridKey(coordinate))
+    )
+    const reservedPlayerSpawnCoordinate =
+      yield* selectReservedPlayerSpawnCoordinate(
+        fieldCoordinates
+      )
+    const npcBlockerCoordinates = effigyCoordinates
+      .concat(templeWalls)
+      .concat([templeMarker])
+      .concat(themeCampStructureCoordinates(themeCamps))
+      .concat(themeCamps.map((layout) => layout.coolerPosition))
+      .concat([reservedPlayerSpawnCoordinate])
+    const npcBlockerKeys = new globalThis.Set(
+      npcBlockerCoordinates.map(gridKey)
+    )
+    const npcSpawnCoordinates = uniqueGridPositions(
+      fieldCoordinates.concat(roadCoordinates)
+    ).filter((coordinate) => !npcBlockerKeys.has(gridKey(coordinate)))
+
+    const fields = yield* Effect.forEach(
+      fieldCoordinates,
+      ({ x, y }) => floor(x, y, dlvl),
+      { concurrency: 1 }
+    )
+    const roads = yield* Effect.forEach(
+      roadCoordinates,
+      ({ x, y }) => tunnel(x, y, dlvl),
+      { concurrency: 1 }
+    )
+    const templeWallEntities = yield* Effect.forEach(
+      templeWalls,
+      ({ x, y }) =>
+        wall(x, y, dlvl, templeWallVariant(geometry, { x, y })),
+      { concurrency: 1 }
+    )
+    const tents = yield* Effect.forEach(
+      themeCamps.flatMap((layout) => layout.tentPositions),
+      ({ x, y }) => tent(x, y, dlvl),
+      { concurrency: 1 }
+    )
+    const signs = yield* Effect.forEach(
+      themeCamps,
+      (layout) =>
+        sign(
+          layout.signPosition.x,
+          layout.signPosition.y,
+          dlvl,
+          layout.name
+        ),
+      { concurrency: 1 }
+    )
+    const effigies = yield* Effect.forEach(
+      effigyCoordinates,
+      ({ x, y }) => effigy(x, y, dlvl),
+      { concurrency: 1 }
+    )
+    const temples = yield* Effect.forEach(
+      [templeMarker],
+      ({ x, y }) => temple(x, y, dlvl),
+      { concurrency: 1 }
+    )
+    const coolers = yield* Effect.forEach(
+      themeCamps,
+      (layout) =>
+        cooler(layout.coolerPosition.x, layout.coolerPosition.y, dlvl),
+      { concurrency: 1 }
+    )
+    const coolerContents = yield* Effect.forEach(
+      coolers,
+      makeCoolerContents,
+      { concurrency: 1 }
+    )
+    const campgroundNpcs = yield* makeCampgroundNpcs(
+      npcSpawnCoordinates,
+      dlvl
+    )
+    const level: Array<Entity> = [
+      ...fields,
+      ...roads,
+      ...templeWallEntities,
+      ...tents,
+      ...signs,
+      ...effigies,
+      ...temples,
+      ...coolers,
+      ...coolerContents.flat(),
+      ...campgroundNpcs
+    ]
+
+    return HashMap.fromIterable(
+      level.map((e) => [e.key, e])
+    )
+  })
+
+export const CampgroundGenLevel = (
+  seed: number,
+  dlvl: number
+): Effect.Effect<World, LevelGenerationError> =>
+  makeCampgroundLevel(dlvl).pipe(
+    Effect.provide(CounterKeyGeneratorLive),
+    Effect.withRandom(Random.make(seed * 100 + dlvl))
+  )
 
 export const makeBspLevel = (
   dlvl: number

@@ -36,6 +36,7 @@ type entity struct {
 	In      string `json:"in"`
 	Tag     string `json:"_tag"`
 	Variant string `json:"variant,omitempty"`
+	Name    string `json:"name,omitempty"`
 }
 
 type action struct {
@@ -137,6 +138,7 @@ type model struct {
 	pendingMovementPrefix  string
 	pendingExtendedCommand *string
 	travelTarget           *pos
+	lookTarget             *pos
 	popup                  *popupState
 	pickupRequestID        int
 	mutationSerial         int
@@ -151,6 +153,7 @@ var (
 	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 	messageStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 	sidebarStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(20)
+	statusStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(118)
 	popupStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(34)
 	selectedStyle = lipgloss.NewStyle().Reverse(true)
 )
@@ -266,6 +269,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.travelTarget != nil {
 		return m.handleTravelTargetKey(input)
 	}
+	if m.lookTarget != nil {
+		return m.handleLookTargetKey(input)
+	}
 
 	switch input {
 	case "#":
@@ -281,9 +287,20 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.addMessage("cannot travel: player not found")
 			return m, nil
 		}
-		target := clampTravelTarget(player.At)
+		target := clampTravelTarget(player.At, m.world)
 		m.travelTarget = &target
 		m.addMessage(travelPrompt(target))
+		return m, nil
+	case ";":
+		m.pendingMovementPrefix = ""
+		player, ok := findPlayer(m.world)
+		if !ok {
+			m.addMessage("cannot look: player not found")
+			return m, nil
+		}
+		target := clampTravelTarget(player.At, m.world)
+		m.lookTarget = &target
+		m.addMessage(describeLookTarget(m.world, target))
 		return m, nil
 	case ",":
 		m.pendingMovementPrefix = ""
@@ -373,9 +390,26 @@ func (m model) handleTravelTargetKey(input string) (tea.Model, tea.Cmd) {
 		return m.startTravel(target)
 	default:
 		if command, ok := parseMovementCommand(input); ok {
-			next := moveTravelTarget(target, command.dir)
+			next := moveTravelTarget(target, command.dir, m.world)
 			m.travelTarget = &next
 			m.addMessage(travelPrompt(next))
+		}
+		return m, nil
+	}
+}
+
+func (m model) handleLookTargetKey(input string) (tea.Model, tea.Cmd) {
+	target := *m.lookTarget
+	switch input {
+	case "escape":
+		m.lookTarget = nil
+		m.addMessage("exited look mode")
+		return m, nil
+	default:
+		if command, ok := parseMovementCommand(input); ok {
+			next := moveTravelTarget(target, command.dir, m.world)
+			m.lookTarget = &next
+			m.addMessage(describeLookTarget(m.world, next))
 		}
 		return m, nil
 	}
@@ -473,17 +507,25 @@ func (m *model) cancelActiveAutoMove() bool {
 }
 
 func (m model) View() string {
-	board := renderBoard(m.world, m.travelTarget)
+	cursorTarget := m.travelTarget
+	if m.lookTarget != nil {
+		cursorTarget = m.lookTarget
+	}
+	board := renderBoard(m.world, cursorTarget)
 	sidebar := renderSidebar(m.inventory)
 	main := lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
 	sections := []string{
-		helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · , pickup · d drop · #quit"),
+		renderMessages(m.messages),
 		main,
 	}
+	if m.lookTarget != nil {
+		sections = append(sections, renderLookPanel(m.world, *m.lookTarget))
+	}
+	sections = append(sections, renderStatus(m.world))
 	if m.popup != nil {
 		sections = append(sections, renderPopup(*m.popup))
 	}
-	sections = append(sections, renderMessages(m.messages))
+	sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · #quit"))
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
@@ -523,6 +565,35 @@ func renderMessages(messages []string) string {
 		lines = append(lines, messages[i])
 	}
 	return messageStyle.Width(118).Render(strings.Join(lines, "\n"))
+}
+
+func renderLookPanel(world []entity, target pos) string {
+	lines := []string{
+		describeLookTarget(world, target),
+		mutedStyle.Render("hjkl/yubn move look cursor, Esc exits look mode"),
+	}
+	return statusStyle.Render(strings.Join(lines, "\n"))
+}
+
+func renderStatus(world []entity) string {
+	name := "player"
+	dungeonLevel := "?"
+	if player, ok := findPlayer(world); ok {
+		if candidate := strings.TrimSpace(player.Name); candidate != "" {
+			name = candidate
+		}
+		if player.At.Z == 0 {
+			dungeonLevel = "burn"
+		} else {
+			dungeonLevel = fmt.Sprintf("%d", player.At.Z+1)
+		}
+	}
+	lines := []string{
+		"Player: " + name,
+		"St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+		"AC:--  Dlvl:" + dungeonLevel,
+	}
+	return statusStyle.Render(strings.Join(lines, "\n"))
 }
 
 func renderPopup(popup popupState) string {
@@ -899,12 +970,26 @@ func addPos(a, b pos) pos {
 	return pos{X: a.X + b.X, Y: a.Y + b.Y, Z: a.Z + b.Z}
 }
 
-func clampTravelTarget(p pos) pos {
-	return pos{X: clamp(p.X, 0, boardWidth-1), Y: clamp(p.Y, 0, boardHeight-1), Z: p.Z}
+func worldTravelBounds(world []entity, target pos) (int, int) {
+	maxX := boardWidth - 1
+	maxY := boardHeight - 1
+	for _, item := range world {
+		if item.In != "world" || item.At.Z != target.Z {
+			continue
+		}
+		maxX = max(maxX, item.At.X)
+		maxY = max(maxY, item.At.Y)
+	}
+	return maxX, maxY
 }
 
-func moveTravelTarget(target pos, dir string) pos {
-	return clampTravelTarget(addPos(target, movementDeltas[dir]))
+func clampTravelTarget(p pos, world []entity) pos {
+	maxX, maxY := worldTravelBounds(world, p)
+	return pos{X: clamp(p.X, 0, maxX), Y: clamp(p.Y, 0, maxY), Z: p.Z}
+}
+
+func moveTravelTarget(target pos, dir string, world []entity) pos {
+	return clampTravelTarget(addPos(target, movementDeltas[dir]), world)
 }
 
 func travelPrompt(target pos) string {
@@ -931,7 +1016,7 @@ func findTravelDirections(world []entity, start, target pos) []string {
 		if item.In != "world" {
 			continue
 		}
-		if item.Tag == "floor" || item.Tag == "tunnel" {
+		if isPassableTerrain(item) {
 			passable[posKey(item.At)] = item.At
 		}
 		if isCreature(item) && !samePos(item.At, start) {
@@ -993,6 +1078,43 @@ func posKey(p pos) string {
 	return fmt.Sprintf("%d,%d,%d", p.X, p.Y, p.Z)
 }
 
+type viewport struct {
+	left int
+	top  int
+	z    int
+	hasZ bool
+}
+
+func viewportForWorld(world []entity) viewport {
+	player, ok := findPlayer(world)
+	if !ok {
+		return viewport{}
+	}
+	maxX := player.At.X
+	maxY := player.At.Y
+	for _, item := range world {
+		if item.In != "world" || item.At.Z != player.At.Z {
+			continue
+		}
+		maxX = max(maxX, item.At.X)
+		maxY = max(maxY, item.At.Y)
+	}
+	return viewport{
+		left: clamp(player.At.X-boardWidth/2, 0, max(0, maxX-boardWidth+1)),
+		top:  clamp(player.At.Y-boardHeight/2, 0, max(0, maxY-boardHeight+1)),
+		z:    player.At.Z,
+		hasZ: true,
+	}
+}
+
+func screenPos(p pos, vp viewport) pos {
+	return pos{X: p.X - vp.left, Y: p.Y - vp.top, Z: p.Z}
+}
+
+func isVisibleScreenPos(p pos) bool {
+	return p.X >= 0 && p.X < boardWidth && p.Y >= 0 && p.Y < boardHeight
+}
+
 func drawWorld(world []entity, target *pos) [][]tile {
 	tiles := make([][]tile, boardHeight)
 	for y := 0; y < boardHeight; y++ {
@@ -1001,21 +1123,30 @@ func drawWorld(world []entity, target *pos) [][]tile {
 			tiles[y][x] = tile{char: " "}
 		}
 	}
+	vp := viewportForWorld(world)
 	chosen := map[string]entity{}
 	for _, item := range world {
-		if item.In != "world" || item.At.X < 0 || item.At.X >= boardWidth || item.At.Y < 0 || item.At.Y >= boardHeight {
+		if item.In != "world" || (vp.hasZ && item.At.Z != vp.z) {
 			continue
 		}
-		key := posKey(item.At)
-		if previous, ok := chosen[key]; !ok || zIndex(item) >= zIndex(previous) {
-			chosen[key] = item
+		screenItem := item
+		screenItem.At = screenPos(item.At, vp)
+		if !isVisibleScreenPos(screenItem.At) {
+			continue
+		}
+		key := posKey(screenItem.At)
+		if previous, ok := chosen[key]; !ok || zIndex(screenItem) >= zIndex(previous) {
+			chosen[key] = screenItem
 		}
 	}
 	for _, item := range chosen {
 		tiles[item.At.Y][item.At.X] = tileFor(item)
 	}
-	if target != nil && target.X >= 0 && target.X < boardWidth && target.Y >= 0 && target.Y < boardHeight {
-		tiles[target.Y][target.X] = tile{char: "*", color: lipgloss.Color("11"), bright: true}
+	if target != nil && (!vp.hasZ || target.Z == vp.z) {
+		screenTarget := screenPos(*target, vp)
+		if isVisibleScreenPos(screenTarget) {
+			tiles[screenTarget.Y][screenTarget.X] = tile{char: "*", color: lipgloss.Color("11"), bright: true}
+		}
 	}
 	return tiles
 }
@@ -1042,14 +1173,18 @@ func tileFor(item entity) tile {
 		return tile{char: "!", color: lipgloss.Color("14")}
 	case "booze", "trailmix":
 		return tile{char: itemChar(item), color: lipgloss.Color("11")}
+	case "beer":
+		return tile{char: "!", color: lipgloss.Color("11"), bright: true}
 	case "milk", "pancake", "hammer":
 		return tile{char: itemChar(item), color: lipgloss.Color("15"), bright: true}
 	case "acid":
 		return tile{char: "!", color: lipgloss.Color("10")}
-	case "bacon", "soup":
-		return tile{char: "%", color: lipgloss.Color("9"), bright: item.Tag == "bacon"}
-	case "poptart":
+	case "bacon", "hotdog", "soup", "salsa":
+		return tile{char: "%", color: lipgloss.Color("9"), bright: item.Tag == "bacon" || item.Tag == "hotdog"}
+	case "poptart", "cheese":
 		return tile{char: "%", color: lipgloss.Color("11"), bright: true}
+	case "cooler":
+		return tile{char: "C", color: lipgloss.Color("14"), bright: true}
 	case "nails":
 		return tile{char: ":", color: lipgloss.Color("14"), bright: true}
 	case "wall":
@@ -1058,6 +1193,14 @@ func tileFor(item entity) tile {
 		return tile{char: "#", color: lipgloss.Color("15")}
 	case "floor":
 		return tile{char: "·", color: lipgloss.Color("8"), bright: true}
+	case "tent":
+		return tile{char: "^", color: lipgloss.Color("11"), bright: true}
+	case "sign":
+		return tile{char: "?", color: lipgloss.Color("14"), bright: true}
+	case "effigy":
+		return tile{char: "Y", color: lipgloss.Color("9"), bright: true}
+	case "temple":
+		return tile{char: "Ω", color: lipgloss.Color("13"), bright: true}
 	default:
 		return tile{char: "?", color: lipgloss.Color("9")}
 	}
@@ -1109,7 +1252,16 @@ func zIndex(item entity) int {
 }
 
 func isTerrain(item entity) bool {
-	return item.Tag == "wall" || item.Tag == "floor" || item.Tag == "tunnel"
+	switch item.Tag {
+	case "wall", "floor", "tunnel", "tent", "sign", "effigy", "temple":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPassableTerrain(item entity) bool {
+	return isTerrain(item) && item.Tag != "wall"
 }
 
 func isCreature(item entity) bool {
@@ -1133,6 +1285,108 @@ func entitiesAtPosition(world []entity, p pos) []entity {
 		}
 	}
 	return items
+}
+
+func describeLookTarget(world []entity, target pos) string {
+	items := entitiesAtPosition(world, target)
+	if len(items) == 0 {
+		return fmt.Sprintf("Look %d,%d: unexplored", target.X, target.Y)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		left := zIndex(items[i])
+		right := zIndex(items[j])
+		if left != right {
+			return left > right
+		}
+		return items[i].Tag < items[j].Tag
+	})
+	descriptions := make([]string, 0, len(items))
+	for _, item := range items {
+		descriptions = append(descriptions, describeEntityForLook(item))
+	}
+	return fmt.Sprintf("Look %d,%d: %s", target.X, target.Y, strings.Join(descriptions, "; "))
+}
+
+func describeEntityForLook(item entity) string {
+	switch item.Tag {
+	case "player":
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = "you"
+		}
+		return "you (" + name + ")"
+	case "ranger":
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			return "human"
+		}
+		return "human " + name
+	case "hippie":
+		return "hippie"
+	case "wook":
+		return "wook"
+	case "acidcop":
+		return "acid cop"
+	case "lesser_egregore":
+		return "lesser egregore"
+	case "greater_egregore":
+		return "greater egregore"
+	case "collective_egregore":
+		return "collective egregore"
+	case "floor":
+		return "dusty ground"
+	case "tunnel":
+		return "road"
+	case "wall":
+		return "wall"
+	case "tent":
+		return "tent"
+	case "sign":
+		if strings.TrimSpace(item.Name) == "" {
+			return "sign"
+		}
+		return "sign: " + item.Name
+	case "effigy":
+		return "effigy"
+	case "temple":
+		return "temple"
+	case "cooler":
+		return "cooler"
+	case "beer":
+		return "beer"
+	case "hotdog":
+		return "hot dog"
+	case "cheese":
+		return "cheese"
+	case "salsa":
+		return "salsa"
+	case "water":
+		return "water bottle"
+	case "booze":
+		return "booze"
+	case "milk":
+		return "milk"
+	case "acid":
+		return "acid"
+	case "poptart":
+		return "poptart"
+	case "trailmix":
+		return "trail mix"
+	case "pancake":
+		return "pancake"
+	case "bacon":
+		return "bacon"
+	case "soup":
+		return "soup"
+	case "flag":
+		return "flag"
+	case "hammer":
+		return "hammer"
+	case "nails":
+		return "nails"
+	default:
+		return item.Tag
+	}
 }
 
 func directPosition(p pos, dir string) pos {
@@ -1168,7 +1422,7 @@ func nonPlayerCreaturesAdjacentTo(world []entity, p pos) []entity {
 
 func isKnownPassablePosition(world []entity, p pos) bool {
 	for _, item := range world {
-		if item.In == "world" && samePos(item.At, p) && (item.Tag == "floor" || item.Tag == "tunnel") {
+		if item.In == "world" && samePos(item.At, p) && isPassableTerrain(item) {
 			return true
 		}
 	}

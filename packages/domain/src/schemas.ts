@@ -90,12 +90,17 @@ export const Drink = EntityBase
 export const Water = tagas(Drink, "water")
 export const Acid = tagas(Drink, "acid")
 export const Booze = tagas(Drink, "booze")
+export const Beer = tagas(Drink, "beer")
 export const Milk = tagas(Drink, "milk")
-export const AnyDrink = oneof(
+export const AnyBasicDrink = oneof(
   Water,
   Acid,
   Booze,
   Milk
+)
+export const AnyDrink = oneof(
+  AnyBasicDrink,
+  Beer
 )
 
 // >> Food
@@ -106,12 +111,32 @@ export const Trailmix = tagas(Food, "trailmix")
 export const Pancake = tagas(Food, "pancake")
 export const Bacon = tagas(Food, "bacon")
 export const Soup = tagas(Food, "soup")
-export const AnyFood = oneof(
+export const Hotdog = tagas(Food, "hotdog")
+export const Cheese = tagas(Food, "cheese")
+export const Salsa = tagas(Food, "salsa")
+export const AnyShelfStableFood = oneof(
   Poptart,
   Trailmix,
   Pancake,
   Bacon,
   Soup
+)
+export const AnyRefrigeratedCampFood = oneof(
+  Hotdog,
+  Cheese,
+  Salsa
+)
+export const AnyFood = oneof(
+  AnyShelfStableFood,
+  AnyRefrigeratedCampFood
+)
+
+// >> Containers
+export const Container = EntityBase
+
+export const Cooler = tagas(Container, "cooler")
+export const AnyContainer = oneof(
+  Cooler
 )
 
 // >> Swag
@@ -132,7 +157,16 @@ export const AnyTool = oneof(
 
 // <<<<<<
 
-export const AnyItem = oneof(Flag, AnyFood, AnyDrink, AnyTool)
+export const AnyComestible = oneof(
+  AnyFood,
+  AnyDrink
+)
+export const AnyItem = oneof(
+  Flag,
+  AnyComestible,
+  AnyTool,
+  AnyContainer
+)
 export const ItemCollection = S.HashMap({ key: Key, value: AnyItem })
 // ===========================
 // Creatures
@@ -209,10 +243,25 @@ export const Floor = tagas(
   "floor"
 )
 export const Tunnel = tagas(TerrainBase, "tunnel")
+export const Tent = tagas(TerrainBase, "tent")
+export const Sign = tagas(
+  bothof(TerrainBase, struct({ name: S.String })),
+  "sign"
+)
+export const Effigy = tagas(TerrainBase, "effigy")
+export const Temple = tagas(TerrainBase, "temple")
 
 // export const AnyTerrain = oneof(Wall, Tunnel)
 // export const AnyTerrain = oneof(Wall)
-export const AnyTerrain = oneof(Wall, Floor, Tunnel)
+export const AnyTerrain = oneof(
+  Wall,
+  Floor,
+  Tunnel,
+  Tent,
+  Sign,
+  Effigy,
+  Temple
+)
 // type a = typeof AnyTerrain.Type
 // export const AnyTerrain = oneof(Wall, Floor, Tunnel)
 

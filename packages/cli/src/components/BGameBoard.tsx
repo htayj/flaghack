@@ -3,6 +3,11 @@ import type { Tile } from "@flaghack/domain/display"
 import React from "react"
 // import blessed from "react-blessed"
 import { tilesToText } from "../util.js"
+import {
+  MESSAGE_LOG_HEIGHT,
+  PLAY_AREA_HEIGHT,
+  PLAY_AREA_WIDTH
+} from "./layout.js"
 
 type Props = {
   tiles: Tiles
@@ -13,10 +18,10 @@ export default function({ tiles }: Props) {
   const content = tilesToText(tiles)
   return (
     <box
-      bottom={0}
+      top={MESSAGE_LOG_HEIGHT}
       left={0}
-      height={tiles.length + 2}
-      width={(tiles[0]?.length ?? 1) + 2}
+      height={PLAY_AREA_HEIGHT}
+      width={PLAY_AREA_WIDTH}
       border="line"
       fg={"brightblack"}
       // children={griditems}

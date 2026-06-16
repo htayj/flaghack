@@ -1,4 +1,8 @@
-import { getTile, type Tile } from "@flaghack/domain/display"
+import {
+  formatLevelStatusLabel,
+  getTile,
+  type Tile
+} from "@flaghack/domain/display"
 import {
   type Action,
   AnyCreature,
@@ -349,26 +353,131 @@ const previousPositionFromDirection = (
 }
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
-export const clampTravelTarget = (target: Pos): Pos => ({
-  x: clamp(target.x, 0, BOARD_WIDTH - 1),
-  y: clamp(target.y, 0, BOARD_HEIGHT - 1),
-  z: target.z
-})
+
+const worldTravelBounds = (
+  world: World | undefined,
+  target: Pos
+): { readonly maxX: number; readonly maxY: number } => {
+  if (world === undefined) {
+    return { maxX: BOARD_WIDTH - 1, maxY: BOARD_HEIGHT - 1 }
+  }
+
+  const sameLevelPositions = Array.from(world.pipe(HashMap.values))
+    .filter((entity) => entity.in === "world" && entity.at.z === target.z)
+    .map((entity) => entity.at)
+  const maxX = Math.max(
+    BOARD_WIDTH - 1,
+    ...sameLevelPositions.map(({ x }) => x)
+  )
+  const maxY = Math.max(
+    BOARD_HEIGHT - 1,
+    ...sameLevelPositions.map(({ y }) => y)
+  )
+  return { maxX, maxY }
+}
+
+export const clampTravelTarget = (
+  target: Pos,
+  world?: World
+): Pos => {
+  const { maxX, maxY } = worldTravelBounds(world, target)
+  return {
+    x: clamp(target.x, 0, maxX),
+    y: clamp(target.y, 0, maxY),
+    z: target.z
+  }
+}
 export const moveTravelTarget = (
   target: Pos,
-  direction: MovementDirection
+  direction: MovementDirection,
+  world?: World
 ): Pos =>
-  clampTravelTarget(addPositions(target, movementDeltas[direction]))
+  clampTravelTarget(addPositions(target, movementDeltas[direction]), world)
 export const travelPrompt = (target: Pos): string =>
   `Travel target ${target.x},${target.y}: hjkl/yubn move, Enter travel, Esc cancel`
 const isPassableTravelTerrain = (entity: Entity): boolean =>
-  entity._tag === "floor" || entity._tag === "tunnel"
-export const findPlayerPosition = (world: World): Option.Option<Pos> =>
-  Option.fromNullable(
-    Array.from(world.pipe(HashMap.values)).find((entity) =>
-      entity._tag === "player"
-    )?.at
+  isTerrain(entity) && entity._tag !== "wall"
+const findPlayerEntity = (world: World): Entity | undefined =>
+  Array.from(world.pipe(HashMap.values)).find((entity) =>
+    entity._tag === "player"
   )
+
+export const findPlayerPosition = (world: World): Option.Option<Pos> =>
+  Option.fromNullable(findPlayerEntity(world)?.at)
+
+type Viewport = {
+  readonly left: number
+  readonly top: number
+  readonly z: number | undefined
+}
+
+const viewportForWorld = (world: World): Viewport => {
+  const player = findPlayerEntity(world)
+  if (player === undefined || player.in !== "world") {
+    return { left: 0, top: 0, z: undefined }
+  }
+
+  const sameLevelPositions = Array.from(world.pipe(HashMap.values))
+    .filter((entity) =>
+      entity.in === "world" && entity.at.z === player.at.z
+    )
+    .map((entity) => entity.at)
+  const maxX = Math.max(
+    player.at.x,
+    ...sameLevelPositions.map(({ x }) => x)
+  )
+  const maxY = Math.max(
+    player.at.y,
+    ...sameLevelPositions.map(({ y }) => y)
+  )
+
+  return {
+    left: clamp(
+      player.at.x - Math.floor(BOARD_WIDTH / 2),
+      0,
+      Math.max(0, maxX - BOARD_WIDTH + 1)
+    ),
+    top: clamp(
+      player.at.y - Math.floor(BOARD_HEIGHT / 2),
+      0,
+      Math.max(0, maxY - BOARD_HEIGHT + 1)
+    ),
+    z: player.at.z
+  }
+}
+
+const toScreenPosition = (
+  position: Pos,
+  viewport: Viewport
+): Omit<Pos, "z"> => ({
+  x: position.x - viewport.left,
+  y: position.y - viewport.top
+})
+
+const isVisibleScreenPosition = (position: Omit<Pos, "z">): boolean =>
+  position.x >= 0
+  && position.x < BOARD_WIDTH
+  && position.y >= 0
+  && position.y < BOARD_HEIGHT
+
+const playerStatusName = (player: Entity | undefined): string => {
+  const candidate = player?._tag === "player" ? player.name?.trim() : ""
+  return candidate === undefined || candidate === "" ? "player" : candidate
+}
+
+const playerDungeonLevel = (player: Entity | undefined): string =>
+  formatLevelStatusLabel(player?.in === "world" ? player.at.z : undefined)
+
+export const formatStatusLines = (
+  world: World
+): ReadonlyArray<string> => {
+  const player = findPlayerEntity(world)
+  return [
+    `Player: ${playerStatusName(player)}`,
+    "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+    `AC:--  Dlvl:${playerDungeonLevel(player)}`
+  ]
+}
 
 const entitiesAtPosition = (world: World, position: Pos): Array<Entity> =>
   Array.from(world.pipe(HashMap.values)).filter((entity) =>
@@ -799,12 +908,21 @@ export const prependMessage =
 
 export const drawWorld = (world: World, travelTarget?: Pos): Tiles => {
   const emptyMatrix = nullMatrix(BOARD_HEIGHT, BOARD_WIDTH)
+  const viewport = viewportForWorld(world)
 
   const worldMap = Map(world)
     .valueSeq()
     .groupBy((entity) => {
       const position = getPosition(entity)
-      return position === undefined ? undefined : posKey(position)
+      if (position === undefined) return undefined
+      if (viewport.z !== undefined && position.z !== viewport.z) {
+        return undefined
+      }
+
+      const screenPosition = toScreenPosition(position, viewport)
+      return isVisibleScreenPosition(screenPosition)
+        ? posKey(screenPosition)
+        : undefined
     })
     .map((v) => v.valueSeq().toArray())
   const tiles = emptyMatrix.map((row, y) =>
@@ -820,13 +938,19 @@ export const drawWorld = (world: World, travelTarget?: Pos): Tiles => {
       .toArray()
   ).toArray()
 
-  if (travelTarget !== undefined) {
-    const targetRow = tiles.at(travelTarget.y)
+  if (
+    travelTarget !== undefined
+    && (viewport.z === undefined || travelTarget.z === viewport.z)
+  ) {
+    const targetPosition = toScreenPosition(travelTarget, viewport)
+    const targetRow = tiles.at(targetPosition.y)
     if (
-      targetRow !== undefined && targetRow[travelTarget.x] !== undefined
+      isVisibleScreenPosition(targetPosition)
+      && targetRow !== undefined
+      && targetRow[targetPosition.x] !== undefined
     ) {
-      tiles[travelTarget.y] = targetRow.map((tile, x) =>
-        x === travelTarget.x
+      tiles[targetPosition.y] = targetRow.map((tile, x) =>
+        x === targetPosition.x
           ? { ...tile, bg: true, bright: true, char: "*", color: "yellow" }
           : tile
       )

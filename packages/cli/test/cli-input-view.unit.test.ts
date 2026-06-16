@@ -13,11 +13,14 @@ import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import {
   clampTravelTarget,
+  drawWorld,
   findTravelDirections,
+  formatStatusLines,
   MAX_DIRECTIONAL_MOVEMENT_STEPS,
   type MovementCommand,
   movementCommandRequiresRepeatedMovement,
   type MovementDirection,
+  moveTravelTarget,
   normalizeGameInput,
   parseExtendedCommand,
   parseInput,
@@ -30,9 +33,26 @@ import { MAX_VISIBLE_MESSAGES } from "../src/components/Messages.js"
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const bPlayingSourcePath = join(testDir, "../src/components/BPlaying.tsx")
+const bGameBoardSourcePath = join(
+  testDir,
+  "../src/components/BGameBoard.tsx"
+)
+const inventorySourcePath = join(
+  testDir,
+  "../src/components/Inventory.tsx"
+)
+const layoutSourcePath = join(testDir, "../src/components/layout.ts")
+const messagesSourcePath = join(testDir, "../src/components/Messages.tsx")
+const statusSourcePath = join(testDir, "../src/components/Status.tsx")
 const tuiGameSourcePath = join(testDir, "../src/tuiGame.ts")
 
 const readBPlayingSource = () => readFileSync(bPlayingSourcePath, "utf8")
+const readBGameBoardSource = () =>
+  readFileSync(bGameBoardSourcePath, "utf8")
+const readInventorySource = () => readFileSync(inventorySourcePath, "utf8")
+const readLayoutSource = () => readFileSync(layoutSourcePath, "utf8")
+const readMessagesSource = () => readFileSync(messagesSourcePath, "utf8")
+const readStatusSource = () => readFileSync(statusSourcePath, "utf8")
 const readTuiGameSource = () => readFileSync(tuiGameSourcePath, "utf8")
 
 type Direction = "N" | "E" | "S" | "W" | "NE" | "NW" | "SE" | "SW"
@@ -83,6 +103,31 @@ const waterAt = (x: number, y: number): Entity => ({
   at: { x, y, z: 0 },
   in: "world",
   key: `water-${x}-${y}`
+})
+const signAt = (x: number, y: number): Entity => ({
+  _tag: "sign",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `sign-${x}-${y}`,
+  name: "Camp Functional"
+})
+const tentAt = (x: number, y: number): Entity => ({
+  _tag: "tent",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `tent-${x}-${y}`
+})
+const effigyAt = (x: number, y: number): Entity => ({
+  _tag: "effigy",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `effigy-${x}-${y}`
+})
+const templeAt = (x: number, y: number): Entity => ({
+  _tag: "temple",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `temple-${x}-${y}`
 })
 
 const baseDirectionCases = [
@@ -418,6 +463,91 @@ describe("CLI message log", () => {
     expect(readBPlayingSource()).not.toContain(
       "setMessages((messages) => messages.unshift("
     )
+  })
+
+  it("anchors the blessed message log above the map without overlap", () => {
+    const boardSource = readBGameBoardSource()
+    const inventorySource = readInventorySource()
+    const layoutSource = readLayoutSource()
+    const messagesSource = readMessagesSource()
+
+    expect(layoutSource).toContain("export const MESSAGE_LOG_HEIGHT = 12")
+    expect(messagesSource).toContain("top={0}")
+    expect(boardSource).toContain("top={MESSAGE_LOG_HEIGHT}")
+    expect(boardSource).not.toContain("bottom={0}")
+    expect(inventorySource).toContain("top={MESSAGE_LOG_HEIGHT}")
+  })
+})
+
+describe("CLI status box", () => {
+  it("formats visible status lines with player name, placeholder stats, and dungeon level", () => {
+    const player = {
+      ...playerAt(1, 1),
+      at: { x: 1, y: 1, z: 2 },
+      name: "Ada"
+    }
+
+    expect(formatStatusLines(worldFromEntities([player]))).toEqual([
+      "Player: Ada",
+      "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+      "AC:--  Dlvl:3"
+    ])
+  })
+
+  it("formats the campground level as burn", () => {
+    const player = {
+      ...playerAt(10, 10),
+      name: "Ada"
+    }
+
+    expect(formatStatusLines(worldFromEntities([player]))).toContain(
+      "AC:--  Dlvl:burn"
+    )
+  })
+
+  it("keeps status formatting in shared TUI logic with stable placeholder stats", () => {
+    const tuiGameSource = readTuiGameSource()
+
+    expect(tuiGameSource).toContain("export const formatStatusLines =")
+    expect(tuiGameSource).toContain("playerStatusName")
+    expect(tuiGameSource).toContain("St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--")
+    expect(tuiGameSource).toContain("HP:--/--")
+    expect(tuiGameSource).toContain("playerDungeonLevel")
+  })
+
+  it("anchors the blessed status box below the play area without overlapping messages or inventory", () => {
+    const bPlayingSource = readBPlayingSource()
+    const boardSource = readBGameBoardSource()
+    const inventorySource = readInventorySource()
+    const layoutSource = readLayoutSource()
+    const statusSource = readStatusSource()
+
+    expect(layoutSource).toContain(
+      "export const PLAY_AREA_HEIGHT = BOARD_HEIGHT + 2"
+    )
+    expect(layoutSource).toContain(
+      "export const STATUS_BOX_TOP = MESSAGE_LOG_HEIGHT + PLAY_AREA_HEIGHT"
+    )
+    expect(layoutSource).toContain("export const STATUS_BOX_HEIGHT = 5")
+    expect(boardSource).toContain("top={MESSAGE_LOG_HEIGHT}")
+    expect(inventorySource).toContain("top={MESSAGE_LOG_HEIGHT}")
+    expect(inventorySource).toContain("height={PLAY_AREA_HEIGHT}")
+    expect(statusSource).toContain("top={STATUS_BOX_TOP}")
+    expect(statusSource).toContain("height={STATUS_BOX_HEIGHT}")
+    expect(statusSource).toContain("formatStatusLines(world)")
+    expect(bPlayingSource).toContain("<Status world={world} />")
+  })
+})
+
+describe("CLI campground camera", () => {
+  it("centers the drawn viewport on an off-screen campground player", () => {
+    const player = playerAt(100, 30)
+    const farCorner = floorAt(139, 47)
+    const tiles = drawWorld(
+      worldFromEntities([floorAt(0, 0), farCorner, player])
+    )
+
+    expect(tiles[10]?.[40]?.char).toBe("@")
   })
 })
 
@@ -922,6 +1052,25 @@ describe("CLI NetHack travel pathfinding", () => {
     )).toEqual(["E", "E"] satisfies ReadonlyArray<MovementDirection>)
   })
 
+  it("routes across passable campground marker terrain consistently with movement", () => {
+    const world = worldFromEntities([
+      playerAt(0, 0),
+      floorAt(0, 0),
+      signAt(1, 0),
+      tentAt(2, 0),
+      effigyAt(3, 0),
+      templeAt(4, 0)
+    ])
+
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 4, y: 0, z: 0 }
+    )).toEqual(
+      ["E", "E", "E", "E"] satisfies ReadonlyArray<MovementDirection>
+    )
+  })
+
   it("does not route to an unknown or impassable travel target", () => {
     const world = worldFromEntities([
       playerAt(0, 0),
@@ -957,7 +1106,7 @@ describe("CLI NetHack travel pathfinding", () => {
     )).toEqual([])
   })
 
-  it("keeps travel cursor targets inside the visible board", () => {
+  it("keeps travel cursor targets inside the visible board when no world bounds are provided", () => {
     expect(clampTravelTarget({ x: -5, y: -1, z: 0 })).toEqual({
       x: 0,
       y: 0,
@@ -968,6 +1117,27 @@ describe("CLI NetHack travel pathfinding", () => {
       y: 19,
       z: 0
     })
+  })
+
+  it("keeps travel cursor targets in world coordinates for large campground levels", () => {
+    const world = worldFromEntities([
+      floorAt(0, 0),
+      { ...floorAt(119, 47), key: "floor-far" },
+      { ...playerAt(60, 24), at: { x: 60, y: 24, z: 0 } }
+    ])
+
+    expect(clampTravelTarget({ x: 60, y: 24, z: 0 }, world)).toEqual({
+      x: 60,
+      y: 24,
+      z: 0
+    })
+    expect(clampTravelTarget({ x: 200, y: 99, z: 0 }, world)).toEqual({
+      x: 119,
+      y: 47,
+      z: 0
+    })
+    expect(moveTravelTarget({ x: 119, y: 47, z: 0 }, "SE", world))
+      .toEqual({ x: 119, y: 47, z: 0 })
   })
 })
 

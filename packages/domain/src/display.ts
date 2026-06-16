@@ -43,6 +43,13 @@ export type Tile = {
 
 const tile = (value: Tile): Tile => value
 
+export const formatLevelStatusLabel = (
+  z: number | undefined
+): string => {
+  if (z === undefined) return "?"
+  return z === 0 ? "burn" : `${z + 1}`
+}
+
 export const getTile = (e: Entity): Tile =>
   EEntity.$match({
     player: () => tile({ color: "white", char: "@" }),
@@ -56,6 +63,7 @@ export const getTile = (e: Entity): Tile =>
     flag: () => tile({ color: "yellow", bright: true, char: "F" }),
     water: () => tile({ color: "cyan", char: "!" }),
     booze: () => tile({ color: "yellow", char: "!" }),
+    beer: () => tile({ color: "yellow", bright: true, char: "!" }),
     milk: () => tile({ color: "white", char: "!" }),
     acid: () => tile({ color: "green", char: "!" }),
     bacon: () => tile({ color: "red", bright: true, char: "%" }),
@@ -63,6 +71,10 @@ export const getTile = (e: Entity): Tile =>
     trailmix: () => tile({ color: "yellow", char: "%" }),
     pancake: () => tile({ color: "white", bright: true, char: "%" }),
     soup: () => tile({ color: "red", char: "%" }),
+    hotdog: () => tile({ color: "red", bright: true, char: "%" }),
+    cheese: () => tile({ color: "yellow", bright: true, char: "%" }),
+    salsa: () => tile({ color: "red", char: "%" }),
+    cooler: () => tile({ color: "cyan", bright: true, char: "C" }),
     hammer: () => tile({ color: "white", bright: true, char: "T" }),
     nails: () => tile({ color: "cyan", bright: true, char: ":" }),
     wall: ({ variant }) =>
@@ -72,5 +84,9 @@ export const getTile = (e: Entity): Tile =>
         char: getWallVariantChar(variant)
       }),
     tunnel: () => tile({ color: "white", bright: false, char: "#" }),
-    floor: () => tile({ color: "black", bright: true, char: "·" })
+    floor: () => tile({ color: "black", bright: true, char: "·" }),
+    tent: () => tile({ color: "yellow", bright: true, char: "^" }),
+    sign: () => tile({ color: "cyan", bright: true, char: "?" }),
+    effigy: () => tile({ color: "red", bright: true, char: "Y" }),
+    temple: () => tile({ color: "magenta", bright: true, char: "Ω" })
   })(e)

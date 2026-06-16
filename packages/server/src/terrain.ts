@@ -2,7 +2,11 @@ import {
   AnyTerrain,
   conforms,
   type DirectionalVariant as DirectionalVariantSchema,
+  type Effigy as EffigySchema,
   type Floor as FloorSchema,
+  type Sign as SignSchema,
+  type Temple as TempleSchema,
+  type Tent as TentSchema,
   type Tunnel as TunnelSchema,
   type Wall as WallSchema
 } from "@flaghack/domain/schemas"
@@ -13,6 +17,10 @@ import { KeyGenerator } from "./keyGenerator.js"
 export type Wall = typeof WallSchema.Type
 export type Floor = typeof FloorSchema.Type
 export type Tunnel = typeof TunnelSchema.Type
+export type Tent = typeof TentSchema.Type
+export type Sign = typeof SignSchema.Type
+export type Effigy = typeof EffigySchema.Type
+export type Temple = typeof TempleSchema.Type
 export type Terrain = typeof AnyTerrain.Type
 export type DirectionalVariant = typeof DirectionalVariantSchema.Type
 
@@ -52,6 +60,52 @@ export const makeTunnel = (
   _tag: "tunnel",
   key
 })
+export const makeTent = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): Tent => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "tent",
+  key
+})
+export const makeSign = (
+  key: string,
+  x: number,
+  y: number,
+  z: number,
+  name: string
+): Sign => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "sign",
+  name,
+  key
+})
+export const makeEffigy = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): Effigy => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "effigy",
+  key
+})
+export const makeTemple = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): Temple => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "temple",
+  key
+})
 export const wall = (
   x: number,
   y: number,
@@ -85,6 +139,51 @@ export const tunnel = (
     const key = yield* keyGenerator.nextKey
 
     return makeTunnel(key, x, y, z)
+  })
+export const tent = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<Tent, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeTent(key, x, y, z)
+  })
+export const sign = (
+  x: number,
+  y: number,
+  z: number,
+  name: string
+): Effect.Effect<Sign, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeSign(key, x, y, z, name)
+  })
+export const effigy = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<Effigy, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeEffigy(key, x, y, z)
+  })
+export const temple = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<Temple, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeTemple(key, x, y, z)
   })
 export const range = (start: number, end: number) =>
   [...Array(Math.abs(end - start)).keys()].map((i) => i + start)

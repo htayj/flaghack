@@ -1,6 +1,7 @@
 import type { World as WorldSchema } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 import React from "react"
+import { MESSAGE_LOG_HEIGHT, PLAY_AREA_HEIGHT } from "./layout.js"
 
 type World = typeof WorldSchema.Type
 type Props = {
@@ -11,10 +12,10 @@ export default function Inventory({ inventory }: Props) {
   const invMap = Map(inventory)
   return (
     <box
-      bottom={0}
+      top={MESSAGE_LOG_HEIGHT}
       right={0}
       border="line"
-      height={22}
+      height={PLAY_AREA_HEIGHT}
       width={15}
       label="inventory"
     >

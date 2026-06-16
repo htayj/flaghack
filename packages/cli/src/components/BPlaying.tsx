@@ -36,6 +36,7 @@ import Inventory from "./Inventory.js"
 import Messages from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
+import Status from "./Status.js"
 
 const apiDoPlayerAction = GameClient.doPlayerAction
 const apiGetInventory = GameClient.getInventory
@@ -51,6 +52,7 @@ export {
   findPlayerPosition,
   findTravelDirections,
   findTravelDirections as findTravelPathDirections,
+  formatStatusLines,
   isBaseMovementInput,
   isTerrain,
   MAX_DIRECTIONAL_MOVEMENT_STEPS,
@@ -346,7 +348,8 @@ export default function BPlaying({ onQuit }: Props) {
           if (Option.isSome(travelMovementCommand)) {
             const nextTarget = moveTravelTarget(
               target,
-              travelMovementCommand.value.dir
+              travelMovementCommand.value.dir,
+              world
             )
             setTravelTarget(nextTarget)
             setMessages(prependMessage(travelPrompt(nextTarget)))
@@ -383,7 +386,10 @@ export default function BPlaying({ onQuit }: Props) {
         pendingMovementPrefix.current = undefined
         const playerPosition = findPlayerPosition(world)
         if (Option.isSome(playerPosition)) {
-          const initialTarget = clampTravelTarget(playerPosition.value)
+          const initialTarget = clampTravelTarget(
+            playerPosition.value,
+            world
+          )
           setTravelTarget(initialTarget)
           setMessages(prependMessage(travelPrompt(initialTarget)))
         } else {
@@ -532,6 +538,7 @@ export default function BPlaying({ onQuit }: Props) {
     >
       <Messages messages={messages} />
       <BGameBoard tiles={theDrawMatrix} />
+      <Status world={world} />
       <PickupPopup
         pickupRef={pickupRef}
         items={pickupContents}

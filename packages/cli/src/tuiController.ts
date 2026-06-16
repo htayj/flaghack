@@ -157,7 +157,10 @@ export class AlternateTuiController {
       this.pendingMovementPrefix = undefined
       const playerPosition = findPlayerPosition(this.world)
       if (Option.isSome(playerPosition)) {
-        const initialTarget = clampTravelTarget(playerPosition.value)
+        const initialTarget = clampTravelTarget(
+          playerPosition.value,
+          this.world
+        )
         this.travelTarget = initialTarget
         this.addMessage(travelPrompt(initialTarget))
       } else {
@@ -348,7 +351,8 @@ export class AlternateTuiController {
         if (Option.isSome(travelMovementCommand)) {
           const nextTarget = moveTravelTarget(
             target,
-            travelMovementCommand.value.dir
+            travelMovementCommand.value.dir,
+            this.world
           )
           this.travelTarget = nextTarget
           this.addMessage(travelPrompt(nextTarget))

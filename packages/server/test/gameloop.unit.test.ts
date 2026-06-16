@@ -7,11 +7,11 @@ import {
 import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { vi } from "vitest"
-import type { BSPGenLevel } from "../src/world.js"
+import type { CampgroundGenLevel } from "../src/world.js"
 
-type BspGenLevel = typeof BSPGenLevel
+type CampgroundGenLevelFn = typeof CampgroundGenLevel
 type WorldModule = Record<string, unknown> & {
-  BSPGenLevel: BspGenLevel
+  CampgroundGenLevel: CampgroundGenLevelFn
 }
 
 const readGameloopSource = (): string =>
@@ -69,18 +69,20 @@ const sourceBeforeInitialStateInitializer = (source: string): string => {
 }
 
 describe("initial world", () => {
-  it("does not generate the initial BSP level until world state is read", async () => {
+  it("does not generate the initial campground level until world state is read", async () => {
     vi.resetModules()
-    let bspCalls = 0
+    let campgroundCalls = 0
 
     vi.doMock("../src/world.js", async () => {
       const actual = await vi.importActual<WorldModule>("../src/world.js")
 
       return {
         ...actual,
-        BSPGenLevel: (...args: Parameters<WorldModule["BSPGenLevel"]>) => {
-          bspCalls += 1
-          return actual.BSPGenLevel(...args)
+        CampgroundGenLevel: (
+          ...args: Parameters<WorldModule["CampgroundGenLevel"]>
+        ) => {
+          campgroundCalls += 1
+          return actual.CampgroundGenLevel(...args)
         }
       }
     })
@@ -88,7 +90,7 @@ describe("initial world", () => {
     try {
       const module = await importGameloop()
 
-      expect(bspCalls).toBe(0)
+      expect(campgroundCalls).toBe(0)
 
       Effect.runSync(
         Effect.gen(function*() {
@@ -97,15 +99,16 @@ describe("initial world", () => {
         }).pipe(Effect.provide(module.DefaultGameStateStoreLive))
       )
 
-      expect(bspCalls).toBe(1)
+      expect(campgroundCalls).toBe(1)
     } finally {
       vi.doUnmock("../src/world.js")
       vi.resetModules()
     }
   })
 
-  it("places the player on a generated floor tile", async () => {
+  it("places the player on a generated burn campground floor tile", async () => {
     const world = await runGetWorld()
+    const entities = Array.from(HashMap.values(world))
     const playerEntityOption = world.pipe(HashMap.get("player"))
 
     expect(Option.isSome(playerEntityOption)).toBe(true)
@@ -116,7 +119,7 @@ describe("initial world", () => {
     expect(playerEntity._tag).toBe("player")
     if (playerEntity._tag !== "player") return
 
-    const floorAtPlayer = Array.from(HashMap.values(world)).find(
+    const floorAtPlayer = entities.find(
       (entity) =>
         entity._tag === "floor"
         && entity.at.x === playerEntity.at.x
@@ -124,7 +127,43 @@ describe("initial world", () => {
         && entity.at.z === playerEntity.at.z
     )
 
+    expect(playerEntity.at.z).toBe(0)
     expect(floorAtPlayer?._tag).toBe("floor")
+    for (
+      const requiredTag of [
+        "tunnel",
+        "floor",
+        "tent",
+        "sign",
+        "effigy",
+        "temple"
+      ] as const
+    ) {
+      expect(entities.some((entity) => entity._tag === requiredTag)).toBe(
+        true
+      )
+    }
+  })
+
+  it("does not spawn campground NPCs on the player", async () => {
+    const world = await runGetWorld()
+    const entities = Array.from(HashMap.values(world))
+    const playerEntityOption = world.pipe(HashMap.get("player"))
+    const isCreature = conforms(AnyCreature)
+
+    expect(Option.isSome(playerEntityOption)).toBe(true)
+    if (Option.isNone(playerEntityOption)) return
+
+    const playerEntity = playerEntityOption.value
+    const nonPlayerCreaturesAtPlayer = entities.filter((entity) =>
+      entity.key !== playerEntity.key
+      && isCreature(entity)
+      && entity.at.x === playerEntity.at.x
+      && entity.at.y === playerEntity.at.y
+      && entity.at.z === playerEntity.at.z
+    )
+
+    expect(nonPlayerCreaturesAtPlayer).toHaveLength(0)
   })
 
   it("does not fall back to the origin when selecting the player spawn", () => {
@@ -142,7 +181,7 @@ describe("initial world", () => {
     const gameloopSource = readGameloopSource()
     const eagerSource = sourceBeforeInitialStateInitializer(gameloopSource)
 
-    expect(eagerSource).not.toContain("BSPGenLevel(")
+    expect(eagerSource).not.toContain("CampgroundGenLevel(")
     expect(eagerSource).not.toContain("GameState.make(")
     expect(gameloopSource).not.toContain("const _state")
     expect(gameloopSource).not.toContain("gameState: undefined")

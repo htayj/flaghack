@@ -1,5 +1,5 @@
+import { Effect, Ref } from "effect"
 import { List, type Map } from "immutable"
-import { randomUUID } from "node:crypto"
 
 export type Matrix<T> = List<List<T>>
 
@@ -58,4 +58,12 @@ export const cmap =
   ): MappedCollection<Collection, R> =>
     collection.map(fn as never) as MappedCollection<Collection, R>
 
-export const genKey = (): string => randomUUID()
+const genKeyRef = Effect.runSync(Ref.make(0))
+
+export const genKey = (): string =>
+  Effect.runSync(
+    Ref.modify(
+      genKeyRef,
+      (current) => [`server-util-key-${current}`, current + 1] as const
+    )
+  )

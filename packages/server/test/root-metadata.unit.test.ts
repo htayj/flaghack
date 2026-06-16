@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -104,6 +105,29 @@ const requiredEslintIgnorePatterns = [
   "**/*.md"
 ]
 
+const effectFpLintSourceGlobs = [
+  "packages/server/src/**/*.ts",
+  "packages/domain/src/**/*.ts"
+] as const
+
+const effectFpLintExcludedSourceGlobs = [
+  "packages/server/src/test*.ts",
+  "packages/domain/src/test*.ts",
+  "**/*.test.ts",
+  "**/*.unit.test.ts",
+  "**/*.bench.ts"
+] as const
+
+const requiredEffectFpLintSelectors = [
+  "MemberExpression[property.name='randomUUID'], MemberExpression[property.value='randomUUID']",
+  "VariableDeclarator[id.type='ObjectPattern'] Property[key.name='randomUUID'], VariableDeclarator[id.type='ObjectPattern'] Property[key.value='randomUUID']",
+  "CallExpression[callee.name='randomUUID']",
+  "CallExpression[callee.property.name='then'], CallExpression[callee.property.name='catch'], CallExpression[callee.property.name='finally']",
+  "NewExpression[callee.name='Promise']",
+  "CallExpression[callee.object.name='Promise']",
+  "ThrowStatement[argument.type='NewExpression'][argument.callee.name='Error']"
+] as const
+
 const requiredLintExtensions = ["ts", "tsx", "js", "mjs", "cjs"]
 
 type RootPackageJson = {
@@ -148,6 +172,37 @@ const readRootDprintJson = (): RootDprintJson =>
 
 const readRootEslintConfigMjs = (): string =>
   readFileSync(rootEslintConfigMjsPath, "utf8")
+
+const runBackendDomainEslintFixture = (source: string): string =>
+  execFileSync(
+    process.execPath,
+    [
+      join(repositoryRoot, "node_modules/eslint/bin/eslint.js"),
+      "--stdin",
+      "--stdin-filename",
+      "packages/server/src/review-fixture.ts"
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      input: source
+    }
+  )
+
+const backendDomainEslintFixtureError = (source: string): string => {
+  try {
+    runBackendDomainEslintFixture(source)
+    return ""
+  } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "stdout" in error
+      && typeof error.stdout === "string"
+    ) return error.stdout
+    return error instanceof Error ? error.message : String(error)
+  }
+}
 
 const readRootVitestSharedTs = (): string =>
   readFileSync(rootVitestSharedTsPath, "utf8")
@@ -424,6 +479,103 @@ describe("root ESLint metadata", () => {
 
     for (const ruleName of requiredEslintErrorRules) {
       expect(rootEslintConfigMjs).toContain(`"${ruleName}": "error"`)
+    }
+  })
+
+  it("bounds Effect/FP restrictions to backend and domain source", () => {
+    const rootEslintConfigMjs = readRootEslintConfigMjs()
+
+    expect(rootEslintConfigMjs).toContain(
+      "\"plugin:@effect/recommended\""
+    )
+    expect(rootEslintConfigMjs).not.toContain(
+      "packages/cli/src/**/*.ts"
+    )
+    expect(rootEslintConfigMjs).not.toContain(
+      "packages/web/src/**/*.ts"
+    )
+
+    for (const sourceGlob of effectFpLintSourceGlobs) {
+      expect(rootEslintConfigMjs).toContain(`"${sourceGlob}"`)
+    }
+
+    for (const excludedGlob of effectFpLintExcludedSourceGlobs) {
+      expect(rootEslintConfigMjs).toContain(`"${excludedGlob}"`)
+    }
+
+    expect(rootEslintConfigMjs).toContain("\"no-restricted-imports\": [")
+    expect(rootEslintConfigMjs).toContain(
+      "importNames: [\"randomUUID\", \"webcrypto\"]"
+    )
+    expect(rootEslintConfigMjs).toContain("name: \"node:crypto\"")
+    expect(rootEslintConfigMjs).toContain("name: \"crypto\"")
+    expect(rootEslintConfigMjs).toContain(
+      "\"flaghack/effect-async-boundaries\": \"error\""
+    )
+    expect(rootEslintConfigMjs).toContain(
+      "\"flaghack/effect-key-generation\": \"error\""
+    )
+    expect(rootEslintConfigMjs).toContain(
+      "\"no-restricted-properties\": ["
+    )
+    expect(rootEslintConfigMjs).toContain("object: \"Math\"")
+    expect(rootEslintConfigMjs).toContain("property: \"random\"")
+    expect(rootEslintConfigMjs).toContain("object: \"crypto\"")
+    expect(rootEslintConfigMjs).toContain("object: \"webcrypto\"")
+    expect(rootEslintConfigMjs).toContain("property: \"randomUUID\"")
+
+    for (const selector of requiredEffectFpLintSelectors) {
+      expect(rootEslintConfigMjs).toContain(`"${selector}"`)
+    }
+  })
+
+  it("rejects random UUID escape hatches in backend/domain lint fixtures", () => {
+    const bannedFixtures = [
+      "globalThis.crypto.randomUUID()\n",
+      "globalThis.crypto[\"randomUUID\"]()\n",
+      "globalThis.crypto?.[\"randomUUID\"]()\n",
+      "globalThis.crypto[`randomUUID`]()\n",
+      "const cryptoSource = globalThis.crypto\n\ncryptoSource.randomUUID()\n",
+      "const { randomUUID } = globalThis.crypto\n\nrandomUUID()\n",
+      "const uuid = ({ randomUUID: uuid }) => uuid()\n\nuuid(globalThis.crypto)\n",
+      "import { webcrypto } from \"node:crypto\"\n\nwebcrypto.randomUUID()\n",
+      "import { webcrypto as cryptoSource } from \"node:crypto\"\n\ncryptoSource.randomUUID()\n"
+    ]
+
+    for (const fixture of bannedFixtures) {
+      expect(backendDomainEslintFixtureError(fixture)).toContain(
+        "KeyGenerator"
+      )
+    }
+  })
+
+  it("allows async callbacks inside Effect boundary helpers", () => {
+    const allowedFixtures = [
+      "import { Effect } from \"effect\"\n\nexport const program = Effect.tryPromise(async () => 1)\n",
+      "import { Data, Effect } from \"effect\"\n\nclass FetchError\n  extends Data.TaggedError(\"FetchError\")<{ readonly cause: unknown }>\n{}\n\nexport const program = Effect.tryPromise({\n  try: async () => 1,\n  catch: (cause) => new FetchError({ cause })\n})\n"
+    ]
+
+    for (const fixture of allowedFixtures) {
+      expect(runBackendDomainEslintFixture(fixture)).toBe("")
+    }
+  })
+
+  it("rejects raw async backend/domain API fixtures", () => {
+    const bannedFixtures = [
+      "export default async () => 1\n",
+      "export const request = async () => 1\n",
+      "class Service {\n  request = async () => 1\n}\n",
+      "export const service = {\n  request: async () => 1\n}\n",
+      "export const service = {\n  try: async () => 1\n}\n",
+      "const tryPromise = (fn) => fn()\n\nexport const program = tryPromise(async () => 1)\n",
+      "const Effect = {\n  tryPromise: (fn) => fn()\n}\n\nexport const program = Effect.tryPromise(async () => 1)\n",
+      "import type { Effect as EffectType } from \"effect\"\n\ntype Program = EffectType.Effect<number>\n\nconst Effect = {\n  tryPromise: (fn: () => Promise<number>): Program => fn() as unknown as Program\n}\n\nexport const program = Effect.tryPromise(async () => 1)\n"
+    ]
+
+    for (const fixture of bannedFixtures) {
+      expect(backendDomainEslintFixtureError(fixture)).toContain(
+        "raw async"
+      )
     }
   })
 })

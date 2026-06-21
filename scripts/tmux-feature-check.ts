@@ -246,6 +246,7 @@ const run = async () => {
     "FLAGHACK_TMUX_KEY_WAIT_MS",
     DEFAULT_KEY_WAIT_MS
   )
+  const initialWaitMs = numberFromEnv("FLAGHACK_TMUX_INITIAL_WAIT_MS", 0)
   const finalWaitMs = numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
   const label =
     process.env.FLAGHACK_TMUX_LABEL?.replace(/[^a-zA-Z0-9_.-]+/gu, "-")
@@ -301,6 +302,9 @@ const run = async () => {
     ]).trim()
 
     await waitForPaneOutput(cliPane)
+    if (initialWaitMs > 0) {
+      await delay(initialWaitMs)
+    }
     await sendKeys(cliPane, keys, keyWaitMs)
     await delay(finalWaitMs)
 

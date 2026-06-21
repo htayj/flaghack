@@ -1,6 +1,12 @@
 import { getTile } from "@flaghack/domain/display"
 import type { Tile } from "@flaghack/domain/display"
-import { AnyTerrain, conforms, EAction } from "@flaghack/domain/schemas"
+import {
+  AnyCreature,
+  AnyItem,
+  AnyTerrain,
+  conforms,
+  EAction
+} from "@flaghack/domain/schemas"
 import type {
   Action,
   Entity as EntitySchema,
@@ -25,6 +31,9 @@ import {
 import Inventory from "./Inventory.tsx"
 import Messages, { MAX_VISIBLE_MESSAGES } from "./Messages.tsx"
 import PickupPopup from "./PickupPopup.tsx"
+
+const BOARD_HEIGHT = 20
+const BOARD_WIDTH = 80
 
 export type Matrix<T> = List<List<T>>
 export const nullMatrix = (h: number, w: number): Matrix<null> =>
@@ -69,13 +78,104 @@ const getPosition = (e: Entity): Pos | undefined =>
   e.in === "world" ? e.at : undefined
 
 const posKey = (p: Omit<Pos, "z">): string => `${p.x},${p.y}`
+
+const clamp = (value: number, low: number, high: number): number =>
+  Math.min(Math.max(value, low), high)
+
+type Viewport = {
+  readonly left: number
+  readonly top: number
+  readonly z: number
+  readonly hasZ: boolean
+}
+
+const findViewportPlayer = (world: World): Entity | undefined =>
+  Map(world).valueSeq().find((entity) =>
+    entity._tag === "player" && entity.in === "world"
+  )
+
+const viewportForWorld = (world: World): Viewport => {
+  const player = findViewportPlayer(world)
+  if (player === undefined) return { hasZ: false, left: 0, top: 0, z: 0 }
+
+  const worldEntities = Map(world).valueSeq().toArray()
+  const sameLevelEntities = worldEntities.filter((entity) =>
+    entity.in === "world" && entity.at.z === player.at.z
+  )
+  const maxX = Math.max(
+    player.at.x,
+    ...sameLevelEntities.map((entity) => entity.at.x)
+  )
+  const maxY = Math.max(
+    player.at.y,
+    ...sameLevelEntities.map((entity) => entity.at.y)
+  )
+
+  return {
+    hasZ: true,
+    left: clamp(
+      player.at.x - Math.floor(BOARD_WIDTH / 2),
+      0,
+      Math.max(0, maxX - BOARD_WIDTH + 1)
+    ),
+    top: clamp(
+      player.at.y - Math.floor(BOARD_HEIGHT / 2),
+      0,
+      Math.max(0, maxY - BOARD_HEIGHT + 1)
+    ),
+    z: player.at.z
+  }
+}
+
+const screenPosition = (position: Pos, viewport: Viewport): Pos => ({
+  x: position.x - viewport.left,
+  y: position.y - viewport.top,
+  z: position.z
+})
+
+const isVisibleScreenPosition = (position: Pos): boolean =>
+  position.x >= 0
+  && position.x < BOARD_WIDTH
+  && position.y >= 0
+  && position.y < BOARD_HEIGHT
 const isTerrain = conforms(AnyTerrain)
-const zindex = (entity: Entity): number => isTerrain(entity) ? 0 : 1
+const isCreature = conforms(AnyCreature)
+const isItem = conforms(AnyItem)
+const zindex = (entity: Entity): number => {
+  switch (entity._tag) {
+    case "floor":
+    case "tunnel":
+      return 0
+    case "tent":
+      return 1
+    case "wall":
+    case "sign":
+    case "effigy":
+    case "temple":
+      return 2
+    default:
+      if (isItem(entity)) return 3
+      if (isCreature(entity)) return 4
+      return isTerrain(entity) ? 0 : 3
+  }
+}
 export const drawWorld = (world: World): Tiles => {
-  const emptyMatrix = nullMatrix(20, 80)
+  const emptyMatrix = nullMatrix(BOARD_HEIGHT, BOARD_WIDTH)
+  const viewport = viewportForWorld(world)
 
   const worldMap = Map(world)
     .valueSeq()
+    .filter((entity) =>
+      entity.in === "world"
+      && (!viewport.hasZ || entity.at.z === viewport.z)
+    )
+    .map((entity) =>
+      ({
+        ...entity,
+        at: screenPosition(entity.at, viewport)
+      }) as Entity
+    )
+    .filter((entity) => isVisibleScreenPosition(entity.at))
     .groupBy((entity) => {
       const position = getPosition(entity)
       return position === undefined ? undefined : posKey(position)

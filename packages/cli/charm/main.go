@@ -18,12 +18,13 @@ import (
 )
 
 const (
-	boardWidth          = 80
-	boardHeight         = 20
-	fixedEventAreaLines = 10
-	maxVisibleMsgs      = 50
-	maxAutoMoveSteps    = boardWidth * boardHeight
-	defaultBaseURL      = "http://127.0.0.1:3000"
+	boardWidth                 = 80
+	boardHeight                = 20
+	fixedEventAreaLines        = 10
+	maxVisibleMsgs             = 50
+	maxAutoMoveSteps           = boardWidth * boardHeight
+	defaultBaseURL             = "http://127.0.0.1:3000"
+	travelWorldRefreshInterval = 24
 )
 
 type pos struct {
@@ -1033,25 +1034,64 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 		if len(path) == 0 {
 			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, snapshot{world: world}, nil
 		}
+
+		batch := straightTravelBatch(path, maxAutoMoveSteps-steps)
 		before := player.At
-		snap, err := c.actionAndRefresh(ctx, action{Tag: "move", Dir: path[0]})
+		expected := before
+		for _, direction := range batch {
+			if cancelled(cancel) {
+				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: world}, nil
+			}
+			if err := c.doAction(ctx, action{Tag: "move", Dir: direction}); err != nil {
+				return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
+			}
+			steps++
+			expected = addPos(expected, movementDeltas[direction])
+			if cancelled(cancel) {
+				refreshedWorld, err := c.getCollection(ctx, "/world")
+				if err != nil {
+					return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
+				}
+				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: refreshedWorld}, nil
+			}
+		}
+
+		refreshedWorld, err := c.getCollection(ctx, "/world")
 		if err != nil {
 			return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
 		}
-		world = snap.world
-		steps++
+		world = refreshedWorld
 		if cancelled(cancel) {
-			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snap, nil
+			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: world}, nil
 		}
 		after, ok := findPlayer(world)
 		if !ok {
 			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, snapshot{}, nil
 		}
-		if samePos(before, after.At) {
+		if samePos(after.At, target) {
+			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, snapshot{world: world}, nil
+		}
+		if samePos(before, after.At) || !samePos(expected, after.At) {
 			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, snapshot{world: world}, nil
 		}
 	}
 	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, snapshot{world: world}, nil
+}
+
+func straightTravelBatch(path []string, remainingSteps int) []string {
+	if len(path) == 0 || remainingSteps <= 0 {
+		return nil
+	}
+	firstDirection := path[0]
+	limit := min(min(len(path), remainingSteps), travelWorldRefreshInterval)
+	batch := make([]string, 0, limit)
+	for _, direction := range path[:limit] {
+		if direction != firstDirection {
+			break
+		}
+		batch = append(batch, direction)
+	}
+	return batch
 }
 
 func cancelled(cancel <-chan struct{}) bool {
@@ -1350,7 +1390,7 @@ func findTravelDirections(world []entity, start, target pos) []string {
 		if isPassableTerrain(item) {
 			passable[posKey(item.At)] = item.At
 		}
-		if isCreature(item) && !samePos(item.At, start) {
+		if item.Tag == "wall" || (isCreature(item) && !samePos(item.At, start)) {
 			blocked[posKey(item.At)] = true
 		}
 	}
@@ -1576,10 +1616,22 @@ func wallChar(variant string) string {
 }
 
 func zIndex(item entity) int {
-	if isTerrain(item) {
+	switch item.Tag {
+	case "floor", "tunnel":
 		return 0
+	case "tent":
+		return 1
+	case "wall", "sign", "effigy", "temple":
+		return 2
+	default:
+		if isCreature(item) {
+			return 4
+		}
+		if isItem(item) {
+			return 3
+		}
+		return 3
 	}
-	return 1
 }
 
 func isTerrain(item entity) bool {

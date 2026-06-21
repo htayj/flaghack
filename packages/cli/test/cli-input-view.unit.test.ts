@@ -79,12 +79,16 @@ const tunnelAt = (x: number, y: number): Entity => ({
   in: "world",
   key: `tunnel-${x}-${y}`
 })
-const wallAt = (x: number, y: number): Entity => ({
+const wallAt = (
+  x: number,
+  y: number,
+  variant: "none" | "vertical" = "none"
+): Entity => ({
   _tag: "wall",
   at: { x, y, z: 0 },
   in: "world",
   key: `wall-${x}-${y}`,
-  variant: "none"
+  variant
 })
 const playerAt = (x: number, y: number): Entity => ({
   _tag: "player",
@@ -594,6 +598,38 @@ describe("CLI campground camera", () => {
     )
 
     expect(tiles[10]?.[40]?.char).toBe("@")
+  })
+
+  it("draws tent roofs over floors and walls over roofs regardless of insertion order", () => {
+    const roofOverFloorWorlds = [
+      worldFromEntities([floorAt(1, 2), tentAt(1, 2)]),
+      worldFromEntities([tentAt(1, 2), floorAt(1, 2)])
+    ]
+    const wallOverRoofWorlds = [
+      worldFromEntities([tentAt(1, 2), wallAt(1, 2, "vertical")]),
+      worldFromEntities([wallAt(1, 2, "vertical"), tentAt(1, 2)])
+    ]
+
+    for (const world of roofOverFloorWorlds) {
+      expect(drawWorld(world)[2]?.[1]?.char).toBe("^")
+    }
+    for (const world of wallOverRoofWorlds) {
+      expect(drawWorld(world)[2]?.[1]?.char).toBe("│")
+    }
+  })
+
+  it("draws creatures over items and terrain", () => {
+    const tiles = drawWorld(
+      worldFromEntities([
+        floorAt(1, 2),
+        tentAt(1, 2),
+        wallAt(1, 2, "vertical"),
+        waterAt(1, 2),
+        playerAt(1, 2)
+      ])
+    )
+
+    expect(tiles[2]?.[1]?.char).toBe("@")
   })
 })
 
@@ -1145,6 +1181,22 @@ describe("CLI NetHack travel pathfinding", () => {
       { x: 0, y: 0, z: 0 },
       { x: 1, y: 0, z: 0 }
     )).toEqual([])
+    expect(findTravelDirections(
+      world,
+      { x: 0, y: 0, z: 0 },
+      { x: 2, y: 0, z: 0 }
+    )).toEqual([])
+  })
+
+  it("does not route through a passable tile that also has a wall", () => {
+    const world = worldFromEntities([
+      playerAt(0, 0),
+      floorAt(0, 0),
+      floorAt(1, 0),
+      wallAt(1, 0),
+      floorAt(2, 0)
+    ])
+
     expect(findTravelDirections(
       world,
       { x: 0, y: 0, z: 0 },

@@ -73,6 +73,98 @@ func TestActionAndRefreshSkipsInventoryFetchForMovement(t *testing.T) {
 	}
 }
 
+func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testing.T) {
+	playerX := 0
+	actRequests := 0
+	worldRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			if actRequests == 1 {
+				playerX++
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/world":
+			worldRequests++
+			_, _ = fmt.Fprintf(w, `[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]]`, playerX)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	initialWorld := []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "floor-2", Tag: "floor", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	result, snap, err := client.runTravelUnmeasured(t.Context(), initialWorld, pos{X: 2, Y: 0, Z: 0}, make(chan struct{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.kind != "blocked" || result.steps != 2 {
+		t.Fatalf("travel result = %#v, want blocked after 2 steps", result)
+	}
+	if actRequests != 2 || worldRequests != 1 {
+		t.Fatalf("requests act/world = %d/%d, want 2/1", actRequests, worldRequests)
+	}
+	player, ok := findPlayer(snap.world)
+	if !ok || player.At != (pos{X: 1, Y: 0, Z: 0}) {
+		t.Fatalf("final player = %#v, %v; want x=1", player, ok)
+	}
+}
+
+func TestRunTravelRefreshesBeforeReturningCancelledBatch(t *testing.T) {
+	playerX := 0
+	actRequests := 0
+	worldRequests := 0
+	cancel := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			playerX++
+			if actRequests == 1 {
+				close(cancel)
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/world":
+			worldRequests++
+			_, _ = fmt.Fprintf(w, `[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]]`, playerX)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	initialWorld := []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "floor-2", Tag: "floor", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	result, snap, err := client.runTravelUnmeasured(t.Context(), initialWorld, pos{X: 2, Y: 0, Z: 0}, cancel)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.kind != "cancelled" || result.steps != 1 {
+		t.Fatalf("travel result = %#v, want cancelled after 1 step", result)
+	}
+	if actRequests != 1 || worldRequests != 1 {
+		t.Fatalf("requests act/world = %d/%d, want 1/1", actRequests, worldRequests)
+	}
+	player, ok := findPlayer(snap.world)
+	if !ok || player.At != (pos{X: 1, Y: 0, Z: 0}) {
+		t.Fatalf("cancelled snapshot player = %#v, %v; want refreshed x=1", player, ok)
+	}
+}
+
 func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	encoded, err := json.Marshal(actionPayload{Action: action{Tag: "move", Dir: "E"}})
 	if err != nil {
@@ -153,6 +245,35 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 	}
 }
 
+func TestDrawWorldLayersTentRoofsWallsItemsAndCreatures(t *testing.T) {
+	floor := entity{Key: "floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	tent := entity{Key: "tent", Tag: "tent", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	wall := entity{Key: "wall", Tag: "wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
+	beer := entity{Key: "beer", Tag: "beer", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	player := entity{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Name: "you"}
+
+	roofOverFloorWorlds := [][]entity{{floor, tent}, {tent, floor}}
+	for _, world := range roofOverFloorWorlds {
+		if got := drawWorld(world, nil)[2][1].char; got != "^" {
+			t.Fatalf("floor/tent tile = %q, want ^", got)
+		}
+	}
+
+	wallOverRoofWorlds := [][]entity{{tent, wall}, {wall, tent}}
+	for _, world := range wallOverRoofWorlds {
+		if got := drawWorld(world, nil)[2][1].char; got != "│" {
+			t.Fatalf("tent/wall tile = %q, want │", got)
+		}
+	}
+
+	if got := drawWorld([]entity{floor, tent, wall, beer}, nil)[2][1].char; got != "!" {
+		t.Fatalf("item over terrain tile = %q, want !", got)
+	}
+	if got := drawWorld([]entity{floor, tent, wall, beer, player}, nil)[2][1].char; got != "@" {
+		t.Fatalf("creature over item/terrain tile = %q, want @", got)
+	}
+}
+
 func TestFindTravelDirectionsUsesKnownPassableTiles(t *testing.T) {
 	world := []entity{
 		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
@@ -163,6 +284,20 @@ func TestFindTravelDirectionsUsesKnownPassableTiles(t *testing.T) {
 	path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 2, Y: 0, Z: 0})
 	if len(path) != 2 || path[0] != "E" || path[1] != "E" {
 		t.Fatalf("path = %#v, want [E E]", path)
+	}
+}
+
+func TestFindTravelDirectionsTreatsWallOverPassableTileAsBlocked(t *testing.T) {
+	world := []entity{
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "wall-1", Tag: "wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "floor-2", Tag: "floor", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
+	}
+	path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 2, Y: 0, Z: 0})
+	if len(path) != 0 {
+		t.Fatalf("path = %#v, want no route through floor+wall coordinate", path)
 	}
 }
 

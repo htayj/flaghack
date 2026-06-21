@@ -413,6 +413,8 @@ export const travelPrompt = (target: Pos): string =>
   `Travel target ${target.x},${target.y}: hjkl/yubn move, Enter travel, Esc cancel`
 const isPassableTravelTerrain = (entity: Entity): boolean =>
   isTerrain(entity) && entity._tag !== "wall"
+const isImpassableTravelTerrain = (entity: Entity): boolean =>
+  isTerrain(entity) && entity._tag === "wall"
 const findPlayerEntity = (world: World): Entity | undefined =>
   Array.from(world.pipe(HashMap.values)).find((entity) =>
     entity._tag === "player"
@@ -530,12 +532,13 @@ const nonPlayerCreaturesAdjacentTo = (
     && Math.abs(entity.at.y - position.y) <= 1
   )
 
-const isKnownPassablePosition = (world: World, position: Pos): boolean =>
-  Array.from(world.pipe(HashMap.values)).some((entity) =>
-    entity.in === "world"
-    && samePosition(entity.at, position)
-    && isPassableTravelTerrain(entity)
+const isKnownPassablePosition = (world: World, position: Pos): boolean => {
+  const entitiesAtPosition = Array.from(world.pipe(HashMap.values)).filter(
+    (entity) => entity.in === "world" && samePosition(entity.at, position)
   )
+  return entitiesAtPosition.some(isPassableTravelTerrain)
+    && !entitiesAtPosition.some(isImpassableTravelTerrain)
+}
 
 const isKnownCorridorPosition = (world: World, position: Pos): boolean =>
   Array.from(world.pipe(HashMap.values)).some((entity) =>
@@ -856,7 +859,10 @@ export const findTravelDirections = (
     if (isPassableTravelTerrain(entity)) {
       passablePositions.set(positionKey(entity.at), entity.at)
     }
-    if (isCreature(entity) && !samePosition(entity.at, start)) {
+    if (
+      isImpassableTravelTerrain(entity)
+      || (isCreature(entity) && !samePosition(entity.at, start))
+    ) {
       blockedPositions.add(positionKey(entity.at))
     }
   }
@@ -917,7 +923,24 @@ export const findTravelDirections = (
   return path
 }
 
-const zindex = (p: Entity) => isTerrain(p) ? 0 : 1
+const zindex = (entity: Entity): number => {
+  switch (entity._tag) {
+    case "floor":
+    case "tunnel":
+      return 0
+    case "tent":
+      return 1
+    case "wall":
+    case "sign":
+    case "effigy":
+    case "temple":
+      return 2
+    default:
+      if (isItem(entity)) return 3
+      if (isCreature(entity)) return 4
+      return isTerrain(entity) ? 0 : 3
+  }
+}
 export const prependMessage =
   (message: string) => (messages: List<string>): List<string> =>
     messages.unshift(message).take(MAX_VISIBLE_MESSAGES)

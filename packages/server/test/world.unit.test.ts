@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs"
 import {
   BSPGenLevel,
   CampgroundGenLevel,
+  campgroundReservedTravelCorridorCoordinates,
   type Entity,
   isCreature,
   isItem,
@@ -75,6 +76,63 @@ const samePosition = (a: Entity, b: Entity): boolean =>
 const manhattanDistance = (a: Entity, b: Entity): number =>
   Math.abs(a.at.x - b.at.x) + Math.abs(a.at.y - b.at.y)
 
+const passableTerrainTags = new Set([
+  "floor",
+  "tunnel",
+  "tent",
+  "sign",
+  "effigy",
+  "temple"
+])
+
+const cardinalNeighborCoordinateKeys = (key: string): Array<string> => {
+  const [rawX, rawY, rawZ] = key.split(",")
+  const x = Number(rawX)
+  const y = Number(rawY)
+  const z = Number(rawZ)
+
+  return [
+    `${x + 1},${y},${z}`,
+    `${x - 1},${y},${z}`,
+    `${x},${y + 1},${z}`,
+    `${x},${y - 1},${z}`
+  ]
+}
+
+const reachablePassableCoordinateKeys = (
+  entities: ReadonlyArray<Entity>,
+  startKey: string
+): Set<string> => {
+  const passableKeys = new Set(
+    entities.filter((entity) =>
+      entity.in === "world" && passableTerrainTags.has(entity._tag)
+    ).map(coordinateKey)
+  )
+  for (
+    const wallKey of entities.filter((entity) =>
+      entity.in === "world" && entity._tag === "wall"
+    ).map(coordinateKey)
+  ) {
+    passableKeys.delete(wallKey)
+  }
+  const reachable = new Set<string>()
+  const queue = passableKeys.has(startKey) ? [startKey] : []
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (current === undefined || reachable.has(current)) continue
+    reachable.add(current)
+
+    for (const neighbor of cardinalNeighborCoordinateKeys(current)) {
+      if (passableKeys.has(neighbor) && !reachable.has(neighbor)) {
+        queue.push(neighbor)
+      }
+    }
+  }
+
+  return reachable
+}
+
 const refrigeratedCampFoodTags = new Set(["hotdog", "cheese", "salsa"])
 const coolerContentTags = new Set([
   "beer",
@@ -114,17 +172,22 @@ describe("world entity predicates", () => {
 })
 
 describe("CampgroundGenLevel", () => {
-  it("generates a deterministic burn campground with interconnected road loop features", () => {
+  it("generates a deterministic 10x-area burn campground with many camps and looped roads", () => {
     const world = Effect.runSync(CampgroundGenLevel(777, 0))
     const repeatWorld = Effect.runSync(CampgroundGenLevel(777, 0))
     const entities = Array.from(world.pipe(HashMap.values))
     const repeatEntities = Array.from(repeatWorld.pipe(HashMap.values))
     const roads = entities.filter((entity) => entity._tag === "tunnel")
     const fields = entities.filter((entity) => entity._tag === "floor")
-    const tents = entities.filter((entity) => entity._tag === "tent")
     const signs = entities.filter((entity) => entity._tag === "sign")
+    const coolers = entities.filter((entity) => entity._tag === "cooler")
     const effigies = entities.filter((entity) => entity._tag === "effigy")
     const temples = entities.filter((entity) => entity._tag === "temple")
+    const xs = entities.map((entity) => entity.at.x)
+    const ys = entities.map((entity) => entity.at.y)
+    const width = Math.max(...xs) - Math.min(...xs) + 1
+    const height = Math.max(...ys) - Math.min(...ys) + 1
+    const originalArea = 120 * 48
     const roadStats = roadGraphStats(roads)
     const zLevels = [...new Set(entities.map(({ at }) => at.z))].sort(
       (a, b) => a - b
@@ -132,9 +195,13 @@ describe("CampgroundGenLevel", () => {
 
     expect(repeatEntities).toEqual(entities)
     expect(zLevels).toEqual([0])
+    expect(width * height).toBeGreaterThanOrEqual(originalArea * 10)
+    expect(width * height).toBeLessThanOrEqual(originalArea * 20)
+    expect(width).toBeGreaterThanOrEqual(300)
+    expect(height).toBeGreaterThanOrEqual(140)
     expect(fields.length).toBeGreaterThan(roads.length)
-    expect(tents.length).toBeGreaterThanOrEqual(9)
-    expect(signs.length).toBeGreaterThanOrEqual(3)
+    expect(signs.length).toBeGreaterThanOrEqual(24)
+    expect(coolers.length).toBeGreaterThanOrEqual(signs.length)
     expect(signs.every((sign) => sign.name.trim().length > 0)).toBe(true)
     expect(effigies.length).toBeGreaterThanOrEqual(5)
     expect(temples).toHaveLength(1)
@@ -142,33 +209,122 @@ describe("CampgroundGenLevel", () => {
     expect(roadStats.edges).toBeGreaterThanOrEqual(roadStats.nodes)
   })
 
-  it("builds a campground larger than the fixed viewport with an enterable temple structure", () => {
+  it("emits roofed tent structures, keeps the travel corridor open, and places the effigy more centrally than the temple", () => {
     const world = Effect.runSync(CampgroundGenLevel(777, 0))
     const entities = Array.from(world.pipe(HashMap.values))
+    const floors = entities.filter((entity) => entity._tag === "floor")
+    const roads = entities.filter((entity) => entity._tag === "tunnel")
+    const roofs = entities.filter((entity) => entity._tag === "tent")
+    const walls = entities.filter((entity) => entity._tag === "wall")
+    const effigies = entities.filter((entity) => entity._tag === "effigy")
+    const temple = entities.find((entity) => entity._tag === "temple")
+    const floorKeys = new Set(floors.map(coordinateKey))
+    const roadKeys = new Set(roads.map(coordinateKey))
+    const wallKeys = new Set(walls.map(coordinateKey))
     const xs = entities.map((entity) => entity.at.x)
     const ys = entities.map((entity) => entity.at.y)
-    const temple = entities.find((entity) => entity._tag === "temple")
+    const campgroundCenter = {
+      x: (Math.min(...xs) + Math.max(...xs)) / 2,
+      y: (Math.min(...ys) + Math.max(...ys)) / 2
+    }
 
-    expect(Math.max(...xs) - Math.min(...xs) + 1).toBeGreaterThan(80)
-    expect(Math.max(...ys) - Math.min(...ys) + 1).toBeGreaterThan(20)
+    expect(roofs.length).toBeGreaterThanOrEqual(200)
+    expect(walls.length).toBeGreaterThanOrEqual(100)
+    expect(walls.every((wall) => wall.variant !== "none")).toBe(true)
+    for (const wall of walls) {
+      expect(roadKeys.has(coordinateKey(wall))).toBe(false)
+    }
+    for (const roof of roofs) {
+      expect(floorKeys.has(coordinateKey(roof))).toBe(true)
+      expect(wallKeys.has(coordinateKey(roof))).toBe(false)
+      expect(roadKeys.has(coordinateKey(roof))).toBe(false)
+    }
     expect(temple).toBeDefined()
     if (temple === undefined) return
 
-    const nearbyWalls = entities.filter((entity) =>
-      entity._tag === "wall"
-      && entity.at.z === temple.at.z
-      && Math.abs(entity.at.x - temple.at.x) <= 7
-      && Math.abs(entity.at.y - temple.at.y) <= 5
+    const nonTempleWalls = walls.filter((wall) =>
+      Math.abs(wall.at.x - temple.at.x) > 8
+      || Math.abs(wall.at.y - temple.at.y) > 6
     )
-    const adjacentInteriorFloors = entities.filter((entity) =>
-      entity._tag === "floor"
-      && entity.at.z === temple.at.z
-      && Math.abs(entity.at.x - temple.at.x) <= 1
-      && Math.abs(entity.at.y - temple.at.y) <= 1
+    const nearestEffigyDistance = Math.min(
+      ...effigies.map((effigy) =>
+        Math.abs(effigy.at.x - campgroundCenter.x)
+        + Math.abs(effigy.at.y - campgroundCenter.y)
+      )
+    )
+    const templeDistance = Math.abs(temple.at.x - campgroundCenter.x)
+      + Math.abs(temple.at.y - campgroundCenter.y)
+    const corridorKeys = new Set(
+      campgroundReservedTravelCorridorCoordinates().map(({ x, y }) =>
+        `${x},${y},0`
+      )
+    )
+    const passableTerrainKeys = new Set(
+      entities.filter((entity) =>
+        entity._tag === "floor" || entity._tag === "tunnel"
+      ).map(coordinateKey)
+    )
+    const corridorBlockerKeys = new Set(
+      entities.filter((entity) =>
+        entity._tag === "wall"
+        || entity._tag === "tent"
+        || entity._tag === "sign"
+        || entity._tag === "effigy"
+        || entity._tag === "temple"
+        || entity._tag === "cooler"
+      ).map(coordinateKey)
     )
 
-    expect(nearbyWalls.length).toBeGreaterThan(12)
-    expect(adjacentInteriorFloors.length).toBeGreaterThan(0)
+    expect(nonTempleWalls.length).toBeGreaterThan(0)
+    expect(nearestEffigyDistance).toBeLessThan(templeDistance)
+    for (const corridorKey of corridorKeys) {
+      expect(passableTerrainKeys.has(corridorKey)).toBe(true)
+      expect(corridorBlockerKeys.has(corridorKey)).toBe(false)
+    }
+  })
+
+  it("does not place impassable walls on road tiles across representative seeds", () => {
+    for (const seed of [1, 2, 3, 17, 777]) {
+      const world = Effect.runSync(CampgroundGenLevel(seed, 0))
+      const entities = Array.from(world.pipe(HashMap.values))
+      const roadKeys = new Set(
+        entities.filter((entity) => entity._tag === "tunnel").map(
+          coordinateKey
+        )
+      )
+      const wallRoadOverlaps = entities.filter((entity) =>
+        entity._tag === "wall" && roadKeys.has(coordinateKey(entity))
+      )
+
+      expect(wallRoadOverlaps, `seed ${seed}`).toHaveLength(0)
+    }
+  })
+
+  it("keeps the enlarged walkable campground connected from spawn to camps and temple", () => {
+    const world = Effect.runSync(CampgroundGenLevel(777, 0))
+    const entities = Array.from(world.pipe(HashMap.values))
+    const spawn = campgroundReservedTravelCorridorCoordinates()[0]
+    if (spawn === undefined) throw new Error("missing spawn corridor")
+    const reachable = reachablePassableCoordinateKeys(
+      entities,
+      `${spawn.x},${spawn.y},0`
+    )
+    const originalArea = 120 * 48
+    const signs = entities.filter((entity) => entity._tag === "sign")
+    const coolers = entities.filter((entity) => entity._tag === "cooler")
+    const temple = entities.find((entity) => entity._tag === "temple")
+
+    expect(reachable.size).toBeGreaterThan(originalArea * 9)
+    for (const sign of signs) {
+      expect(reachable.has(coordinateKey(sign))).toBe(true)
+    }
+    for (const cooler of coolers) {
+      expect(reachable.has(coordinateKey(cooler))).toBe(true)
+    }
+    expect(temple).toBeDefined()
+    if (temple !== undefined) {
+      expect(reachable.has(coordinateKey(temple))).toBe(true)
+    }
   })
 
   it("spawns camp coolers containing mostly beer and refrigerated camp food", () => {
@@ -242,8 +398,8 @@ describe("CampgroundGenLevel", () => {
         && (entity._tag === "floor" || entity._tag === "tunnel")
       ).map(coordinateKey)
     )
-    const campBlockerPositions = new Set(
-      entities.filter((entity) =>
+    const campBlockerPositions = new Set([
+      ...entities.filter((entity) =>
         entity.in === "world"
         && (
           entity._tag === "wall"
@@ -253,8 +409,11 @@ describe("CampgroundGenLevel", () => {
           || entity._tag === "temple"
           || entity._tag === "cooler"
         )
-      ).map(coordinateKey)
-    )
+      ).map(coordinateKey),
+      ...campgroundReservedTravelCorridorCoordinates().map(({ x, y }) =>
+        `${x},${y},0`
+      )
+    ])
     const npcPositions = new Set(campgroundNpcs.map(coordinateKey))
 
     expect(campgroundNpcs.length).toBeGreaterThan(0)

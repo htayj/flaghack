@@ -28,6 +28,7 @@ import { makePerfTraceId, measureEffect } from "./perf.js"
 import type { TPos } from "./position.js"
 import {
   CampgroundGenLevel,
+  campgroundReservedTravelCorridorCoordinates,
   containersAt,
   type Entity,
   isItem,
@@ -38,7 +39,13 @@ type TGameState = typeof GameState.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
-const campgroundSpawnAnchor: TPos = { x: 60, y: 24, z: 0 }
+const campgroundReservedTravelStart =
+  campgroundReservedTravelCorridorCoordinates()[0]
+const campgroundSpawnAnchor: TPos = {
+  x: campgroundReservedTravelStart?.x ?? 96,
+  y: campgroundReservedTravelStart?.y ?? 120,
+  z: 0
+}
 
 const spawnDistanceSquared = (entity: Entity): number =>
   (entity.at.x - campgroundSpawnAnchor.x) ** 2

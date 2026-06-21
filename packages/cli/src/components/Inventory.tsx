@@ -1,6 +1,7 @@
 import type { World as WorldSchema } from "@flaghack/domain/schemas"
 import { Map } from "immutable"
 import React from "react"
+import { assignItemLetters, renderItemLabel } from "./itemLetters.js"
 import { MESSAGE_LOG_HEIGHT, PLAY_AREA_HEIGHT } from "./layout.js"
 
 type World = typeof WorldSchema.Type
@@ -19,9 +20,9 @@ export default function Inventory({ inventory }: Props) {
       width={15}
       label="inventory"
     >
-      {invMap.valueSeq().toArray().map((item, i) => (
-        <box key={item.key} top={i}>
-          {item._tag}
+      {assignItemLetters(invMap.valueSeq().toArray()).map((entry, i) => (
+        <box key={entry.item.key} top={i}>
+          {renderItemLabel(entry)}
         </box>
       ))}
     </box>

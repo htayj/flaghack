@@ -107,11 +107,19 @@ const (
 	lootPut  lootMode = "put"
 )
 
+type popupStage string
+
+const (
+	popupStageAction popupStage = "action"
+	popupStageItems  popupStage = "items"
+)
+
 type popupState struct {
 	kind         popupKind
 	title        string
 	containerKey string
 	mode         lootMode
+	stage        popupStage
 	items        []entity
 	putItems     []entity
 	marked       map[string]bool
@@ -286,7 +294,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		sort.SliceStable(msg.containers, func(i, j int) bool { return msg.containers[i].Key < msg.containers[j].Key })
 		container := msg.containers[0]
-		m.popup = &popupState{kind: popupLoot, title: "Loot " + container.Tag, containerKey: container.Key, mode: lootTake, items: []entity{}, putItems: m.inventory, marked: map[string]bool{}}
+		m.popup = &popupState{kind: popupLoot, title: "Loot " + container.Tag, containerKey: container.Key, mode: lootTake, stage: popupStageAction, items: []entity{}, putItems: m.inventory, marked: map[string]bool{}}
 		m.addMessage("looting " + container.Tag)
 		m.perf.markResponseReceived("loadLootContainers", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, loadLootItemsCmd(m.client, m.lootRequestID, container.Key)
@@ -407,12 +415,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case ",":
 		m.pendingMovementPrefix = ""
 		m.pickupRequestID++
-		m.popup = &popupState{kind: popupPickup, title: "Pickup what?", items: []entity{}, marked: map[string]bool{}}
+		m.popup = &popupState{kind: popupPickup, title: "Pickup what?", stage: popupStageItems, items: []entity{}, marked: map[string]bool{}}
 		m.addMessage("picking up ")
 		return m, loadPickupCmd(m.client, m.pickupRequestID)
 	case "d":
 		m.pendingMovementPrefix = ""
-		m.popup = &popupState{kind: popupDrop, title: "Drop what?", items: m.inventory, marked: map[string]bool{}}
+		m.popup = &popupState{kind: popupDrop, title: "Drop what?", stage: popupStageItems, items: m.inventory, marked: map[string]bool{}}
 		m.addMessage("dropping")
 		return m, nil
 	}
@@ -535,24 +543,36 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "t":
-		if popup.kind == popupLoot {
+		if popup.kind == popupLoot && popup.stage == popupStageAction {
 			popup.mode = lootTake
+			popup.stage = popupStageItems
 			popup.marked = map[string]bool{}
+			return m, nil
 		}
+		togglePopupLetter(popup, input)
 		return m, nil
 	case "p":
-		if popup.kind == popupLoot {
+		if popup.kind == popupLoot && popup.stage == popupStageAction {
 			popup.mode = lootPut
+			popup.stage = popupStageItems
 			popup.marked = map[string]bool{}
+			return m, nil
 		}
+		togglePopupLetter(popup, input)
 		return m, nil
 	case ",":
+		if popup.stage == popupStageAction {
+			return m, nil
+		}
 		popup.marked = map[string]bool{}
 		for _, item := range popupVisibleItems(*popup) {
 			popup.marked[item.Key] = true
 		}
 		return m, nil
 	case " ", "space":
+		if popup.stage == popupStageAction {
+			return m, nil
+		}
 		valid := itemKeySet(popupVisibleItems(*popup))
 		keys := []string{}
 		for key := range popup.marked {
@@ -577,7 +597,17 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		}
 		return m, actionAndRefreshCmd(m.client, action{Tag: "dropMulti", Keys: keys})
 	default:
+		togglePopupLetter(popup, input)
 		return m, nil
+	}
+}
+
+func togglePopupLetter(popup *popupState, input string) {
+	if popup.stage == popupStageAction {
+		return
+	}
+	if key, ok := itemKeyForLetter(popupVisibleItems(*popup), input); ok {
+		toggleMarkedItem(popup.marked, key)
 	}
 }
 
@@ -661,7 +691,7 @@ func (m model) View() string {
 				return renderPopup(*m.popup)
 			}))
 		}
-		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · #quit"))
+		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · M-l loot · item letters select · #quit"))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	})
 	m.perf.finishRedraws()
@@ -697,11 +727,32 @@ func renderSidebar(inventory []entity) string {
 	if len(inventory) == 0 {
 		lines = append(lines, mutedStyle.Render("(empty)"))
 	} else {
-		for _, item := range inventory {
-			lines = append(lines, item.Tag)
+		for _, entry := range letteredItems(inventory) {
+			lines = append(lines, renderLetteredItem(entry, false, false))
 		}
 	}
 	return sidebarStyle.Render(strings.Join(lines, "\n"))
+}
+
+func renderLetteredItem(entry letteredItem, marked bool, bracketed bool) string {
+	label := "-"
+	if entry.letter != "" {
+		label = entry.letter
+	}
+	line := fmt.Sprintf("%s - %s", label, entry.item.Tag)
+	if marked {
+		line = selectedStyle.Render(line)
+	}
+	if bracketed {
+		if marked {
+			return "[x] " + line
+		}
+		return "[ ] " + line
+	}
+	if marked {
+		return "* " + line
+	}
+	return "  " + line
 }
 
 func fixedEventLines(lines []string) []string {
@@ -755,18 +806,17 @@ func renderStatus(world []entity) string {
 }
 
 func renderPopup(popup popupState) string {
-	lines := []string{popup.title, mutedStyle.Render(", marks all, space submits, q/r/Esc cancels")}
-	if len(popup.items) == 0 {
+	lines := []string{popup.title, mutedStyle.Render("letters toggle, , marks all, space submits, q/r/Esc cancels")}
+	if popup.stage == popupStageAction {
+		lines = append(lines, "t - take", "p - put")
+		return popupStyle.Render(strings.Join(lines, "\n"))
+	}
+	items := popupVisibleItems(popup)
+	if len(items) == 0 {
 		lines = append(lines, mutedStyle.Render("(nothing available)"))
 	} else {
-		for _, item := range popup.items {
-			line := item.Tag
-			prefix := "[ ] "
-			if popup.marked[item.Key] {
-				prefix = "[x] "
-				line = selectedStyle.Render(line)
-			}
-			lines = append(lines, prefix+line)
+		for _, entry := range letteredItems(items) {
+			lines = append(lines, renderLetteredItem(entry, popup.marked[entry.item.Key], true))
 		}
 	}
 	return popupStyle.Render(strings.Join(lines, "\n"))
@@ -774,14 +824,18 @@ func renderPopup(popup popupState) string {
 
 func renderSidebarPopup(popup popupState) string {
 	lines := []string{popup.title}
+	if popup.kind == popupLoot && popup.stage == popupStageAction {
+		lines = append(lines, mutedStyle.Render("choose action"), "t - take", "p - put", mutedStyle.Render("q/r/Esc cancels"))
+		return sidebarStyle.Render(strings.Join(lines, "\n"))
+	}
 	if popup.kind == popupLoot {
 		modeLabel := "take"
 		if popup.mode == lootPut {
 			modeLabel = "put"
 		}
-		lines = append(lines, modeLabel, mutedStyle.Render("t take · p put"))
+		lines = append(lines, modeLabel, mutedStyle.Render("letters toggle · , all · space ok · Esc cancels"))
 	} else {
-		lines = append(lines, mutedStyle.Render(", all · space ok · Esc cancels"))
+		lines = append(lines, mutedStyle.Render("letters toggle · , all · space ok · Esc cancels"))
 	}
 	items := popupVisibleItems(popup)
 	if len(items) == 0 {
@@ -791,14 +845,8 @@ func renderSidebarPopup(popup popupState) string {
 			lines = append(lines, mutedStyle.Render("(nothing available)"))
 		}
 	} else {
-		for _, item := range items {
-			prefix := "  "
-			line := item.Tag
-			if popup.marked[item.Key] {
-				prefix = "* "
-				line = selectedStyle.Render(line)
-			}
-			lines = append(lines, prefix+line)
+		for _, entry := range letteredItems(items) {
+			lines = append(lines, renderLetteredItem(entry, popup.marked[entry.item.Key], false))
 		}
 	}
 	return sidebarStyle.Render(strings.Join(lines, "\n"))

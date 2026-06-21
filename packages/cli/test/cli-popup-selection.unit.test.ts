@@ -26,6 +26,8 @@ const exactControlKeyCleanup =
   /\.removeListener\s*\(\s*`key \$\{key\}`\s*,\s*handleControlKey\s*\)/
 const exactSubmitKeyCleanup =
   /\.removeListener\s*\(\s*`key \$\{key\}`\s*,\s*handleSubmitKey\s*\)/
+const exactLetterKeyCleanup =
+  /\.removeListener\s*\(\s*`key \$\{key\}`\s*,\s*handleLetterKey\s*\)/
 const emptyElseBranch = /else\s*{\s*}/
 
 describe("CLI popup selection static guards", () => {
@@ -54,6 +56,18 @@ describe("CLI popup selection static guards", () => {
   it("uses stable item keys for rendered popup and inventory list rows", () => {
     for (const path of listComponentPaths) {
       expect(readSource(path)).not.toContain("key={i}")
+    }
+  })
+
+  it("uses shared item-letter helpers for list rendering and letter toggles", () => {
+    for (const path of listComponentPaths) {
+      expect(readSource(path)).toContain("itemLetters.js")
+    }
+    for (const path of popupComponentPaths) {
+      const source = readSource(path)
+
+      expect(source).toContain("toggleLetterSelection")
+      expect(source).toMatch(exactLetterKeyCleanup)
     }
   })
 

@@ -5,6 +5,12 @@ import type {
 import { Map } from "immutable"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import type { BoxElement } from "react-blessed"
+import {
+  assignItemLetters,
+  itemLetterKeys,
+  renderItemLabel,
+  toggleLetterSelection
+} from "./itemLetters.js"
 import { MESSAGE_LOG_HEIGHT, PLAY_AREA_HEIGHT } from "./layout.js"
 
 type Key = typeof KeySchema.Type
@@ -25,11 +31,11 @@ export default function PickupPopup(
 ) {
   const [marked, setMarked] = useState<ReadonlySet<Key>>(() => new Set())
   const invMap = useMemo(() => Map(items), [items])
+  const itemList = useMemo(() => invMap.valueSeq().toArray(), [invMap])
+  const letterKeys = useMemo(() => itemLetterKeys(), [])
   const markAll = useCallback(() => {
-    setMarked(
-      new Set(invMap.valueSeq().toArray().map((item) => item.key))
-    )
-  }, [invMap])
+    setMarked(new Set(itemList.map((item) => item.key)))
+  }, [itemList])
 
   useEffect(() => {
     const popup = pickupRef.current
@@ -87,6 +93,27 @@ export default function PickupPopup(
     }
   }, [invMap, marked, onSubmit, pickupRef])
 
+  useEffect(() => {
+    const popup = pickupRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleLetterKey = (input: string) => {
+      setMarked((current) =>
+        toggleLetterSelection(itemList, current, input)
+      )
+    }
+
+    popup.key(letterKeys, handleLetterKey)
+
+    return () => {
+      for (const key of letterKeys) {
+        popup.removeListener(`key ${key}`, handleLetterKey)
+      }
+    }
+  }, [itemList, letterKeys, pickupRef])
+
   return (
     <box
       ref={pickupRef}
@@ -97,17 +124,17 @@ export default function PickupPopup(
       width={15}
       label="pickup what?"
     >
-      {invMap.valueSeq().toArray().map((item, i) => (
+      {assignItemLetters(itemList).map((entry, i) => (
         <box
-          key={item.key}
+          key={entry.item.key}
           top={i}
           height={1}
           style={{
-            inverse: marked.has(item.key)
+            inverse: marked.has(entry.item.key)
           }}
           left={1}
           width={13}
-          content={item._tag}
+          content={renderItemLabel(entry)}
         />
       ))}
     </box>

@@ -5,23 +5,32 @@ import type {
 import { Map } from "immutable"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import type { BoxElement } from "react-blessed"
+import {
+  assignItemLetters,
+  itemLetterKeys,
+  renderItemLabel,
+  toggleLetterSelection
+} from "./itemLetters.js"
 import { MESSAGE_LOG_HEIGHT, PLAY_AREA_HEIGHT } from "./layout.js"
 
 type Key = typeof KeySchema.Type
 type World = typeof WorldSchema.Type
 type LootMode = "take" | "put"
+type LootStage = "action" | "items"
 
 type Props = {
   containerName: string
   takeItems: World
   putItems: World
+  promptSerial: number
   onTake: (keys: ReadonlyArray<Key>) => void
   onPut: (keys: ReadonlyArray<Key>) => void
   onCancel: () => void
   lootRef: React.RefObject<BoxElement | null>
 }
 
-const controlKeys: Array<string> = ["q", "r", ",", "t", "p", "escape"]
+const controlKeys: Array<string> = ["q", "r", ",", "escape"]
+const actionKeys: Array<string> = ["t", "p"]
 const submitKeys: Array<string> = [" ", "space"]
 
 export default function LootPopup(
@@ -31,21 +40,29 @@ export default function LootPopup(
     onCancel,
     onPut,
     onTake,
+    promptSerial,
     putItems,
     takeItems
   }: Props
 ) {
+  const [stage, setStage] = useState<LootStage>("action")
   const [mode, setMode] = useState<LootMode>("take")
   const [marked, setMarked] = useState<ReadonlySet<Key>>(() => new Set())
   const itemMap = useMemo(
     () => Map(mode === "take" ? takeItems : putItems),
     [mode, putItems, takeItems]
   )
+  const itemList = useMemo(() => itemMap.valueSeq().toArray(), [itemMap])
+  const letterKeys = useMemo(() => itemLetterKeys(), [])
   const markAll = useCallback(() => {
-    setMarked(
-      new Set(itemMap.valueSeq().toArray().map((item) => item.key))
-    )
-  }, [itemMap])
+    setMarked(new Set(itemList.map((item) => item.key)))
+  }, [itemList])
+
+  useEffect(() => {
+    setStage("action")
+    setMode("take")
+    setMarked(new Set())
+  }, [promptSerial])
 
   useEffect(() => {
     setMarked(new Set())
@@ -64,17 +81,7 @@ export default function LootPopup(
         return
       }
 
-      if (input === "t") {
-        setMode("take")
-        return
-      }
-
-      if (input === "p") {
-        setMode("put")
-        return
-      }
-
-      if (input === ",") {
+      if (input === "," && stage === "items") {
         markAll()
       }
     }
@@ -86,7 +93,36 @@ export default function LootPopup(
         popup.removeListener(`key ${key}`, handleControlKey)
       }
     }
-  }, [lootRef, markAll, onCancel])
+  }, [lootRef, markAll, onCancel, stage])
+
+  useEffect(() => {
+    const popup = lootRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleActionKey = (input: string) => {
+      if (stage !== "action") return
+      if (input === "t") {
+        setMode("take")
+        setMarked(new Set())
+        setStage("items")
+      }
+      if (input === "p") {
+        setMode("put")
+        setMarked(new Set())
+        setStage("items")
+      }
+    }
+
+    popup.key(actionKeys, handleActionKey)
+
+    return () => {
+      for (const key of actionKeys) {
+        popup.removeListener(`key ${key}`, handleActionKey)
+      }
+    }
+  }, [lootRef, stage])
 
   useEffect(() => {
     const popup = lootRef.current
@@ -95,7 +131,7 @@ export default function LootPopup(
     }
 
     const handleSubmitKey = (input: string) => {
-      if (input === " " || input === "space") {
+      if (stage === "items" && (input === " " || input === "space")) {
         const validMarked = Array.from(marked).filter((key) =>
           itemMap.has(key)
         )
@@ -115,7 +151,29 @@ export default function LootPopup(
         popup.removeListener(`key ${key}`, handleSubmitKey)
       }
     }
-  }, [itemMap, lootRef, marked, mode, onPut, onTake])
+  }, [itemMap, lootRef, marked, mode, onPut, onTake, stage])
+
+  useEffect(() => {
+    const popup = lootRef.current
+    if (!popup) {
+      return undefined
+    }
+
+    const handleLetterKey = (input: string) => {
+      if (stage !== "items") return
+      setMarked((current) =>
+        toggleLetterSelection(itemList, current, input)
+      )
+    }
+
+    popup.key(letterKeys, handleLetterKey)
+
+    return () => {
+      for (const key of letterKeys) {
+        popup.removeListener(`key ${key}`, handleLetterKey)
+      }
+    }
+  }, [itemList, letterKeys, lootRef, stage])
 
   const emptyLabel = mode === "take" ? "(empty)" : "(inventory empty)"
 
@@ -129,43 +187,66 @@ export default function LootPopup(
       width={15}
       label={`loot ${containerName}`}
     >
-      <box
-        top={0}
-        left={1}
-        height={1}
-        width={13}
-        content={mode === "take" ? "take" : "put"}
-      />
-      <box
-        top={1}
-        left={1}
-        height={1}
-        width={13}
-        content="t take p put"
-      />
-      {itemMap.size === 0
+      {stage === "action"
         ? (
-          <box
-            top={2}
-            left={1}
-            height={1}
-            width={13}
-            content={emptyLabel}
-          />
+          <>
+            <box
+              top={0}
+              left={1}
+              height={1}
+              width={13}
+              content="choose action"
+            />
+            <box
+              top={1}
+              left={1}
+              height={1}
+              width={13}
+              content="t - take"
+            />
+            <box
+              top={2}
+              left={1}
+              height={1}
+              width={13}
+              content="p - put"
+            />
+          </>
         )
-        : itemMap.valueSeq().toArray().map((item, i) => (
-          <box
-            key={item.key}
-            top={i + 2}
-            height={1}
-            style={{
-              inverse: marked.has(item.key)
-            }}
-            left={1}
-            width={13}
-            content={item._tag}
-          />
-        ))}
+        : (
+          <>
+            <box
+              top={0}
+              left={1}
+              height={1}
+              width={13}
+              content={mode === "take" ? "take" : "put"}
+            />
+            {itemMap.size === 0
+              ? (
+                <box
+                  top={1}
+                  left={1}
+                  height={1}
+                  width={13}
+                  content={emptyLabel}
+                />
+              )
+              : assignItemLetters(itemList).map((entry, i) => (
+                <box
+                  key={entry.item.key}
+                  top={i + 1}
+                  height={1}
+                  style={{
+                    inverse: marked.has(entry.item.key)
+                  }}
+                  left={1}
+                  width={13}
+                  content={renderItemLabel(entry)}
+                />
+              ))}
+          </>
+        )}
     </box>
   )
 }

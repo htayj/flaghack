@@ -221,6 +221,31 @@ const getLootItems = (containerKey: string) =>
       urlParams: { containerKey, key: "player" }
     })
   )
+const getPickupItems = () =>
+  apiEffect((client) =>
+    client.game.getPickupItemsFor({ urlParams: { key: "player" } })
+  )
+
+const itemLetterAlphabet = "abcdefghijklmnopstuvwxyz"
+const sortedItemsForLetters = (items: ReadonlyArray<Entity>) =>
+  [...items].sort((left, right) => {
+    const keyOrder = left.key.localeCompare(right.key)
+    return keyOrder === 0 ? left._tag.localeCompare(right._tag) : keyOrder
+  })
+const letterForItem = (
+  items: ReadonlyArray<Entity>,
+  itemKey: string
+): string => {
+  const index = sortedItemsForLetters(items).findIndex((item) =>
+    item.key === itemKey
+  )
+  if (index < 0) throw new Error(`item ${itemKey} not present in picker`)
+  const letter = itemLetterAlphabet[index]
+  if (letter === undefined) {
+    throw new Error(`item ${itemKey} is beyond supported letter alphabet`)
+  }
+  return letter
+}
 
 const waitForApiReady = async (child: ChildProcessWithoutNullStreams) => {
   const startedAt = Date.now()
@@ -406,13 +431,14 @@ const run = async () => {
     const initialContents = await Effect.runPromise(
       getLootItems(target.container.key)
     )
-    const movedItem =
-      (Array.from(HashMap.values(initialContents)) as ReadonlyArray<
-        Entity
-      >)[0]
+    const initialContentItems = sortedItemsForLetters(
+      Array.from(HashMap.values(initialContents)) as ReadonlyArray<Entity>
+    )
+    const movedItem = initialContentItems[0]
     if (movedItem === undefined) {
       throw new Error("target container had no contents before looting")
     }
+    const takeLetter = letterForItem(initialContentItems, movedItem.key)
 
     tmux([
       "new-session",
@@ -439,9 +465,31 @@ const run = async () => {
     ]).trim()
     await waitForPaneOutput(cliPane)
 
-    await sendKeys(cliPane, ["M-l", ",", "Space"], 1_500)
+    await sendKeys(cliPane, ["M-l"], 1_500)
+    await delay(1_000)
+    let capture = stripAnsi(capturePane(cliPane))
+    await writeFile(capturePath, capture)
+    assertNoCrash(capture)
+    if (
+      !capture.includes("choose action") || !capture.includes("t - take")
+    ) {
+      throw new Error(`loot action stage was not visible: ${capture}`)
+    }
+
+    await sendKeys(cliPane, ["t"], 1_000)
+    await delay(1_000)
+    capture = stripAnsi(capturePane(cliPane))
+    await writeFile(capturePath, capture)
+    assertNoCrash(capture)
+    if (!capture.includes(`${takeLetter} - ${movedItem._tag}`)) {
+      throw new Error(
+        `loot take item letter ${takeLetter} for ${movedItem._tag} was not visible: ${capture}`
+      )
+    }
+
+    await sendKeys(cliPane, [takeLetter, "Space"], 1_500)
     await delay(2_000)
-    let capture = capturePane(cliPane)
+    capture = stripAnsi(capturePane(cliPane))
     await writeFile(capturePath, capture)
     assertNoCrash(capture)
 
@@ -456,11 +504,82 @@ const run = async () => {
       )
     }
 
-    await sendKeys(cliPane, ["M-l", "p", ",", "Space"], 1_500)
-    await delay(2_000)
-    capture = capturePane(cliPane)
+    const dropLetter = letterForItem(inventoryAfterTake, movedItem.key)
+    await sendKeys(cliPane, ["d"], 1_500)
+    await delay(1_000)
+    capture = stripAnsi(capturePane(cliPane))
     await writeFile(capturePath, capture)
     assertNoCrash(capture)
+    if (!capture.includes(`${dropLetter} - ${movedItem._tag}`)) {
+      throw new Error(
+        `drop item letter ${dropLetter} for ${movedItem._tag} was not visible: ${capture}`
+      )
+    }
+    await sendKeys(cliPane, [dropLetter, "Space"], 1_500)
+    await delay(2_000)
+
+    const inventoryAfterDrop = Array.from(
+      HashMap.values(await Effect.runPromise(getInventory()))
+    ) as ReadonlyArray<Entity>
+    if (
+      inventoryAfterDrop.some((entity) => entity.key === movedItem.key)
+    ) {
+      throw new Error(
+        `drop did not remove ${movedItem.key} from inventory`
+      )
+    }
+
+    const pickupItems = Array.from(
+      HashMap.values(await Effect.runPromise(getPickupItems()))
+    ) as ReadonlyArray<Entity>
+    const pickupLetter = letterForItem(pickupItems, movedItem.key)
+    await sendKeys(cliPane, [","], 1_500)
+    await delay(1_000)
+    capture = stripAnsi(capturePane(cliPane))
+    await writeFile(capturePath, capture)
+    assertNoCrash(capture)
+    if (!capture.includes(`${pickupLetter} - ${movedItem._tag}`)) {
+      throw new Error(
+        `pickup item letter ${pickupLetter} for ${movedItem._tag} was not visible: ${capture}`
+      )
+    }
+    await sendKeys(cliPane, [pickupLetter, "Space"], 1_500)
+    await delay(2_000)
+
+    const inventoryAfterPickup = Array.from(
+      HashMap.values(await Effect.runPromise(getInventory()))
+    ) as ReadonlyArray<Entity>
+    if (
+      !inventoryAfterPickup.some((entity) => entity.key === movedItem.key)
+    ) {
+      throw new Error(
+        `pickup did not return ${movedItem.key} to inventory`
+      )
+    }
+
+    const putLetter = letterForItem(inventoryAfterPickup, movedItem.key)
+    await sendKeys(cliPane, ["M-l"], 1_500)
+    await delay(1_000)
+    capture = stripAnsi(capturePane(cliPane))
+    await writeFile(capturePath, capture)
+    assertNoCrash(capture)
+    if (
+      !capture.includes("choose action") || !capture.includes("p - put")
+    ) {
+      throw new Error(`loot put action stage was not visible: ${capture}`)
+    }
+    await sendKeys(cliPane, ["p"], 1_000)
+    await delay(1_000)
+    capture = stripAnsi(capturePane(cliPane))
+    await writeFile(capturePath, capture)
+    assertNoCrash(capture)
+    if (!capture.includes(`${putLetter} - ${movedItem._tag}`)) {
+      throw new Error(
+        `loot put item letter ${putLetter} for ${movedItem._tag} was not visible: ${capture}`
+      )
+    }
+    await sendKeys(cliPane, [putLetter, "Space"], 1_500)
+    await delay(2_000)
 
     const contentsAfterPut = Array.from(
       HashMap.values(

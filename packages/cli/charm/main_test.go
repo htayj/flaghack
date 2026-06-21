@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -325,6 +326,86 @@ func TestViewRendersPickupInterfaceInInventorySlot(t *testing.T) {
 	}
 }
 
+func TestPopupLettersToggleVisibleItems(t *testing.T) {
+	m := newModel()
+	m.popup = &popupState{
+		kind:  popupPickup,
+		title: "Pickup what?",
+		stage: popupStageItems,
+		items: []entity{
+			{Key: "item-b", Tag: "cheese", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			{Key: "item-a", Tag: "beer", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		},
+		marked: map[string]bool{},
+	}
+
+	next, cmd := m.handlePopupKey("a")
+	if cmd != nil {
+		t.Fatalf("letter toggle returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || !m.popup.marked["item-a"] || m.popup.marked["item-b"] {
+		t.Fatalf("marked after a = %#v, want item-a only", m.popup)
+	}
+	if !strings.Contains(m.View(), "* a - beer") || !strings.Contains(m.View(), "  b - cheese") {
+		t.Fatalf("pickup view should render marked letter rows: %q", m.View())
+	}
+
+	next, _ = m.handlePopupKey("a")
+	m = next.(model)
+	if m.popup == nil || m.popup.marked["item-a"] {
+		t.Fatalf("marked after second a = %#v, want item-a unmarked", m.popup)
+	}
+}
+
+func TestPopupLettersAllowLootActionLettersInItemStage(t *testing.T) {
+	items := make([]entity, 0, 18)
+	for i := 0; i < 18; i++ {
+		items = append(items, entity{Key: fmt.Sprintf("item-%02d", i), Tag: fmt.Sprintf("tag-%02d", i)})
+	}
+	m := newModel()
+	m.popup = &popupState{
+		kind:         popupLoot,
+		title:        "Loot cooler",
+		containerKey: "cooler-1",
+		mode:         lootTake,
+		stage:        popupStageItems,
+		items:        items,
+		marked:       map[string]bool{},
+	}
+	pKey := letteredItems(items)[15].item.Key
+	tKey := letteredItems(items)[17].item.Key
+
+	next, cmd := m.handlePopupKey("p")
+	if cmd != nil {
+		t.Fatalf("p item letter returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || !m.popup.marked[pKey] {
+		t.Fatalf("p item letter should mark %s, popup=%#v", pKey, m.popup)
+	}
+
+	next, cmd = m.handlePopupKey("t")
+	if cmd != nil {
+		t.Fatalf("t item letter returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || !m.popup.marked[tKey] {
+		t.Fatalf("t item letter should mark %s, popup=%#v", tKey, m.popup)
+	}
+}
+
+func TestRenderSidebarShowsStableInventoryLetters(t *testing.T) {
+	got := renderSidebar([]entity{
+		{Key: "water-1", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+	})
+
+	if !strings.Contains(got, "a - beer") || !strings.Contains(got, "b - water") {
+		t.Fatalf("inventory sidebar should show deterministic item letters: %q", got)
+	}
+}
+
 func TestViewRendersLootInterfaceInInventorySlot(t *testing.T) {
 	m := newModel()
 	m.world = []entity{
@@ -337,6 +418,7 @@ func TestViewRendersLootInterfaceInInventorySlot(t *testing.T) {
 		title:        "Loot cooler",
 		containerKey: "cooler-1",
 		mode:         lootTake,
+		stage:        popupStageAction,
 		items:        []entity{{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}}},
 		putItems:     m.inventory,
 		marked:       map[string]bool{},
@@ -346,8 +428,11 @@ func TestViewRendersLootInterfaceInInventorySlot(t *testing.T) {
 	lootIndex := strings.Index(view, "Loot cooler")
 	mapIndex := strings.Index(view, "@")
 	statusIndex := strings.Index(view, "Player: you")
-	if lootIndex < 0 || !strings.Contains(view, "beer") || !strings.Contains(view, "t take · p put") {
-		t.Fatalf("loot interface missing from view: %q", view)
+	if lootIndex < 0 || !strings.Contains(view, "choose action") || !strings.Contains(view, "t - take") || !strings.Contains(view, "p - put") {
+		t.Fatalf("loot action prompt missing from view: %q", view)
+	}
+	if strings.Contains(view, "beer") || strings.Contains(view, "water") {
+		t.Fatalf("loot action prompt should not show item rows before action choice: %q", view)
 	}
 	if mapIndex < 0 || lootIndex < mapIndex || lootIndex > statusIndex {
 		t.Fatalf("loot interface should render in the inventory/sidebar slot next to the map; loot index %d, map index %d, status index %d", lootIndex, mapIndex, statusIndex)
@@ -430,6 +515,7 @@ func TestLootPopupSwitchesBetweenTakeAndPutLists(t *testing.T) {
 		title:        "Loot cooler",
 		containerKey: "cooler-1",
 		mode:         lootTake,
+		stage:        popupStageAction,
 		items:        []entity{{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}}},
 		putItems:     []entity{{Key: "water-1", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}}},
 		marked:       map[string]bool{},
@@ -440,20 +526,21 @@ func TestLootPopupSwitchesBetweenTakeAndPutLists(t *testing.T) {
 		t.Fatalf("loot mode switch returned command %#v, want nil", cmd)
 	}
 	m = next.(model)
-	if m.popup == nil || m.popup.mode != lootPut {
-		t.Fatalf("loot mode after p = %#v, want put", m.popup)
+	if m.popup == nil || m.popup.mode != lootPut || m.popup.stage != popupStageItems {
+		t.Fatalf("loot mode after p = %#v, want put item stage", m.popup)
 	}
 	if !strings.Contains(m.View(), "water") || strings.Contains(m.View(), "beer") {
 		t.Fatalf("put mode should show inventory items only: %q", m.View())
 	}
 
+	m.popup.stage = popupStageAction
 	next, cmd = m.handlePopupKey("t")
 	if cmd != nil {
 		t.Fatalf("loot mode switch returned command %#v, want nil", cmd)
 	}
 	m = next.(model)
-	if m.popup == nil || m.popup.mode != lootTake {
-		t.Fatalf("loot mode after t = %#v, want take", m.popup)
+	if m.popup == nil || m.popup.mode != lootTake || m.popup.stage != popupStageItems {
+		t.Fatalf("loot mode after t = %#v, want take item stage", m.popup)
 	}
 }
 

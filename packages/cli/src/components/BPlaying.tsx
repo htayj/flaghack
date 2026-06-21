@@ -120,6 +120,7 @@ export default function BPlaying({ onQuit }: Props) {
     undefined
   )
   const [lootContainerName, setLootContainerName] = useState("container")
+  const [lootPromptSerial, setLootPromptSerial] = useState(0)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [travelTarget, setTravelTarget] = useState<Pos | undefined>(
     undefined
@@ -401,6 +402,7 @@ export default function BPlaying({ onQuit }: Props) {
                   setLootContainerKey(container.key)
                   setLootContainerName(container._tag)
                   setLootContents(contents)
+                  setLootPromptSerial((serial) => serial + 1)
                   setMessages(prependMessage(`looting ${container._tag}`))
                   lootRef.current?.show()
                   lootRef.current?.focus()
@@ -644,10 +646,12 @@ export default function BPlaying({ onQuit }: Props) {
         log={log}
       />
       <LootPopup
+        key={lootPromptSerial}
         lootRef={lootRef}
         containerName={lootContainerName}
         takeItems={lootContents}
         putItems={inventory}
+        promptSerial={lootPromptSerial}
         onTake={onTakeLoot}
         onPut={onPutLoot}
         onCancel={onCancelLoot}

@@ -539,6 +539,7 @@ export default function BPlaying({ onQuit }: Props) {
       <Messages messages={messages} />
       <BGameBoard tiles={theDrawMatrix} />
       <Status world={world} />
+      <Inventory inventory={inventory} />
       <PickupPopup
         pickupRef={pickupRef}
         items={pickupContents}
@@ -552,7 +553,6 @@ export default function BPlaying({ onQuit }: Props) {
         onDrop={onDoDrop}
         onCancel={onCancelMultiDrop}
       />
-      <Inventory inventory={inventory} />
     </box>
   )
 }

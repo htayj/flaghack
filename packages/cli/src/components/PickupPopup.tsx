@@ -5,6 +5,7 @@ import type {
 import { Map } from "immutable"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import type { BoxElement } from "react-blessed"
+import { MESSAGE_LOG_HEIGHT, PLAY_AREA_HEIGHT } from "./layout.js"
 
 type Key = typeof KeySchema.Type
 type World = typeof WorldSchema.Type
@@ -89,11 +90,11 @@ export default function PickupPopup(
   return (
     <box
       ref={pickupRef}
-      bottom={5}
-      left={5}
+      top={MESSAGE_LOG_HEIGHT}
+      right={0}
       border="line"
-      height={10}
-      width={30}
+      height={PLAY_AREA_HEIGHT}
+      width={15}
       label="pickup what?"
     >
       {invMap.valueSeq().toArray().map((item, i) => (
@@ -105,7 +106,7 @@ export default function PickupPopup(
             inverse: marked.has(item.key)
           }}
           left={1}
-          width={27}
+          width={13}
           content={item._tag}
         />
       ))}

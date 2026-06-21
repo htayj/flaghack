@@ -153,8 +153,8 @@ func TestLookModeMovesCursorAndEscapeExitsWithoutMovingPlayer(t *testing.T) {
 	if m.lookTarget == nil || *m.lookTarget != (pos{X: 1, Y: 0, Z: 0}) {
 		t.Fatalf("moved look target = %#v, want east tile", m.lookTarget)
 	}
-	if !strings.Contains(m.messages[0], "cooler") {
-		t.Fatalf("look movement should describe target contents, messages=%#v", m.messages)
+	if !strings.Contains(m.View(), "cooler") {
+		t.Fatalf("look movement should describe target contents in event-log slot, view=%q", m.View())
 	}
 	player, ok := findPlayer(m.world)
 	if !ok || player.At != (pos{X: 0, Y: 0, Z: 0}) {
@@ -171,7 +171,31 @@ func TestLookModeMovesCursorAndEscapeExitsWithoutMovingPlayer(t *testing.T) {
 	}
 }
 
-func TestViewRendersLookPanelAboveStatus(t *testing.T) {
+func TestRenderMessagesHasFixedHeight(t *testing.T) {
+	emptyLines := strings.Split(renderMessages([]string{}), "\n")
+	manyLines := strings.Split(renderMessages([]string{
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+		"eight",
+		"nine",
+		"ten",
+		"eleven",
+	}), "\n")
+	want := fixedEventAreaLines + 2
+	if len(emptyLines) != want {
+		t.Fatalf("empty message log lines = %d, want fixed height %d", len(emptyLines), want)
+	}
+	if len(manyLines) != want {
+		t.Fatalf("full message log lines = %d, want fixed height %d", len(manyLines), want)
+	}
+}
+
+func TestViewRendersLookDescriptionInEventLogSlot(t *testing.T) {
 	m := newModel()
 	m.world = []entity{
 		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
@@ -184,15 +208,77 @@ func TestViewRendersLookPanelAboveStatus(t *testing.T) {
 
 	view := m.View()
 	lookIndex := strings.Index(view, "Look 1,0:")
+	mapIndex := strings.Index(view, "@")
 	statusIndex := strings.Index(view, "Player: you")
 	if lookIndex < 0 || !strings.Contains(view, "cooler") || !strings.Contains(view, "Esc exits look mode") {
-		t.Fatalf("look panel missing from view: %q", view)
+		t.Fatalf("look description missing from event-log slot: %q", view)
 	}
 	if !strings.Contains(view, "*") {
 		t.Fatalf("look cursor highlight missing from view: %q", view)
 	}
-	if statusIndex < 0 || lookIndex > statusIndex {
-		t.Fatalf("look panel should render above status; look index %d, status index %d", lookIndex, statusIndex)
+	if mapIndex < 0 || lookIndex > mapIndex {
+		t.Fatalf("look description should replace event log above the map; look index %d, map index %d", lookIndex, mapIndex)
+	}
+	if statusIndex < 0 || mapIndex > statusIndex {
+		t.Fatalf("status should remain below map; map index %d, status index %d", mapIndex, statusIndex)
+	}
+}
+
+func TestViewRendersPickupInterfaceInInventorySlot(t *testing.T) {
+	m := newModel()
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+	m.inventory = []entity{{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}}}
+	m.popup = &popupState{
+		kind:   popupPickup,
+		title:  "Pickup what?",
+		items:  []entity{{Key: "cooler-1", Tag: "cooler", In: "world", At: pos{X: 0, Y: 0, Z: 0}}},
+		marked: map[string]bool{},
+	}
+
+	view := m.View()
+	pickupIndex := strings.Index(view, "Pickup what?")
+	mapIndex := strings.Index(view, "@")
+	statusIndex := strings.Index(view, "Player: you")
+	if pickupIndex < 0 || !strings.Contains(view, "cooler") {
+		t.Fatalf("pickup interface missing from view: %q", view)
+	}
+	if mapIndex < 0 || pickupIndex < mapIndex || pickupIndex > statusIndex {
+		t.Fatalf("pickup interface should render in the inventory/sidebar slot next to the map; pickup index %d, map index %d, status index %d", pickupIndex, mapIndex, statusIndex)
+	}
+	if strings.Contains(view, "inventory") || strings.Contains(view, "beer") {
+		t.Fatalf("inventory sidebar should be replaced by pickup interface: %q", view)
+	}
+}
+
+func TestViewKeepsDropInterfaceBelowStatus(t *testing.T) {
+	m := newModel()
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+	m.inventory = []entity{{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}}}
+	m.popup = &popupState{
+		kind:   popupDrop,
+		title:  "Drop what?",
+		items:  []entity{{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}}},
+		marked: map[string]bool{},
+	}
+
+	view := m.View()
+	inventoryIndex := strings.Index(view, "inventory")
+	dropIndex := strings.Index(view, "Drop what?")
+	statusIndex := strings.Index(view, "Player: you")
+	if inventoryIndex < 0 || !strings.Contains(view, "beer") {
+		t.Fatalf("drop popup should not replace inventory sidebar: %q", view)
+	}
+	if dropIndex < 0 {
+		t.Fatalf("drop popup missing from view: %q", view)
+	}
+	if statusIndex < 0 || dropIndex < statusIndex {
+		t.Fatalf("drop popup should remain below status; drop index %d, status index %d", dropIndex, statusIndex)
 	}
 }
 

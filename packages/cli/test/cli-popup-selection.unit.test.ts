@@ -56,6 +56,16 @@ describe("CLI popup selection static guards", () => {
     }
   })
 
+  it("places pickup in the inventory/sidebar slot", () => {
+    const source = readSource(join(componentDirectory, "PickupPopup.tsx"))
+
+    expect(source).toContain("top={MESSAGE_LOG_HEIGHT}")
+    expect(source).toContain("right={0}")
+    expect(source).toContain("height={PLAY_AREA_HEIGHT}")
+    expect(source).toContain("width={15}")
+    expect(source).toContain("width={13}")
+  })
+
   it("cancels with escape and filters stale marked keys before submit", () => {
     for (const path of popupComponentPaths) {
       const source = readSource(path)

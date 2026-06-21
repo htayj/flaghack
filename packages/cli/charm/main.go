@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	boardWidth       = 80
-	boardHeight      = 20
-	maxVisibleMsgs   = 50
-	maxAutoMoveSteps = boardWidth * boardHeight
-	defaultBaseURL   = "http://127.0.0.1:3000"
+	boardWidth          = 80
+	boardHeight         = 20
+	fixedEventAreaLines = 10
+	maxVisibleMsgs      = 50
+	maxAutoMoveSteps    = boardWidth * boardHeight
+	defaultBaseURL      = "http://127.0.0.1:3000"
 )
 
 type pos struct {
@@ -300,7 +301,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		target := clampTravelTarget(player.At, m.world)
 		m.lookTarget = &target
-		m.addMessage(describeLookTarget(m.world, target))
 		return m, nil
 	case ",":
 		m.pendingMovementPrefix = ""
@@ -409,7 +409,6 @@ func (m model) handleLookTargetKey(input string) (tea.Model, tea.Cmd) {
 		if command, ok := parseMovementCommand(input); ok {
 			next := moveTravelTarget(target, command.dir, m.world)
 			m.lookTarget = &next
-			m.addMessage(describeLookTarget(m.world, next))
 		}
 		return m, nil
 	}
@@ -512,17 +511,14 @@ func (m model) View() string {
 		cursorTarget = m.lookTarget
 	}
 	board := renderBoard(m.world, cursorTarget)
-	sidebar := renderSidebar(m.inventory)
+	sidebar := renderSidebarArea(m.inventory, m.popup)
 	main := lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
 	sections := []string{
-		renderMessages(m.messages),
+		renderEventArea(m.world, m.messages, m.lookTarget),
 		main,
+		renderStatus(m.world),
 	}
-	if m.lookTarget != nil {
-		sections = append(sections, renderLookPanel(m.world, *m.lookTarget))
-	}
-	sections = append(sections, renderStatus(m.world))
-	if m.popup != nil {
+	if m.popup != nil && m.popup.kind == popupDrop {
 		sections = append(sections, renderPopup(*m.popup))
 	}
 	sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · #quit"))
@@ -546,6 +542,13 @@ func renderBoard(world []entity, target *pos) string {
 	return strings.Join(lines, "\n")
 }
 
+func renderSidebarArea(inventory []entity, popup *popupState) string {
+	if popup != nil && popup.kind == popupPickup {
+		return renderSidebarPopup(*popup)
+	}
+	return renderSidebar(inventory)
+}
+
 func renderSidebar(inventory []entity) string {
 	lines := []string{"inventory"}
 	if len(inventory) == 0 {
@@ -558,13 +561,25 @@ func renderSidebar(inventory []entity) string {
 	return sidebarStyle.Render(strings.Join(lines, "\n"))
 }
 
-func renderMessages(messages []string) string {
-	limit := min(len(messages), 10)
-	lines := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
-		lines = append(lines, messages[i])
+func fixedEventLines(lines []string) []string {
+	fixed := make([]string, 0, fixedEventAreaLines)
+	limit := min(len(lines), fixedEventAreaLines)
+	fixed = append(fixed, lines[:limit]...)
+	for len(fixed) < fixedEventAreaLines {
+		fixed = append(fixed, "")
 	}
-	return messageStyle.Width(118).Render(strings.Join(lines, "\n"))
+	return fixed
+}
+
+func renderEventArea(world []entity, messages []string, lookTarget *pos) string {
+	if lookTarget != nil {
+		return renderLookPanel(world, *lookTarget)
+	}
+	return renderMessages(messages)
+}
+
+func renderMessages(messages []string) string {
+	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(messages), "\n"))
 }
 
 func renderLookPanel(world []entity, target pos) string {
@@ -572,7 +587,7 @@ func renderLookPanel(world []entity, target pos) string {
 		describeLookTarget(world, target),
 		mutedStyle.Render("hjkl/yubn move look cursor, Esc exits look mode"),
 	}
-	return statusStyle.Render(strings.Join(lines, "\n"))
+	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(lines), "\n"))
 }
 
 func renderStatus(world []entity) string {
@@ -602,6 +617,24 @@ func renderPopup(popup popupState) string {
 		lines = append(lines, mutedStyle.Render("(nothing available)"))
 	} else {
 		for _, item := range popup.items {
+			line := item.Tag
+			prefix := "[ ] "
+			if popup.marked[item.Key] {
+				prefix = "[x] "
+				line = selectedStyle.Render(line)
+			}
+			lines = append(lines, prefix+line)
+		}
+	}
+	return popupStyle.Render(strings.Join(lines, "\n"))
+}
+
+func renderSidebarPopup(popup popupState) string {
+	lines := []string{popup.title, mutedStyle.Render(", all · space ok · Esc cancels")}
+	if len(popup.items) == 0 {
+		lines = append(lines, mutedStyle.Render("(nothing available)"))
+	} else {
+		for _, item := range popup.items {
 			prefix := "  "
 			line := item.Tag
 			if popup.marked[item.Key] {
@@ -611,7 +644,7 @@ func renderPopup(popup popupState) string {
 			lines = append(lines, prefix+line)
 		}
 	}
-	return popupStyle.Render(strings.Join(lines, "\n"))
+	return sidebarStyle.Render(strings.Join(lines, "\n"))
 }
 
 func loadStateCmd(client apiClient) tea.Cmd {

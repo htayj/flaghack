@@ -12,6 +12,16 @@ dist
 **/.tsbuildinfo/*
 build
 
+# Local tool artifacts can appear in the repository root during desktop sessions.
+/.serena/
+
+# Local OpenLinkHub artifacts can appear in the repository root during desktop sessions.
+/config.json
+/dashboard.json
+/display.json
+/stdout.log
+/stdout.log.*.tar.gz
+
 # Pi/dev-suite project settings may be tracked, but runtime state is local.
 .pi/dev-suite/edited-files.log
 .pi/dev-suite/task-graph/current.json

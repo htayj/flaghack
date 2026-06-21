@@ -379,23 +379,23 @@ describe("root package metadata", () => {
     )
   })
 
-  it("ends the feature task graph with a mechanically approval-gated commit stage", () => {
+  it("ends the feature task graph with an automatic commit stage", () => {
     const featureGraph = readTaskGraphSettingsJson().graphs?.[
       "flag-hack-feature-gated"
     ]
     const commitStage = featureGraph?.stages?.at(-1)
 
     expect(featureGraph?.description).toContain(
-      "explicitly approved commit stage"
+      "automatic commit stage"
     )
     expect(commitStage?.id).toBe("commit")
     expect(commitStage?.kind).toBe("COMMIT")
     expect(commitStage?.dependsOn).toEqual(["review"])
     expect(commitStage?.description).toContain(
-      "commit approval is explicitly granted"
+      "commit stage becomes ready"
     )
     expect(commitStage?.promptInstructions).toContain(
-      "This stage is mechanically gated by task graph commit approval and must remain skipped unless commit approval is explicitly granted for the run."
+      "Run this stage automatically when it becomes ready after validation and code review."
     )
     expect(commitStage?.promptInstructions).toContain(
       "Before committing, inspect git status and ensure unrelated files such as chatgpt.txt are not staged."

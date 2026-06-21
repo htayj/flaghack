@@ -3,11 +3,18 @@ import { Effect, HashMap, Match, Option } from "effect"
 import { type Option as TOption, some } from "effect/Option"
 import type { PlannedAction } from "./ai/ai.js"
 import type { TKey } from "./entity.js"
-import { type GameState, updateEntity } from "./gamestate.js"
+import { type GameState, updateEntity, updateWorld } from "./gamestate.js"
 import { drop, pickup, putIntoContainer } from "./items.js"
 import type { TPos } from "./position.js"
 import { collideP, UV } from "./position.js"
-import { actPosition, type Entity, isContainer, isItem } from "./world.js"
+import {
+  actPosition,
+  type Entity,
+  isContainer,
+  isDrinkItem,
+  isFoodItem,
+  isItem
+} from "./world.js"
 
 const moveEntity =
   (gs: GameState) =>
@@ -125,6 +132,30 @@ const lootPutItems =
       }
     })
 
+const consumeHeldItems =
+  (gs: GameState) =>
+  <T extends Entity>(entity: TOption<T>) =>
+  (
+    keys: ReadonlyArray<TKey>,
+    canConsume: (item: Entity) => boolean
+  ): GameState =>
+    Option.match(entity, {
+      onNone: () => gs,
+      onSome: (actor) =>
+        keys.reduce((acc, key) => {
+          const item = acc.world.pipe(
+            HashMap.get(key),
+            Option.filter((item) =>
+              itemIsHeldByActor(actor)(item) && canConsume(item)
+            )
+          )
+
+          return Option.isSome(item)
+            ? updateWorld(acc)(HashMap.remove(key))
+            : acc
+        }, gs)
+    })
+
 export const doAction = (
   gs: GameState,
   { action, entity }: PlannedAction
@@ -158,6 +189,10 @@ const act =
         return lootTakeItems(gs)(crea)(action.containerKey, action.keys)
       case "lootPutMulti":
         return lootPutItems(gs)(crea)(action.containerKey, action.keys)
+      case "eatMulti":
+        return consumeHeldItems(gs)(crea)(action.keys, isFoodItem)
+      case "quaffMulti":
+        return consumeHeldItems(gs)(crea)(action.keys, isDrinkItem)
       default:
         return gs
     }

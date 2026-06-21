@@ -109,6 +109,24 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	if string(lootPut) != wantLootPut {
 		t.Fatalf("encoded loot put = %s, want %s", lootPut, wantLootPut)
 	}
+
+	eat, err := json.Marshal(actionPayload{Action: action{Tag: "eatMulti", Keys: []string{"hotdog-1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEat := `{"action":{"_tag":"eatMulti","keys":["hotdog-1"]}}`
+	if string(eat) != wantEat {
+		t.Fatalf("encoded eat = %s, want %s", eat, wantEat)
+	}
+
+	quaff, err := json.Marshal(actionPayload{Action: action{Tag: "quaffMulti", Keys: []string{"beer-1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantQuaff := `{"action":{"_tag":"quaffMulti","keys":["beer-1"]}}`
+	if string(quaff) != wantQuaff {
+		t.Fatalf("encoded quaff = %s, want %s", quaff, wantQuaff)
+	}
 }
 
 func TestTileForCampgroundMarkers(t *testing.T) {
@@ -403,6 +421,44 @@ func TestRenderSidebarShowsStableInventoryLetters(t *testing.T) {
 
 	if !strings.Contains(got, "a - beer") || !strings.Contains(got, "b - water") {
 		t.Fatalf("inventory sidebar should show deterministic item letters: %q", got)
+	}
+}
+
+func TestEatAndQuaffOpenFilteredInventoryPopups(t *testing.T) {
+	m := newModel()
+	m.inventory = []entity{
+		{Key: "hotdog-1", Tag: "hotdog", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "flag-1", Tag: "flag", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+	}
+
+	next, cmd := m.handleKey(charmRuneKey('e'))
+	if cmd != nil {
+		t.Fatalf("eat key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || m.popup.kind != popupEat || m.popup.title != "Eat what?" {
+		t.Fatalf("eat popup = %#v, want Eat what?", m.popup)
+	}
+	if len(m.popup.items) != 1 || m.popup.items[0].Key != "hotdog-1" {
+		t.Fatalf("eat popup items = %#v, want only hotdog", m.popup.items)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('q'))
+	if cmd == nil {
+		// q cancels the active eat popup; press q again at top-level for quaff.
+		m = next.(model)
+		next, cmd = m.handleKey(charmRuneKey('q'))
+	}
+	if cmd != nil {
+		t.Fatalf("quaff key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || m.popup.kind != popupQuaff || m.popup.title != "Quaff what?" {
+		t.Fatalf("quaff popup = %#v, want Quaff what?", m.popup)
+	}
+	if len(m.popup.items) != 1 || m.popup.items[0].Key != "beer-1" {
+		t.Fatalf("quaff popup items = %#v, want only beer", m.popup.items)
 	}
 }
 

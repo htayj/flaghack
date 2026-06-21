@@ -46,6 +46,13 @@ export const Flag = S.TaggedStruct("flag", EntityBaseFields)
 export const AnyFlag = S.Union(Flag)
 
 // >> Drinks
+export const DrinkItemTags = [
+  "water",
+  "acid",
+  "booze",
+  "beer",
+  "milk"
+] as const
 export const Drink = EntityBase
 export const Water = S.TaggedStruct("water", EntityBaseFields)
 export const Acid = S.TaggedStruct("acid", EntityBaseFields)
@@ -56,6 +63,16 @@ export const AnyBasicDrink = S.Union(Water, Acid, Booze, Milk)
 export const AnyDrink = S.Union(AnyBasicDrink, Beer)
 
 // >> Food
+export const FoodItemTags = [
+  "poptart",
+  "trailmix",
+  "pancake",
+  "bacon",
+  "soup",
+  "hotdog",
+  "cheese",
+  "salsa"
+] as const
 export const Food = EntityBase
 export const Poptart = S.TaggedStruct("poptart", EntityBaseFields)
 export const Trailmix = S.TaggedStruct("trailmix", EntityBaseFields)
@@ -225,7 +242,9 @@ const ActionOptions = [
   S.TaggedStruct("lootPutMulti", {
     containerKey: Key,
     keys: S.Array(Key)
-  })
+  }),
+  S.TaggedStruct("eatMulti", { keys: S.Array(Key) }),
+  S.TaggedStruct("quaffMulti", { keys: S.Array(Key) })
 ] as const
 
 export const SAction = S.Union(...ActionOptions)

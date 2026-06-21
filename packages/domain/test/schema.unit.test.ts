@@ -6,11 +6,13 @@ import {
   AnyTerrain,
   conforms,
   ContainerCollection,
+  DrinkItemTags,
   EAction,
   EEntity,
   Entity,
   Flag,
   Floor,
+  FoodItemTags,
   ItemCollection,
   Player,
   Pos,
@@ -245,6 +247,18 @@ describe("domain source schemas", () => {
         keys: [sampleItem.key]
       })
     )
+    expectRight(
+      S.decodeUnknownEither(SAction)({
+        _tag: "eatMulti",
+        keys: ["hotdog-1", "cheese-1"]
+      })
+    )
+    expectRight(
+      S.decodeUnknownEither(SAction)({
+        _tag: "quaffMulti",
+        keys: [sampleBeer.key, "water-1"]
+      })
+    )
 
     expect(
       Either.isLeft(
@@ -312,8 +326,27 @@ describe("domain source schemas", () => {
     expect(Either.isRight(S.validateEither(AnyDrink)(sampleBeer))).toBe(
       true
     )
+    expect(DrinkItemTags).toEqual([
+      "water",
+      "acid",
+      "booze",
+      "beer",
+      "milk"
+    ])
+    expect(FoodItemTags).toEqual([
+      "poptart",
+      "trailmix",
+      "pancake",
+      "bacon",
+      "soup",
+      "hotdog",
+      "cheese",
+      "salsa"
+    ])
+    expect(DrinkItemTags).toContain(sampleBeer._tag)
     for (const food of refrigeratedCampFoodSamples) {
       expect(Either.isRight(S.validateEither(AnyFood)(food))).toBe(true)
+      expect(FoodItemTags).toContain(food._tag)
     }
   })
 

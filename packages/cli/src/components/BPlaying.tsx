@@ -11,6 +11,8 @@ import {
   clampTravelTarget,
   directionalMovementResultMessage,
   drawWorld,
+  filterDrinkItems,
+  filterFoodItems,
   findPlayerPosition,
   findTravelDirections,
   isBaseMovementInput,
@@ -37,6 +39,7 @@ import LootPopup from "./LootPopup.js"
 import Messages from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
+import Popup from "./popup.js"
 import Status from "./Status.js"
 
 const apiDoPlayerAction = GameClient.doPlayerAction
@@ -52,6 +55,8 @@ export {
   clampTravelTarget,
   directionalMovementResultMessage,
   drawWorld,
+  filterDrinkItems,
+  filterFoodItems,
   findPlayerPosition,
   findTravelDirections,
   findTravelDirections as findTravelPathDirections,
@@ -100,6 +105,8 @@ export default function BPlaying({ onQuit }: Props) {
   const pickupRef = useRef<BoxElement>(null)
   const dropRef = useRef<BoxElement>(null)
   const lootRef = useRef<BoxElement>(null)
+  const eatRef = useRef<BoxElement>(null)
+  const quaffRef = useRef<BoxElement>(null)
   const pendingMovementPrefix = useRef<MovementPrefix | undefined>(
     undefined
   )
@@ -150,14 +157,15 @@ export default function BPlaying({ onQuit }: Props) {
 
     initialWorldFetchStarted.current = true
     void LiveRuntime.runPromise(
-      apiGetWorld.pipe(
-        Effect.tap((world) => Effect.sync(() => setWorld(world))),
+      refreshWorldAndInventory.pipe(
         Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
         Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
-        Effect.tap(() => Effect.sync(() => lootRef.current?.hide()))
+        Effect.tap(() => Effect.sync(() => lootRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => eatRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => quaffRef.current?.hide()))
       )
     )
-  }, [world])
+  }, [refreshWorldAndInventory, world])
 
   useEffect(() => {
     const gameBox = gameref.current
@@ -205,6 +213,7 @@ export default function BPlaying({ onQuit }: Props) {
       ".",
       "_",
       "d",
+      "e",
       ",",
       "#",
       "S-3",
@@ -383,6 +392,8 @@ export default function BPlaying({ onQuit }: Props) {
       setLootContainerName("container")
       pickupRef.current?.hide()
       dropRef.current?.hide()
+      eatRef.current?.hide()
+      quaffRef.current?.hide()
       void LiveRuntime.runPromise(
         apiGetLootContainersFor("player").pipe(
           Effect.flatMap((containers) => {
@@ -462,6 +473,8 @@ export default function BPlaying({ onQuit }: Props) {
         pendingMovementPrefix.current = undefined
         lootRef.current?.hide()
         dropRef.current?.hide()
+        eatRef.current?.hide()
+        quaffRef.current?.hide()
         pickupRequestId.current += 1
         const requestId = pickupRequestId.current
         setPickupContents(HashMap.empty())
@@ -482,9 +495,29 @@ export default function BPlaying({ onQuit }: Props) {
         pendingMovementPrefix.current = undefined
         pickupRef.current?.hide()
         lootRef.current?.hide()
+        eatRef.current?.hide()
+        quaffRef.current?.hide()
         setMessages(prependMessage("dropping"))
         dropRef.current?.show()
         dropRef.current?.focus()
+      } else if (normalizedInput === "e") {
+        pendingMovementPrefix.current = undefined
+        pickupRef.current?.hide()
+        dropRef.current?.hide()
+        lootRef.current?.hide()
+        quaffRef.current?.hide()
+        setMessages(prependMessage("eating"))
+        eatRef.current?.show()
+        eatRef.current?.focus()
+      } else if (normalizedInput === "q") {
+        pendingMovementPrefix.current = undefined
+        pickupRef.current?.hide()
+        dropRef.current?.hide()
+        lootRef.current?.hide()
+        eatRef.current?.hide()
+        setMessages(prependMessage("quaffing"))
+        quaffRef.current?.show()
+        quaffRef.current?.focus()
       } else {
         let actionInput = normalizedInput
         const movementPrefix = pendingMovementPrefix.current
@@ -582,6 +615,24 @@ export default function BPlaying({ onQuit }: Props) {
       )
     )
   }
+  const onDoEat = (eatItems: ReadonlyArray<Key>) => {
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(EAction.eatMulti({ keys: eatItems })).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => eatRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
+    )
+  }
+  const onDoQuaff = (quaffItems: ReadonlyArray<Key>) => {
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(EAction.quaffMulti({ keys: quaffItems })).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => quaffRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
+    )
+  }
   const onTakeLoot = (lootItems: ReadonlyArray<Key>) => {
     const containerKey = lootContainerKey
     if (containerKey === undefined) return
@@ -613,6 +664,16 @@ export default function BPlaying({ onQuit }: Props) {
   const onCancelMultiDrop = () => {
     setMessages(prependMessage(`canceling multidrop`))
     dropRef.current?.hide()
+    gameref.current?.focus()
+  }
+  const onCancelEat = () => {
+    setMessages(prependMessage(`canceling eating`))
+    eatRef.current?.hide()
+    gameref.current?.focus()
+  }
+  const onCancelQuaff = () => {
+    setMessages(prependMessage(`canceling quaffing`))
+    quaffRef.current?.hide()
     gameref.current?.focus()
   }
   const onCancelPickup = () => {
@@ -661,6 +722,20 @@ export default function BPlaying({ onQuit }: Props) {
         world={world}
         onDrop={onDoDrop}
         onCancel={onCancelMultiDrop}
+      />
+      <Popup
+        boxRef={eatRef}
+        items={filterFoodItems(inventory)}
+        onSubmit={onDoEat}
+        onCancel={onCancelEat}
+        label="Eat what?"
+      />
+      <Popup
+        boxRef={quaffRef}
+        items={filterDrinkItems(inventory)}
+        onSubmit={onDoQuaff}
+        onCancel={onCancelQuaff}
+        label="Quaff what?"
       />
     </box>
   )

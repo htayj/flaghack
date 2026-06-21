@@ -117,6 +117,9 @@ const liveRuntimeCallClassification = (
 ) => {
   const argumentSource = call.arguments[0]?.getText(sourceFile) ?? ""
 
+  if (/refreshWorldAndInventory\s*\.pipe\s*\(/.test(argumentSource)) {
+    return "initial refreshWorldAndInventory"
+  }
   if (/apiGetWorld\s*\.pipe\s*\(/.test(argumentSource)) {
     return "initial apiGetWorld"
   }
@@ -155,6 +158,18 @@ const liveRuntimeCallClassification = (
       .test(argumentSource)
   ) {
     return "drop apiDoPlayerAction dropMulti"
+  }
+  if (
+    /apiDoPlayerAction\s*\(\s*EAction\.eatMulti\s*\(\s*{\s*keys\s*:\s*eatItems\s*}\s*\)\s*\)/
+      .test(argumentSource)
+  ) {
+    return "eat apiDoPlayerAction eatMulti"
+  }
+  if (
+    /apiDoPlayerAction\s*\(\s*EAction\.quaffMulti\s*\(\s*{\s*keys\s*:\s*quaffItems\s*}\s*\)\s*\)/
+      .test(argumentSource)
+  ) {
+    return "quaff apiDoPlayerAction quaffMulti"
   }
   if (/EAction\.lootTakeMulti\s*\(/.test(argumentSource)) {
     return "loot apiDoPlayerAction lootTakeMulti"
@@ -201,13 +216,13 @@ describe("CLI runtime boundary", () => {
       findPropertyAccesses(sourceFile, "Effect", "runPromise")
     ).toHaveLength(0)
     expect(findEffectProvideMainLiveCalls(sourceFile)).toHaveLength(0)
-    expect(liveRuntimeCalls).toHaveLength(10)
+    expect(liveRuntimeCalls).toHaveLength(12)
     expect(
       liveRuntimeCalls.map((call) =>
         liveRuntimeCallClassification(call, sourceFile)
       )
     ).toEqual([
-      "initial apiGetWorld",
+      "initial refreshWorldAndInventory",
       "travel runTravelToTarget target",
       "loot apiGetLootContainersFor player",
       "comma apiGetPickupItemsFor player",
@@ -215,6 +230,8 @@ describe("CLI runtime boundary", () => {
       "movement apiDoPlayerAction action value",
       "pickup apiDoPlayerAction pickupMulti",
       "drop apiDoPlayerAction dropMulti",
+      "eat apiDoPlayerAction eatMulti",
+      "quaff apiDoPlayerAction quaffMulti",
       "loot apiDoPlayerAction lootTakeMulti",
       "loot apiDoPlayerAction lootPutMulti"
     ])

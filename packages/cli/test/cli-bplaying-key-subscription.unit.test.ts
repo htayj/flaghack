@@ -73,6 +73,7 @@ const expectedGameKeys = [
   ".",
   "_",
   "d",
+  "e",
   ",",
   "#",
   "S-3",

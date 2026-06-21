@@ -9,6 +9,7 @@ import {
   makeBeer,
   makeCooler,
   makeGroundFlag,
+  makeHotdog,
   makeWaterBottle
 } from "../src/items.js"
 import type { Entity } from "../src/world.js"
@@ -193,6 +194,68 @@ describe("server actions", () => {
 
     expect(entityByKey(next, item.key)?.in).toBe("world")
     expect(entityByKey(next, item.key)?.at).toEqual(item.at)
+  })
+
+  it("eats only selected held food items", () => {
+    const actor = player(5, 6, 0)
+    const hotdog = makeHotdog("hotdog-1", 0, 0, 0, actor.key)
+    const beer = makeBeer("beer-1", 0, 0, 0, actor.key)
+    const flag = makeGroundFlag("flag-1", { x: 0, y: 0, z: 0 })
+    const floorHotdog = makeHotdog("hotdog-floor", 5, 6, 0, "world")
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [hotdog.key, hotdog],
+        [beer.key, beer],
+        [flag.key, flag],
+        [floorHotdog.key, floorHotdog]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.eatMulti({
+          keys: [hotdog.key, beer.key, flag.key, floorHotdog.key]
+        }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, hotdog.key)).toBeUndefined()
+    expect(entityByKey(next, beer.key)?.in).toBe(actor.key)
+    expect(entityByKey(next, flag.key)?.in).toBe("world")
+    expect(entityByKey(next, floorHotdog.key)?.in).toBe("world")
+  })
+
+  it("quaffs only selected held drink items", () => {
+    const actor = player(5, 6, 0)
+    const water = makeWaterBottle("water-1", 0, 0, 0, actor.key)
+    const beer = makeBeer("beer-1", 0, 0, 0, actor.key)
+    const hotdog = makeHotdog("hotdog-1", 0, 0, 0, actor.key)
+    const floorBeer = makeBeer("beer-floor", 5, 6, 0, "world")
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [water.key, water],
+        [beer.key, beer],
+        [hotdog.key, hotdog],
+        [floorBeer.key, floorBeer]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.quaffMulti({
+          keys: [water.key, beer.key, hotdog.key, floorBeer.key]
+        }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, water.key)).toBeUndefined()
+    expect(entityByKey(next, beer.key)).toBeUndefined()
+    expect(entityByKey(next, hotdog.key)?.in).toBe(actor.key)
+    expect(entityByKey(next, floorBeer.key)?.in).toBe("world")
   })
 
   it("loots items out of and into an accessible floor container", () => {

@@ -9,8 +9,10 @@ import {
   AnyItem,
   AnyTerrain,
   conforms,
+  DrinkItemTags,
   EAction,
   type Entity as EntitySchema,
+  FoodItemTags,
   type Key as KeySchema,
   type Pos as PosSchema,
   type World as WorldSchema
@@ -31,13 +33,23 @@ export const nullMatrix = (h: number, w: number): Matrix<null> =>
     Array.from({ length: h }, () =>
       List(Array.from({ length: w }, () => null)))
   )
-export const isTerrain = conforms(AnyTerrain)
-const isCreature = conforms(AnyCreature)
-const isItem = conforms(AnyItem)
 export type World = typeof WorldSchema.Type
 export type Key = typeof KeySchema.Type
 export type Entity = typeof EntitySchema.Type
 export type Pos = typeof PosSchema.Type
+export const isTerrain = conforms(AnyTerrain)
+const isCreature = conforms(AnyCreature)
+const isItem = conforms(AnyItem)
+const foodItemTags = new globalThis.Set<Entity["_tag"]>(FoodItemTags)
+const drinkItemTags = new globalThis.Set<Entity["_tag"]>(DrinkItemTags)
+export const isFoodItem = (entity: Entity): boolean =>
+  isItem(entity) && foodItemTags.has(entity._tag)
+export const isDrinkItem = (entity: Entity): boolean =>
+  isItem(entity) && drinkItemTags.has(entity._tag)
+export const filterFoodItems = (world: World): World =>
+  world.pipe(HashMap.filter(isFoodItem))
+export const filterDrinkItems = (world: World): World =>
+  world.pipe(HashMap.filter(isDrinkItem))
 export type MovementDirection =
   | "N"
   | "E"

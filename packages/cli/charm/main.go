@@ -56,7 +56,7 @@ func (a action) MarshalJSON() ([]byte, error) {
 	if a.ContainerKey != "" {
 		payload["containerKey"] = a.ContainerKey
 	}
-	if a.Tag == "pickupMulti" || a.Tag == "dropMulti" || a.Tag == "lootTakeMulti" || a.Tag == "lootPutMulti" {
+	if actionUsesKeys(a.Tag) {
 		if a.Keys == nil {
 			payload["keys"] = []string{}
 		} else {
@@ -64,6 +64,15 @@ func (a action) MarshalJSON() ([]byte, error) {
 		}
 	}
 	return json.Marshal(payload)
+}
+
+func actionUsesKeys(tag string) bool {
+	switch tag {
+	case "pickupMulti", "dropMulti", "lootTakeMulti", "lootPutMulti", "eatMulti", "quaffMulti":
+		return true
+	default:
+		return false
+	}
 }
 
 type actionPayload struct {
@@ -98,6 +107,8 @@ const (
 	popupPickup popupKind = "pickup"
 	popupDrop   popupKind = "drop"
 	popupLoot   popupKind = "loot"
+	popupEat    popupKind = "eat"
+	popupQuaff  popupKind = "quaff"
 )
 
 type lootMode string
@@ -423,6 +434,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.popup = &popupState{kind: popupDrop, title: "Drop what?", stage: popupStageItems, items: m.inventory, marked: map[string]bool{}}
 		m.addMessage("dropping")
 		return m, nil
+	case "e":
+		m.pendingMovementPrefix = ""
+		m.popup = &popupState{kind: popupEat, title: "Eat what?", stage: popupStageItems, items: filterFoodItems(m.inventory), marked: map[string]bool{}}
+		m.addMessage("eating")
+		return m, nil
+	case "q":
+		m.pendingMovementPrefix = ""
+		m.popup = &popupState{kind: popupQuaff, title: "Quaff what?", stage: popupStageItems, items: filterDrinkItems(m.inventory), marked: map[string]bool{}}
+		m.addMessage("quaffing")
+		return m, nil
 	}
 
 	actionInput := input
@@ -538,6 +559,10 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 			m.addMessage("canceling multidrop")
 		case popupLoot:
 			m.addMessage("canceling loot")
+		case popupEat:
+			m.addMessage("canceling eating")
+		case popupQuaff:
+			m.addMessage("canceling quaffing")
 		default:
 			m.addMessage("canceling pickup")
 		}
@@ -588,6 +613,12 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		m.mutationSerial++
 		if kind == popupPickup {
 			return m, actionAndRefreshCmd(m.client, action{Tag: "pickupMulti", Keys: keys})
+		}
+		if kind == popupEat {
+			return m, actionAndRefreshCmd(m.client, action{Tag: "eatMulti", Keys: keys})
+		}
+		if kind == popupQuaff {
+			return m, actionAndRefreshCmd(m.client, action{Tag: "quaffMulti", Keys: keys})
 		}
 		if kind == popupLoot {
 			if mode == lootPut {
@@ -691,7 +722,7 @@ func (m model) View() string {
 				return renderPopup(*m.popup)
 			}))
 		}
-		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · M-l loot · item letters select · #quit"))
+		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · e eat · q quaff · M-l loot · item letters select · #quit"))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	})
 	m.perf.finishRedraws()
@@ -716,7 +747,7 @@ func renderBoard(world []entity, target *pos) string {
 }
 
 func renderSidebarArea(inventory []entity, popup *popupState) string {
-	if popup != nil && (popup.kind == popupPickup || popup.kind == popupLoot) {
+	if popup != nil && popup.kind != popupDrop {
 		return renderSidebarPopup(*popup)
 	}
 	return renderSidebar(inventory)
@@ -1575,6 +1606,48 @@ func isCreature(item entity) bool {
 
 func isItem(item entity) bool {
 	return !isTerrain(item) && !isCreature(item)
+}
+
+func isFoodItem(item entity) bool {
+	if !isItem(item) {
+		return false
+	}
+	switch item.Tag {
+	case "poptart", "trailmix", "pancake", "bacon", "soup", "hotdog", "cheese", "salsa":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDrinkItem(item entity) bool {
+	if !isItem(item) {
+		return false
+	}
+	switch item.Tag {
+	case "water", "acid", "booze", "beer", "milk":
+		return true
+	default:
+		return false
+	}
+}
+
+func filterItems(items []entity, keep func(entity) bool) []entity {
+	filtered := []entity{}
+	for _, item := range items {
+		if keep(item) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterFoodItems(items []entity) []entity {
+	return filterItems(items, isFoodItem)
+}
+
+func filterDrinkItems(items []entity) []entity {
+	return filterItems(items, isDrinkItem)
 }
 
 func entitiesAtPosition(world []entity, p pos) []entity {

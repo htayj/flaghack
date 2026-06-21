@@ -14,6 +14,8 @@ import * as ts from "typescript"
 import {
   clampTravelTarget,
   drawWorld,
+  filterDrinkItems,
+  filterFoodItems,
   findTravelDirections,
   formatStatusLines,
   MAX_DIRECTIONAL_MOVEMENT_STEPS,
@@ -103,6 +105,24 @@ const waterAt = (x: number, y: number): Entity => ({
   at: { x, y, z: 0 },
   in: "world",
   key: `water-${x}-${y}`
+})
+const beerHeld = (key = "beer-1"): Entity => ({
+  _tag: "beer",
+  at: { x: 0, y: 0, z: 0 },
+  in: "player",
+  key
+})
+const hotdogHeld = (key = "hotdog-1"): Entity => ({
+  _tag: "hotdog",
+  at: { x: 0, y: 0, z: 0 },
+  in: "player",
+  key
+})
+const flagHeld = (key = "flag-1"): Entity => ({
+  _tag: "flag",
+  at: { x: 0, y: 0, z: 0 },
+  in: "player",
+  key
 })
 const signAt = (x: number, y: number): Entity => ({
   _tag: "sign",
@@ -204,6 +224,10 @@ const onDoPickupSignature =
   /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onDoDropSignature =
   /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+const onDoEatSignature =
+  /const\s+onDoEat\s*=\s*\(\s*eatItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+const onDoQuaffSignature =
+  /const\s+onDoQuaff\s*=\s*\(\s*quaffItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onTakeLootSignature =
   /const\s+onTakeLoot\s*=\s*\(\s*lootItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onPutLootSignature =
@@ -440,6 +464,24 @@ const expectRefreshAfterAction = (
     "refreshWorldAndInventory should run after the player action"
   ).toBeGreaterThan(actionIndex)
 }
+
+describe("CLI inventory consumption filters", () => {
+  it("filters inventory worlds into edible food and quaffable drink items", () => {
+    const food = hotdogHeld()
+    const drink = beerHeld()
+    const flag = flagHeld()
+    const world = worldFromEntities([food, drink, flag])
+
+    expect(Array.from(filterFoodItems(world).pipe(HashMap.values)))
+      .toEqual([
+        food
+      ])
+    expect(Array.from(filterDrinkItems(world).pipe(HashMap.values)))
+      .toEqual([
+        drink
+      ])
+  })
+})
 
 describe("CLI message log", () => {
   it("prepends new messages, caps stored state, and drops oldest tail entries", () => {
@@ -1257,6 +1299,24 @@ describe("CLI input handling static guards", () => {
     expectRefreshAfterAction(
       onDoDropBody,
       "apiDoPlayerAction(EAction.dropMulti"
+    )
+  })
+
+  it("refreshes world and inventory after eat/quaff actions", () => {
+    const source = readBPlayingSource()
+    const onDoEatBody = extractArrowFunctionBody(source, onDoEatSignature)
+    const onDoQuaffBody = extractArrowFunctionBody(
+      source,
+      onDoQuaffSignature
+    )
+
+    expectRefreshAfterAction(
+      onDoEatBody,
+      "apiDoPlayerAction(EAction.eatMulti"
+    )
+    expectRefreshAfterAction(
+      onDoQuaffBody,
+      "apiDoPlayerAction(EAction.quaffMulti"
     )
   })
 

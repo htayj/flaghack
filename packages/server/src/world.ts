@@ -1,4 +1,8 @@
-import { EEntity } from "@flaghack/domain/schemas"
+import {
+  DrinkItemTags,
+  EEntity,
+  FoodItemTags
+} from "@flaghack/domain/schemas"
 import type {
   DirectionalVariant as DirectionalVariantSchema,
   Entity as EntitySchema,
@@ -90,21 +94,12 @@ const creatureTags = new globalThis.Set<Entity["_tag"]>([
   "greater_egregore",
   "collective_egregore"
 ])
+const foodItemTags = new globalThis.Set<Entity["_tag"]>(FoodItemTags)
+const drinkItemTags = new globalThis.Set<Entity["_tag"]>(DrinkItemTags)
 const itemTags = new globalThis.Set<Entity["_tag"]>([
   "flag",
-  "water",
-  "acid",
-  "booze",
-  "beer",
-  "milk",
-  "poptart",
-  "trailmix",
-  "pancake",
-  "bacon",
-  "soup",
-  "hotdog",
-  "cheese",
-  "salsa",
+  ...DrinkItemTags,
+  ...FoodItemTags,
   "hammer",
   "nails",
   "cooler"
@@ -128,6 +123,10 @@ export const isPassableTerrain = (e: Entity) =>
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
 export const isHippie = (e: Entity) => e._tag === "hippie"
 export const isItem = (e: Entity): e is Item => itemTags.has(e._tag)
+export const isFoodItem = (e: Entity): e is Item =>
+  isItem(e) && foodItemTags.has(e._tag)
+export const isDrinkItem = (e: Entity): e is Item =>
+  isItem(e) && drinkItemTags.has(e._tag)
 export const isContainer = (e: Entity): e is Cooler => e._tag === "cooler"
 // export const creaturesFrom = <T extends World>(
 //   w: T

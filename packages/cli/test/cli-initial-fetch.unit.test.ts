@@ -11,7 +11,7 @@ const bPlayingSourcePath = join(
 const initialFetchRenderBodyPattern =
   /if\s*\(\s*world\s*===\s*undefined\s*\|\|\s*size\s*\(\s*world\s*\)\s*===\s*0\s*\)\s*{\s*apiGetWorld\s*\.pipe/
 const lifecycleInitialFetchPattern =
-  /useEffect\s*\(\s*\(\)\s*=>\s*{[\s\S]*?apiGetWorld\s*\.pipe/
+  /useEffect\s*\(\s*\(\)\s*=>\s*{[\s\S]*?refreshWorldAndInventory\s*\.pipe/
 
 const renderBodyBeforeFirstEffect = (source: string) => {
   const componentStart = source.indexOf("export default function BPlaying")
@@ -32,7 +32,7 @@ describe("CLI initial fetch lifecycle", () => {
     )
   })
 
-  it("keeps the initial world fetch lifecycle-driven from useEffect", () => {
+  it("keeps the initial world and inventory fetch lifecycle-driven from useEffect", () => {
     const source = readFileSync(bPlayingSourcePath, "utf8")
 
     expect(source).toMatch(lifecycleInitialFetchPattern)

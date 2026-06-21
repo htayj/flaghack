@@ -10,6 +10,7 @@ import {
   VrilP
 } from "@flaghack/domain/stats"
 import { Either, Schema as S } from "effect"
+import { readFileSync } from "node:fs"
 
 const accepts = (schema: S.Schema.AnyNoContext, input: unknown): boolean =>
   Either.isRight(S.decodeUnknownEither(schema)(input))
@@ -17,7 +18,19 @@ const accepts = (schema: S.Schema.AnyNoContext, input: unknown): boolean =>
 const rejects = (schema: S.Schema.AnyNoContext, input: unknown): boolean =>
   Either.isLeft(S.decodeUnknownEither(schema)(input))
 
+const readStatsSource = () =>
+  readFileSync(new URL("../src/stats.ts", import.meta.url), "utf8")
+
 describe("stats schemas", () => {
+  it("uses direct Effect Schema constructors instead of collection helpers", () => {
+    const source = readStatsSource()
+
+    expect(source).not.toContain("from \"./util.js\"")
+    expect(source).not.toMatch(/\bcollect\s*\(/)
+    expect(source).toContain("Schema.Struct")
+    expect(source).toContain("Schema.Union")
+  })
+
   it("treats wisdom as its own required attribute field", () => {
     expect(
       accepts(AllAttributes, {

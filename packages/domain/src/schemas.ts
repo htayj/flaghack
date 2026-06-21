@@ -1,143 +1,87 @@
 import { Data, Schema as S } from "effect"
-import { allof, bothof, oneof, prop, struct } from "./util.js"
-
-// using extend and union - cant use .make?
-// const bothof = S.extend
-// const oneof = S.Union
-// const struct = S.Struct
-
-// using spreading
-// const bothof = <A extends struct.Fields, B extends struct.Fields>(a: struct<A>, b: struct<B>) => struct({ ...a.fields , ...b.fields })
-// const oneof = <A extends struct.Fields, B extends struct.Fields>(a: struct<A>, b: struct<B>) => struct({ ...a.fields , ...b.fields })
-//
-
-const tagas = <A extends S.Schema.Any, T extends string>(
-  schema: A,
-  type: T
-) =>
-  bothof(
-    schema,
-    S.TaggedStruct(type, {})
-  )
-
-// const display =
-//   <A extends S.Schema.Any>(schema: A) =>
-//   (color: string, char: string, bright?: boolean) =>
-//     bothof(
-//       schema,
-//       S.Struct({
-//         color,
-//         char,
-//         bright
-//       })
-//     )
-
-// const bothof = <A extends struct.Fields, B extends struct.Fields>(
-//   a: struct<A>,
-//   b: struct<B>
-// ) =>
-//   struct({
-//     ...a.fields,
-//     ...b.fields
-//   })
-// const allof = (...a: Union[]) =>
-//   a.reduce((acc, curr) => S.compose(acc, curr)) // todo: not sure if this is right
 
 const Coordinate = S.Int
 
-export const Pos = struct({
+export const Pos = S.Struct({
   x: Coordinate,
   y: Coordinate,
   z: Coordinate
 })
 
 export const Key = S.String
-export const Keyed = prop("key", Key)
 
-export const Contain = struct({ in: Key })
-export const Position = struct({ at: Pos })
+const KeyedFields = { key: Key } as const
+const ContainFields = { in: Key } as const
+const PositionFields = { at: Pos } as const
+
+export const Keyed = S.Struct(KeyedFields)
+export const Contain = S.Struct(ContainFields)
+export const Position = S.Struct(PositionFields)
 
 // Current entities intentionally include `key`, `at`, and `in`. The larger
 // `{InWorld|InContainer}` ADT, branded EntityKey, map-key/entity-key
 // consistency, and containment-reference validation cleanup is deferred.
-export const EntityBase = allof(
-  Keyed,
-  Position,
-  Contain
-)
+const EntityBaseFields = {
+  ...KeyedFields,
+  ...PositionFields,
+  ...ContainFields
+} as const
 
-export const CreatureBase = allof(
-  EntityBase,
-  struct({ name: S.String.pipe(S.optional) })
-)
+export const EntityBase = S.Struct(EntityBaseFields)
+
+const CreatureBaseFields = {
+  ...EntityBaseFields,
+  name: S.String.pipe(S.optional)
+} as const
+
+export const CreatureBase = S.Struct(CreatureBaseFields)
 export const TerrainBase = EntityBase
-// export const ItemBase = kindas(EntityBase, "item")
+
 // ===========================
 // items
 // ===========================
 // >> Flags
 export const FlagType = EntityBase
-
-export const Flag = tagas(FlagType, "flag")
-
-export const AnyFlag = oneof(
-  Flag
-)
+export const Flag = S.TaggedStruct("flag", EntityBaseFields)
+export const AnyFlag = S.Union(Flag)
 
 // >> Drinks
 export const Drink = EntityBase
-
-export const Water = tagas(Drink, "water")
-export const Acid = tagas(Drink, "acid")
-export const Booze = tagas(Drink, "booze")
-export const Beer = tagas(Drink, "beer")
-export const Milk = tagas(Drink, "milk")
-export const AnyBasicDrink = oneof(
-  Water,
-  Acid,
-  Booze,
-  Milk
-)
-export const AnyDrink = oneof(
-  AnyBasicDrink,
-  Beer
-)
+export const Water = S.TaggedStruct("water", EntityBaseFields)
+export const Acid = S.TaggedStruct("acid", EntityBaseFields)
+export const Booze = S.TaggedStruct("booze", EntityBaseFields)
+export const Beer = S.TaggedStruct("beer", EntityBaseFields)
+export const Milk = S.TaggedStruct("milk", EntityBaseFields)
+export const AnyBasicDrink = S.Union(Water, Acid, Booze, Milk)
+export const AnyDrink = S.Union(AnyBasicDrink, Beer)
 
 // >> Food
 export const Food = EntityBase
-
-export const Poptart = tagas(Food, "poptart")
-export const Trailmix = tagas(Food, "trailmix")
-export const Pancake = tagas(Food, "pancake")
-export const Bacon = tagas(Food, "bacon")
-export const Soup = tagas(Food, "soup")
-export const Hotdog = tagas(Food, "hotdog")
-export const Cheese = tagas(Food, "cheese")
-export const Salsa = tagas(Food, "salsa")
-export const AnyShelfStableFood = oneof(
+export const Poptart = S.TaggedStruct("poptart", EntityBaseFields)
+export const Trailmix = S.TaggedStruct("trailmix", EntityBaseFields)
+export const Pancake = S.TaggedStruct("pancake", EntityBaseFields)
+export const Bacon = S.TaggedStruct("bacon", EntityBaseFields)
+export const Soup = S.TaggedStruct("soup", EntityBaseFields)
+export const Hotdog = S.TaggedStruct("hotdog", EntityBaseFields)
+export const Cheese = S.TaggedStruct("cheese", EntityBaseFields)
+export const Salsa = S.TaggedStruct("salsa", EntityBaseFields)
+export const AnyShelfStableFood = S.Union(
   Poptart,
   Trailmix,
   Pancake,
   Bacon,
   Soup
 )
-export const AnyRefrigeratedCampFood = oneof(
-  Hotdog,
-  Cheese,
-  Salsa
-)
-export const AnyFood = oneof(
+export const AnyRefrigeratedCampFood = S.Union(Hotdog, Cheese, Salsa)
+export const AnyFood = S.Union(
   AnyShelfStableFood,
   AnyRefrigeratedCampFood
 )
 
 // >> Containers
 export const Container = EntityBase
-
-export const Cooler = tagas(Container, "cooler")
-export const AnyContainer = oneof(
-  Cooler
-)
+export const Cooler = S.TaggedStruct("cooler", EntityBaseFields)
+export const AnyContainer = S.Union(Cooler)
 
 // >> Swag
 export const Swag = EntityBase
@@ -147,21 +91,12 @@ export const Wristband = EntityBase
 
 // >> tools
 export const Tool = EntityBase
+export const Hammer = S.TaggedStruct("hammer", EntityBaseFields)
+export const Nails = S.TaggedStruct("nails", EntityBaseFields)
+export const AnyTool = S.Union(Hammer, Nails)
 
-export const Hammer = tagas(Tool, "hammer")
-export const Nails = tagas(Tool, "nails")
-export const AnyTool = oneof(
-  Hammer,
-  Nails
-)
-
-// <<<<<<
-
-export const AnyComestible = oneof(
-  AnyFood,
-  AnyDrink
-)
-export const AnyItem = oneof(
+export const AnyComestible = S.Union(AnyFood, AnyDrink)
+export const AnyItem = S.Union(
   Flag,
   AnyComestible,
   AnyTool,
@@ -172,52 +107,54 @@ export const ContainerCollection = S.HashMap({
   key: Key,
   value: AnyContainer
 })
+
 // ===========================
 // Creatures
 // ===========================
 // >> Humans
 export const Human = CreatureBase
-
-export const Player = tagas(Human, "player")
-export const Ranger = tagas(Human, "ranger")
-// export const Player = tagas(Human, "player")
-export const AnyHuman = oneof(Player, Ranger)
+export const Player = S.TaggedStruct("player", CreatureBaseFields)
+export const Ranger = S.TaggedStruct("ranger", CreatureBaseFields)
+export const AnyHuman = S.Union(Player, Ranger)
 
 // >> Humanoids
 export const Humanoid = CreatureBase
-
-export const Hippie = tagas(Humanoid, "hippie")
-export const Wook = tagas(Humanoid, "wook")
-
-export const AnyHumanoid = oneof(Hippie, Wook)
+export const Hippie = S.TaggedStruct("hippie", CreatureBaseFields)
+export const Wook = S.TaggedStruct("wook", CreatureBaseFields)
+export const AnyHumanoid = S.Union(Hippie, Wook)
 
 // >> Kops
 export const Kop = CreatureBase
-
-export const AcidKop = tagas(Kop, "acidcop")
-export const AnyKop = oneof(AcidKop)
+export const AcidKop = S.TaggedStruct("acidcop", CreatureBaseFields)
+export const AnyKop = S.Union(AcidKop)
 
 // >> Egregores
 export const Egregore = CreatureBase
-
-export const LesserEgregore = tagas(Egregore, "lesser_egregore")
-export const GreaterEgregore = tagas(Egregore, "greater_egregore")
-export const OneofiveEgregore = tagas(Egregore, "collective_egregore")
-
-export const AnyEgregore = oneof(
+export const LesserEgregore = S.TaggedStruct(
+  "lesser_egregore",
+  CreatureBaseFields
+)
+export const GreaterEgregore = S.TaggedStruct(
+  "greater_egregore",
+  CreatureBaseFields
+)
+export const OneofiveEgregore = S.TaggedStruct(
+  "collective_egregore",
+  CreatureBaseFields
+)
+export const AnyEgregore = S.Union(
   LesserEgregore,
   GreaterEgregore,
   OneofiveEgregore
 )
 
-// <<<<<
-
-export const AnyCreature = oneof(
+export const AnyCreature = S.Union(
   AnyHuman,
   AnyHumanoid,
   AnyKop,
   AnyEgregore
 )
+
 // ===========================
 // terrains
 // ===========================
@@ -238,26 +175,21 @@ export const DirectionalVariant = S.Literal(
 export const WithDirectionalVariant = S.Struct({
   variant: DirectionalVariant
 })
-export const Wall = tagas(
-  bothof(TerrainBase, WithDirectionalVariant),
-  "wall"
-)
-export const Floor = tagas(
-  TerrainBase,
-  "floor"
-)
-export const Tunnel = tagas(TerrainBase, "tunnel")
-export const Tent = tagas(TerrainBase, "tent")
-export const Sign = tagas(
-  bothof(TerrainBase, struct({ name: S.String })),
-  "sign"
-)
-export const Effigy = tagas(TerrainBase, "effigy")
-export const Temple = tagas(TerrainBase, "temple")
+export const Wall = S.TaggedStruct("wall", {
+  ...EntityBaseFields,
+  variant: DirectionalVariant
+})
+export const Floor = S.TaggedStruct("floor", EntityBaseFields)
+export const Tunnel = S.TaggedStruct("tunnel", EntityBaseFields)
+export const Tent = S.TaggedStruct("tent", EntityBaseFields)
+export const Sign = S.TaggedStruct("sign", {
+  ...EntityBaseFields,
+  name: S.String
+})
+export const Effigy = S.TaggedStruct("effigy", EntityBaseFields)
+export const Temple = S.TaggedStruct("temple", EntityBaseFields)
 
-// export const AnyTerrain = oneof(Wall, Tunnel)
-// export const AnyTerrain = oneof(Wall)
-export const AnyTerrain = oneof(
+export const AnyTerrain = S.Union(
   Wall,
   Floor,
   Tunnel,
@@ -266,18 +198,8 @@ export const AnyTerrain = oneof(
   Effigy,
   Temple
 )
-// type a = typeof AnyTerrain.Type
-// export const AnyTerrain = oneof(Wall, Floor, Tunnel)
 
-// ===========================
-// ===========================
-// ===========================
-
-export const Entity = oneof(AnyItem, AnyCreature, AnyTerrain)
-// const testboth = bothof(struct({ a: S.Number }), struct({ b: S.Number }))
-// const testproj =  S.Class(testboth)
-// const encoded = S.encodedSchema(Entity)
-// const a = typeof encoded.make()
+export const Entity = S.Union(AnyItem, AnyCreature, AnyTerrain)
 
 export const Direction = S.Literal(
   "N",
@@ -289,14 +211,6 @@ export const Direction = S.Literal(
   "SE",
   "SW"
 )
-
-// export type Action = Data.TaggedEnum<{
-//   apply: {}
-//   noop: {}
-//   move: { dir: typeof Direction.Type }
-// }>
-
-// export const EAction = Data.taggedEnum<Action>()
 
 const ActionOptions = [
   S.TaggedStruct("apply", {}),
@@ -312,30 +226,15 @@ const ActionOptions = [
     containerKey: Key,
     keys: S.Array(Key)
   })
-]
-export const SAction = S.Union(
-  ...ActionOptions
-)
-export const SEAction = S.Data(SAction)
-export const EAction = Data.taggedEnum<typeof SEAction.Type>()
-export type Action = typeof SAction.Type
-// const schemaUnionToDataEnum = <
-//   A extends [
-//     S.TaggedStruct<SchemaAST.LiteralValue, S.Struct.Fields>,
-//     ...S.TaggedStruct<SchemaAST.LiteralValue, S.Struct.Fields>[]
-//   ]
-// >(
-//   structs: A
-// ) => {
-//   const a = structs
-//   const union = S.Union(...a) as S.Union<A>
-//   const dataSchema = S.Data<typeof union, A, A>(union) // maybe add a type
-//   type DataSchemaT = typeof dataSchema.Type
-//   return Data.taggedEnum<DataSchemaT>()
-// }
+] as const
 
-export const SEEntity = S.Data(Entity)
-export const EEntity = Data.taggedEnum<typeof SEEntity.Type>()
+export const SAction = S.Union(...ActionOptions)
+export const SEAction = SAction
+export type Action = typeof SAction.Type
+export const EAction = Data.taggedEnum<Action>()
+
+export const SEEntity = Entity
+export const EEntity = Data.taggedEnum<typeof Entity.Type>()
 
 export const conforms = <A, I>(
   schema: S.Schema<A, I, never>
@@ -343,8 +242,3 @@ export const conforms = <A, I>(
 
 export const World = S.HashMap({ key: Key, value: Entity })
 export const GameState = S.Struct({ world: World })
-
-// const flatten = <A, B, C>(s: S.Schema<A, B, C>) => {
-//   return s.pipe(S.asSchema, S.compose)
-// }
-// const b = flatten(AnyCreature)

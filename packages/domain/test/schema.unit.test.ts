@@ -6,13 +6,18 @@ import {
   AnyTerrain,
   conforms,
   ContainerCollection,
+  EAction,
+  EEntity,
   Entity,
+  Flag,
+  Floor,
   ItemCollection,
+  Player,
   Pos,
   SAction,
   World
 } from "@flaghack/domain/schemas"
-import { Either, HashMap, Schema as S } from "effect"
+import { Either, HashMap, Option, Schema as S } from "effect"
 import { readFileSync } from "node:fs"
 
 const expectRight = <A, E>(either: Either.Either<A, E>): A =>
@@ -87,6 +92,79 @@ describe("domain source schemas", () => {
     )
     expect(source).not.toMatch(
       /export\s+const\s+World\s*=\s*S\.HashMap\s*\(\s*\{\s*key\s*:\s*S\.String\s*,\s*value\s*:\s*Entity\s*\}\s*\)/
+    )
+  })
+
+  it("uses direct Effect Schema constructors instead of helper hacks", () => {
+    const source = readSchemasSource()
+
+    expect(source).not.toContain("from \"./util.js\"")
+    expect(source).not.toMatch(/\b(allof|bothof|oneof|tagas)\b/)
+    expect(source).not.toMatch(/\bS\.Data\s*\(/)
+    expect(source).toContain("S.Struct")
+    expect(source).toContain("S.TaggedStruct")
+    expect(source).toContain("S.Union")
+  })
+
+  it("TaggedStruct make helpers preserve plain tagged object shapes", () => {
+    expect(Flag.make({
+      key: sampleItem.key,
+      in: sampleItem.in,
+      at: sampleItem.at
+    })).toEqual(sampleItem)
+    expect(Floor.make({
+      key: sampleFloor.key,
+      in: sampleFloor.in,
+      at: sampleFloor.at
+    })).toEqual(sampleFloor)
+  })
+
+  it("requires explicit _tag values when decoding tagged payloads", () => {
+    expectRight(S.decodeUnknownEither(Flag)(sampleItem))
+    expect(
+      Either.isLeft(
+        S.decodeUnknownEither(Flag)({
+          key: sampleItem.key,
+          in: sampleItem.in,
+          at: sampleItem.at
+        })
+      )
+    ).toBe(true)
+  })
+
+  it("keeps Data.taggedEnum ergonomics over plain schema union values", () => {
+    expect(EAction.move({ dir: "N" })).toEqual({ _tag: "move", dir: "N" })
+    expect(EEntity.$is("floor")(sampleFloor)).toBe(true)
+    expect(EEntity.$is("floor")(sampleItem)).toBe(false)
+  })
+
+  it("allows creature names to be absent or string values", () => {
+    const player = {
+      _tag: "player" as const,
+      key: "player-1",
+      in: "world",
+      at: { x: 0, y: 0, z: 0 }
+    }
+
+    expectRight(S.decodeUnknownEither(Player)(player))
+    expectRight(
+      S.decodeUnknownEither(Player)({
+        ...player,
+        name: "You"
+      })
+    )
+  })
+
+  it("round-trips World HashMaps through the existing array wire shape", () => {
+    const world = HashMap.fromIterable([[sampleFloor.key, sampleFloor]])
+    const encoded = [[sampleFloor.key, sampleFloor]] as const
+
+    expect(S.encodeSync(World)(world)).toEqual(encoded)
+
+    const decoded = S.decodeUnknownSync(World)(encoded)
+    expect(HashMap.size(decoded)).toBe(1)
+    expect(HashMap.get(decoded, sampleFloor.key)).toEqual(
+      Option.some(sampleFloor)
     )
   })
 

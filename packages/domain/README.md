@@ -13,7 +13,7 @@ full game engine or in-process runtime behavior.
   creature, terrain, position, and inventory contracts.
 - `src/display.ts` provides the display tile mapping from shared entity
   shapes to character/color metadata for terminal and browser renderers.
-- `src/stats.ts` and `src/util.ts` hold small shared domain helpers.
+- `src/stats.ts` holds shared stat, state, property, and status-effect schemas.
 
 ## Validation and workflow notes
 

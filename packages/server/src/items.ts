@@ -243,3 +243,22 @@ export const drop =
         })(item),
       onNone: none
     })(by)
+
+export const putIntoContainer =
+  <C extends Entity>(container: Option<C>) =>
+  <I extends Entity>(
+    item: Option<I>
+  ): Option<I> =>
+    omatch({
+      onSome: (container: C) =>
+        omatch({
+          onSome: (item: I) =>
+            some({
+              ...item,
+              in: container.key,
+              at: container.at
+            }),
+          onNone: none
+        })(item),
+      onNone: none
+    })(container)

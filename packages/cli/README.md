@@ -20,6 +20,15 @@ renderers that talk to the server through the shared domain contract.
 - `src/cliInk.tsx` and `src/cliTerminalKit.ts` are retained comparison
   experiments; they are not the default CLI.
 
+## Player controls
+
+- `,` picks up floor items, including containers themselves.
+- `d` drops inventory items.
+- `M-l` / Alt-l loots a floor container under the player. The loot panel
+  opens in the inventory slot: `t` chooses taking contents out of the
+  container, `p` chooses putting inventory into it, `,` marks all visible
+  items, Space submits, and Escape cancels.
+
 ## Validation and workflow notes
 
 Read the root `AGENTS.md` before changing package behavior, and use

@@ -1,4 +1,4 @@
-import { GameState } from "@flaghack/domain/schemas"
+import type { GameState as GameStateSchema } from "@flaghack/domain/schemas"
 import { filter as hfilter, get, modify } from "effect/HashMap"
 import {
   filter,
@@ -13,7 +13,7 @@ import { getKey, type TKey } from "./entity.js"
 import { collideP, type TPos } from "./position.js"
 import { type Entity, isPlayer, type World } from "./world.js"
 
-export type GameState = typeof GameState.Type
+export type GameState = typeof GameStateSchema.Type
 
 export const worldFrom = (gs: GameState): World => gs.world
 
@@ -38,8 +38,10 @@ export const getEntitiesAtEntity = (a: Entity) => (w: World): World =>
   )
 
 export const updateWorld =
-  (gs: GameState) => (fn: (w: World) => World): GameState =>
-    GameState.make({ world: fn(gs.world) })
+  (gs: GameState) => (fn: (w: World) => World): GameState => ({
+    ...gs,
+    world: fn(gs.world)
+  })
 
 const worldEntUp =
   <T extends Entity>(e: Option<T>) =>

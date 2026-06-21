@@ -48,6 +48,21 @@ const DEFAULT_CLI_COMMAND = "pnpm run cli"
 const shellQuote = (value: string): string =>
   `'${value.replaceAll("'", `'"'"'`)}'`
 
+const perfEnvAssignments = () =>
+  ["FLAGHACK_PERF_FILE", "FLAGHACK_PERF_STDOUT", "FLAGHACK_PERF_RUN_ID"]
+    .flatMap((name) => {
+      const value = process.env[name]?.trim()
+      return value === undefined || value === ""
+        ? []
+        : [`${name}=${shellQuote(value)}`]
+    })
+    .join(" ")
+
+const perfExportCommands = () => {
+  const assignments = perfEnvAssignments()
+  return assignments === "" ? "" : `export ${assignments}; `
+}
+
 const tmux = (args: ReadonlyArray<string>) =>
   execFileSync("tmux", [...args], {
     cwd: process.cwd(),
@@ -217,7 +232,7 @@ const run = async () => {
     ?? DEFAULT_CLI_COMMAND
   const cliCommandWithApiUrl = `export FLAGHACK_API_URL=${
     shellQuote(BASE_URL)
-  }; ${cliCommand}`
+  }; ${perfExportCommands()}${cliCommand}`
   if (await isTcpPortOpen(PORT, HOST)) {
     throw new Error(
       `localhost:${PORT} is already in use; stop the existing server before running the tmux feature gate`
@@ -257,9 +272,9 @@ const run = async () => {
       "120",
       "-y",
       "40",
-      `FLAGHACK_PORT=${
+      `${perfEnvAssignments()} FLAGHACK_PORT=${
         String(PORT)
-      } pnpm exec tsx packages/server/src/server.ts`
+      } pnpm exec tsx packages/server/src/server.ts`.trim()
     ])
     sessionCreated = true
     serverPane = tmux([
@@ -301,7 +316,11 @@ const run = async () => {
     console.log(
       `tmux feature check passed with ${tmuxVersion}; keys=${
         JSON.stringify(keys)
-      }; capture=${capturePath}`
+      }; capture=${capturePath}${
+        process.env.FLAGHACK_PERF_FILE === undefined
+          ? ""
+          : `; perf=${process.env.FLAGHACK_PERF_FILE}`
+      }`
     )
   } catch (error) {
     if (cliPane !== undefined) {

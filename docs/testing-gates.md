@@ -67,6 +67,8 @@ pnpm test:api:bot
 pnpm test:e2e:tmux:bot
 # For feature-specific terminal checks, provide scenario env vars:
 FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux:bot
+# Focused loot scenario on bot port 3100:
+pnpm test:feature:tmux:loot:bot
 ```
 
 `pnpm verify:smoke` runs the generated-file guard plus the smoke gates:
@@ -103,7 +105,9 @@ Runs `go test ./...` in `packages/cli/charm`. This verifies the Go Bubble Tea/Li
 pnpm test:perf
 ```
 
-Runs Vitest benchmarks from `packages/*/test/**/*.bench.ts`. Current benchmarks are smoke benchmarks only; add thresholds after collecting stable baselines.
+Runs Vitest benchmarks from `packages/*/test/**/*.bench.ts` and Charm Go render/update benchmarks with `go test -run '^$' -bench . -benchmem`. Current benchmarks are smoke benchmarks only; add thresholds after collecting stable baselines.
+
+For parsable instrumentation during API/tmux gates, set `FLAGHACK_PERF_FILE` to an NDJSON output path and validate required records with `pnpm test:perf:validate <file> --require ...`. See `docs/performance-instrumentation.md` for the stable `kind: "flaghack-perf"` schema, backend turn phase records, and frontend response-to-redraw/component records.
 
 ### API smoke gate
 
@@ -111,7 +115,7 @@ Runs Vitest benchmarks from `packages/*/test/**/*.bench.ts`. Current benchmarks 
 pnpm test:api:bot
 ```
 
-Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, exercises `getWorld`, `getLogs`, `getInventory`, and a no-op action, then terminates the child process. The bot variant sets `FLAGHACK_TEST_PORT=3100` and starts the server with `FLAGHACK_PORT=3100`, so a user-owned port `3000` server can keep running. Use `pnpm test:api` only when you intentionally want the normal port `3000` gate.
+Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, exercises `getWorld`, `getLogs`, `getInventory`, loot queries, and a move action, then terminates the child process. The bot variant sets `FLAGHACK_TEST_PORT=3100` and starts the server with `FLAGHACK_PORT=3100`, so a user-owned port `3000` server can keep running. Use `pnpm test:api` only when you intentionally want the normal port `3000` gate.
 
 ### tmux E2E smoke gate
 
@@ -137,3 +141,11 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 - `FLAGHACK_TMUX_KEY_WAIT_MS` and `FLAGHACK_TMUX_FINAL_WAIT_MS`: optional timing controls.
 
 Use this for task-graph feature verification when the requested behavior must be exercised in the real terminal UI. Extend `scripts/tmux-feature-check.ts` or add a focused script when a feature needs richer assertions than output matching.
+
+Loot-specific terminal verification has a focused bot-port gate:
+
+```sh
+pnpm test:feature:tmux:loot:bot
+```
+
+It starts a disposable server on port `3100`, positions the player on a reachable cooler, drives `M-l`/Alt-l in the default Charm CLI through tmux, verifies taking a contained item into inventory, then verifies putting it back into the container.

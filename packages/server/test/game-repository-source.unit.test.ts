@@ -17,7 +17,8 @@ describe("GameRepository source", () => {
       "import type { Action } from \"@flaghack/domain/schemas\""
     )
     expect(source).toContain("import type { TKey } from \"./entity.js\"")
-    expect(source).toContain("import { Effect } from \"effect\"")
+    expect(source).toContain("import { Effect, HashMap } from \"effect\"")
+    expect(source).toContain("import { measureEffect } from \"./perf.js\"")
     expect(source).toContain("DefaultGameStateStoreLive")
     expect(source).not.toMatch(/\bpipe\b/)
 
@@ -29,10 +30,10 @@ describe("GameRepository source", () => {
     expect(source).toMatch(/effect:\s*Effect\.gen\(function\*/)
 
     expect(source).toMatch(
-      /getPickupItemsFor\(k: TKey\) \{\s*return withStore\(apiGetPickupItemsFor\(k\)\)\s*\}/
+      /getPickupItemsFor\(k: TKey\) \{\s*return measureEffect\([\s\S]*withStore\(apiGetPickupItemsFor\(k\)\)[\s\S]*\)\s*\}/
     )
     expect(source).toMatch(
-      /doPlayerAction\(action: Action\) \{\s*return withStore\(apiDoPlayerAction\(action\)\)\s*\}/
+      /doPlayerAction\(action: Action\) \{\s*return measureEffect\([\s\S]*withStore\(apiDoPlayerAction\(action\)\)[\s\S]*\)\s*\}/
     )
     expect(source).not.toContain("Effect.succeed(k)")
     expect(source).not.toContain("Effect.succeed(action)")

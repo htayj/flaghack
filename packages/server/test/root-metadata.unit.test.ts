@@ -358,7 +358,8 @@ describe("root package metadata", () => {
         "const cliCommandWithApiUrl = `export FLAGHACK_API_URL=${"
       )
       expect(source).toContain("shellQuote(BASE_URL)")
-      expect(source).toContain("}; ${cliCommand}`")
+      expect(source).toContain("}; ${perfExportCommands()}${cliCommand}`")
+      expect(source).toContain("FLAGHACK_PERF_FILE")
       expect(source).toContain("cliCommandWithApiUrl")
       expect(source).toContain("FLAGHACK_PORT=${")
       expect(source).toContain("String(PORT)")

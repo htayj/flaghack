@@ -5,9 +5,13 @@ const readGameApiSource = (): string =>
   readFileSync(new URL("../src/GameApi.ts", import.meta.url), "utf8")
 
 const endpointBlock = (source: string, endpointName: string): string => {
-  const endpointStart = source.indexOf(
+  const compactStart = source.indexOf(
     `HttpApiEndpoint.get("${endpointName}"`
   )
+  const multilineStart = source.indexOf(
+    `HttpApiEndpoint.get(\n      "${endpointName}"`
+  )
+  const endpointStart = compactStart >= 0 ? compactStart : multilineStart
 
   expect(endpointStart).toBeGreaterThanOrEqual(0)
 
@@ -41,5 +45,23 @@ describe("GameApi item-list success contracts", () => {
 
     expect(block).toMatch(/\.addSuccess\(\s*ItemCollection\s*\)/)
     expect(block).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
+  })
+
+  it("narrows loot query success contracts to container and item collections", () => {
+    const containersBlock = endpointBlock(
+      readGameApiSource(),
+      "getLootContainersFor"
+    )
+    const itemsBlock = endpointBlock(
+      readGameApiSource(),
+      "getLootItemsFor"
+    )
+
+    expect(containersBlock).toMatch(
+      /\.addSuccess\(\s*ContainerCollection\s*\)/
+    )
+    expect(containersBlock).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
+    expect(itemsBlock).toMatch(/\.addSuccess\(\s*ItemCollection\s*\)/)
+    expect(itemsBlock).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
   })
 })

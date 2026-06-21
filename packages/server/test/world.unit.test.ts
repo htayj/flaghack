@@ -1,10 +1,13 @@
 import { describe, expect, it } from "@effect/vitest"
+import { AnyCreature, AnyItem, conforms } from "@flaghack/domain/schemas"
 import { Effect, HashMap } from "effect"
 import { readFileSync } from "node:fs"
 import {
   BSPGenLevel,
   CampgroundGenLevel,
   type Entity,
+  isCreature,
+  isItem,
   itemsAt,
   makeBspLevel,
   type World
@@ -95,6 +98,20 @@ const campgroundHumanDisplayNames = [
   "Morgan",
   "Firefly"
 ] as const
+
+describe("world entity predicates", () => {
+  it("match schema guards for generated campground entities", () => {
+    const world = Effect.runSync(CampgroundGenLevel(777, 0))
+    const entities = Array.from(world.pipe(HashMap.values))
+    const schemaIsCreature = conforms(AnyCreature)
+    const schemaIsItem = conforms(AnyItem)
+
+    for (const entity of entities) {
+      expect(isCreature(entity)).toBe(schemaIsCreature(entity))
+      expect(isItem(entity)).toBe(schemaIsItem(entity))
+    }
+  })
+})
 
 describe("CampgroundGenLevel", () => {
   it("generates a deterministic burn campground with interconnected road loop features", () => {

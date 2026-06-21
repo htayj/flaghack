@@ -15,6 +15,13 @@ const GameApiLive = HttpApiBuilder.group(
         .handle("getInventory", () => game.getInventory)
         .handle("getPickupItemsFor", ({ urlParams: { key } }) =>
           game.getPickupItemsFor(key))
+        .handle("getLootContainersFor", ({ urlParams: { key } }) =>
+          game.getLootContainersFor(key))
+        .handle(
+          "getLootItemsFor",
+          ({ urlParams: { containerKey, key } }) =>
+            game.getLootItemsFor(key, containerKey)
+        )
         .handle("doAction", ({ payload: { action } }) =>
           game.doPlayerAction(action))
       // .handle("getTodoById", ({ path: { id } }) => game.getById(id))

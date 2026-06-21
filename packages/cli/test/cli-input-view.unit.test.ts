@@ -204,6 +204,10 @@ const onDoPickupSignature =
   /const\s+onDoPickup\s*=\s*\(\s*pickupItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const onDoDropSignature =
   /const\s+onDoDrop\s*=\s*\(\s*dropItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+const onTakeLootSignature =
+  /const\s+onTakeLoot\s*=\s*\(\s*lootItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
+const onPutLootSignature =
+  /const\s+onPutLoot\s*=\s*\(\s*lootItems\s*:\s*ReadonlyArray\s*<\s*Key\s*>\s*\)\s*=>\s*{/
 const noActionGuardBeforeApiPattern =
   /const\s+action\s*=\s*parseInput\s*\(\s*\w+\s*\)\s*if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*{\s*return\s*}/
 const modeUseStateInitializer =
@@ -1014,14 +1018,30 @@ describe("CLI NetHack directional run behavior", () => {
 })
 
 describe("CLI NetHack key normalization", () => {
-  it("normalizes blessed shifted and control direction events", () => {
+  it("normalizes blessed shifted, control, and meta direction events", () => {
     expect(normalizeGameInput("H", { full: "S-h" })).toBe("H")
     expect(normalizeGameInput("", { full: "S-g" })).toBe("G")
     expect(normalizeGameInput("", { full: "S-m" })).toBe("M")
     expect(normalizeGameInput("", { full: "S-3" })).toBe("#")
     expect(normalizeGameInput("", { full: "C-k" })).toBe("C-k")
+    expect(normalizeGameInput("", { full: "M-l" })).toBe("M-l")
     expect(normalizeGameInput("", { full: "backspace" })).toBe("C-h")
     expect(normalizeGameInput("", { full: "linefeed" })).toBe("C-j")
+  })
+
+  it("keeps Alt-l loot distinct from M-prefix no-pickup run commands", () => {
+    expect(normalizeGameInput("", { full: "M-l" })).toBe("M-l")
+    expect(Option.isNone(parseMovementCommand("M-l"))).toBe(true)
+    expect(Option.isNone(parseInput("M-l"))).toBe(true)
+
+    const noPickupRun = parseMovementCommand("M+l")
+    expect(Option.isSome(noPickupRun)).toBe(true)
+    if (Option.isSome(noPickupRun)) {
+      expect(noPickupRun.value).toEqual({
+        _tag: "no-pickup-run",
+        dir: "E"
+      })
+    }
   })
 
   it("normalizes raw control characters used by common terminals", () => {
@@ -1238,6 +1258,60 @@ describe("CLI input handling static guards", () => {
       onDoDropBody,
       "apiDoPlayerAction(EAction.dropMulti"
     )
+  })
+
+  it("refreshes world and inventory after loot take/put actions", () => {
+    const source = readBPlayingSource()
+    const onTakeLootBody = extractArrowFunctionBody(
+      source,
+      onTakeLootSignature
+    )
+    const onPutLootBody = extractArrowFunctionBody(
+      source,
+      onPutLootSignature
+    )
+
+    expect(onTakeLootBody).toContain("EAction.lootTakeMulti")
+    expect(onPutLootBody).toContain("EAction.lootPutMulti")
+    expect(onTakeLootBody).toContain(
+      "Effect.andThen(refreshWorldAndInventory)"
+    )
+    expect(onPutLootBody).toContain(
+      "Effect.andThen(refreshWorldAndInventory)"
+    )
+  })
+
+  it("invalidates pending loot requests before non-loot game handling", () => {
+    const handleGameKeyBody = extractArrowFunctionBody(
+      readBPlayingSource(),
+      handleGameKeySignature
+    )
+    const invalidationGuardIndex = handleGameKeyBody.indexOf(
+      "normalizedInput !== \"M-l\""
+    )
+    const invalidationIndex = handleGameKeyBody.indexOf(
+      "lootRequestId.current += 1",
+      invalidationGuardIndex
+    )
+    const lootBranchIndex = handleGameKeyBody.indexOf(
+      "normalizedInput === \"M-l\""
+    )
+    const pickupBranchIndex = handleGameKeyBody.indexOf(
+      "normalizedInput === \",\""
+    )
+    const dropBranchIndex = handleGameKeyBody.indexOf(
+      "normalizedInput === \"d\""
+    )
+    const actionParseIndex = handleGameKeyBody.indexOf(
+      "const action = parseInput(actionInput)"
+    )
+
+    expect(invalidationGuardIndex).toBeGreaterThanOrEqual(0)
+    expect(invalidationIndex).toBeGreaterThan(invalidationGuardIndex)
+    expect(lootBranchIndex).toBeGreaterThan(invalidationIndex)
+    expect(pickupBranchIndex).toBeGreaterThan(invalidationIndex)
+    expect(dropBranchIndex).toBeGreaterThan(invalidationIndex)
+    expect(actionParseIndex).toBeGreaterThan(invalidationIndex)
   })
 
   it("keeps the static UI mode out of React state and source", () => {

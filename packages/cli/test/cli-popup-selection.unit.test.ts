@@ -8,6 +8,7 @@ const componentDirectory = join(testDirectory, "../src/components")
 
 const popupComponentPaths = [
   join(componentDirectory, "PickupPopup.tsx"),
+  join(componentDirectory, "LootPopup.tsx"),
   join(componentDirectory, "popup.tsx")
 ] as const
 

@@ -65,6 +65,7 @@ const expectedGameKeys = [
   "C-u",
   "C-b",
   "C-n",
+  "M-l",
   "backspace",
   "linefeed",
   "g",

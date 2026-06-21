@@ -20,6 +20,14 @@ export class GameClient
       function getPickupItemsFor(key: Key) {
         return client.game.getPickupItemsFor({ urlParams: { key } })
       }
+      function getLootContainersFor(key: Key) {
+        return client.game.getLootContainersFor({ urlParams: { key } })
+      }
+      function getLootItemsFor(key: Key, containerKey: Key) {
+        return client.game.getLootItemsFor({
+          urlParams: { containerKey, key }
+        })
+      }
       function doPlayerAction(action: Action) {
         return client.game.doAction({ payload: { action } })
       }
@@ -29,6 +37,8 @@ export class GameClient
         getWorld,
         getInventory,
         getPickupItemsFor,
+        getLootContainersFor,
+        getLootItemsFor,
         doPlayerAction
       } as const
     })

@@ -24,9 +24,11 @@ import {
 } from "./gamestate.js"
 import { GameStateStore } from "./GameStateStore.js"
 import { logger } from "./log.js"
+import { makePerfTraceId, measureEffect } from "./perf.js"
 import type { TPos } from "./position.js"
 import {
   CampgroundGenLevel,
+  containersAt,
   type Entity,
   isItem,
   type World
@@ -122,43 +124,150 @@ const eWithGameState = (
     withLogSpan("with.gs")
   )
 
-const executePlans = (gs: TGameState) => (acts: Array<PlannedAction>) =>
-  reduce(acts, gs, (acc, curr) => doAction(acc, curr))
+const executePlans = (
+  gs: TGameState,
+  traceId?: string
+) =>
+(acts: Array<PlannedAction>) => {
+  let actionIndex = 0
+  return reduce(acts, gs, (acc, curr) => {
+    const currentActionIndex = actionIndex
+    actionIndex += 1
+    const effect = doAction(acc, curr)
+    return traceId === undefined
+      ? effect
+      : measureEffect(
+        {
+          counts: (nextGs) => ({
+            actionIndex: currentActionIndex,
+            nextWorldSize: HashMap.size(nextGs.world)
+          }),
+          operation: "backend.turn",
+          phase: "doAction",
+          traceId
+        },
+        effect
+      )
+  })
+}
+
+const turnMeasureOptions = (
+  action: Action,
+  traceId: string,
+  phase: string
+) => ({
+  counts: { actionTag: action._tag },
+  operation: "backend.turn",
+  phase,
+  traceId
+} as const)
+
+const appendPlayerAction = (
+  gs: TGameState,
+  action: Action
+) =>
+(plannedActions: Array<PlannedAction>) =>
+  omatch(
+    getPlayer(gs),
+    {
+      onNone: () => plannedActions, // todo: throw some kind of error, this isnt right
+      onSome: (player) =>
+        plannedActions.concat({
+          entity: player,
+          action
+        })
+    }
+  )
 
 // advances the game loop
 export const actPlayerAction = (
   action: Action
-) =>
-  eWithGameState((gs) =>
-    pipe(
-      // figure out what the AI wants to do
-      allAiPlan(gs),
-      tap(() => log("planned ai actions")),
-      // also append the player's plans
-      andThen((w) =>
-        omatch(
-          getPlayer(gs),
-          {
-            onNone: () => w, // todo: throw some kind of error, this isnt right
-            onSome: (player) =>
-              w.concat({
-                entity: player,
-                action
-              })
-          }
+) => {
+  const traceId = makePerfTraceId(`turn.${action._tag}`)
+  return measureEffect(
+    turnMeasureOptions(action, traceId, "total"),
+    measureEffect(
+      turnMeasureOptions(action, traceId, "state.modifyEffect"),
+      eWithGameState((gs) =>
+        pipe(
+          // figure out what the AI wants to do
+          measureEffect(
+            {
+              counts: (plannedActions) => ({
+                actionTag: action._tag,
+                plannedActionCount: plannedActions.length,
+                worldSize: HashMap.size(gs.world)
+              }),
+              operation: "backend.turn",
+              phase: "allAiPlan",
+              traceId
+            },
+            allAiPlan(gs)
+          ),
+          tap(() => log("planned ai actions")),
+          // also append the player's plans
+          andThen((plannedActions) =>
+            measureEffect(
+              {
+                counts: (withPlayerAction) => ({
+                  actionTag: action._tag,
+                  plannedActionCount: withPlayerAction.length
+                }),
+                operation: "backend.turn",
+                phase: "appendPlayerAction",
+                traceId
+              },
+              Effect.sync(() =>
+                appendPlayerAction(gs, action)(plannedActions)
+              )
+            )
+          ),
+          tap(() => log("added player action ", action)),
+          andThen((plannedActions) =>
+            measureEffect(
+              {
+                counts: (filteredActions) => ({
+                  actionTag: action._tag,
+                  plannedActionCount: plannedActions.length,
+                  runnableActionCount: filteredActions.length
+                }),
+                operation: "backend.turn",
+                phase: "filterNoops",
+                traceId
+              },
+              Effect.sync(() =>
+                plannedActions.filter((pa) =>
+                  !EAction.$is("noop")(pa.action)
+                )
+              )
+            )
+          ), // todo: change the filter to Option.reduceCompact once everything is options
+          tap((actions) =>
+            log("filtered noops for a result of : ", actions)
+          ),
+          // execute the plans
+          andThen((plannedActions) =>
+            measureEffect(
+              {
+                counts: (nextGs) => ({
+                  actionTag: action._tag,
+                  executedActionCount: plannedActions.length,
+                  nextWorldSize: HashMap.size(nextGs.world)
+                }),
+                operation: "backend.turn",
+                phase: "executePlans",
+                traceId
+              },
+              executePlans(gs, traceId)(plannedActions)
+            )
+          ),
+          tap(() => log("finished action")),
+          withLogSpan(`playeract.${action._tag}`)
         )
-      ),
-      tap(() => log("added player action ", action)),
-      andThen((plannedActions) =>
-        plannedActions.filter((pa) => !EAction.$is("noop")(pa.action))
-      ), // todo: change the filter to Option.reduceCompact once everything is options
-      tap((actions) => log("filtered noops for a result of : ", actions)),
-      // execute the plans
-      andThen(executePlans(gs)),
-      tap(() => log("finished action")),
-      withLogSpan(`playeract.${action._tag}`)
+      )
     )
   )
+}
 
 export const eGetWorld = pipe(
   eGetGameState,
@@ -180,8 +289,45 @@ export const getPickupItemsFor = (key: TKey) =>
         onSome: (entity) =>
           getEntitiesAtEntity(entity)(w).pipe(
             HashMap.filter(isItem),
+            HashMap.filter((e) => e.in === "world"),
             HashMap.filter((e) => e.key !== key)
           )
+      })
+    )
+  )
+
+export const getLootContainersFor = (key: TKey) =>
+  pipe(
+    eGetWorld,
+    tap(() => log("doing get loot containers")),
+    andThen((w) =>
+      omatch(getEntityById(key)(w), {
+        onNone: () => HashMap.empty(),
+        onSome: (entity) => containersAt(w)(entity.at)
+      })
+    )
+  )
+
+export const getLootItemsFor = (key: TKey, containerKey: TKey) =>
+  pipe(
+    eGetWorld,
+    tap(() => log("doing get loot items")),
+    andThen((w) =>
+      omatch(getEntityById(key)(w), {
+        onNone: () => HashMap.empty(),
+        onSome: (entity) => {
+          const accessibleContainer = containersAt(w)(entity.at).pipe(
+            HashMap.get(containerKey)
+          )
+          return omatch(accessibleContainer, {
+            onNone: () => HashMap.empty(),
+            onSome: (container) =>
+              w.pipe(
+                HashMap.filter(isItem),
+                HashMap.filter((item) => item.in === container.key)
+              )
+          })
+        }
       })
     )
   )

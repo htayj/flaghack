@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -32,6 +34,44 @@ func TestParseMovementCommand(t *testing.T) {
 	}
 }
 
+func TestActionAndRefreshSkipsInventoryFetchForMovement(t *testing.T) {
+	var inventoryRequests int
+	var worldRequests int
+	var actRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			w.WriteHeader(http.StatusOK)
+		case "/world":
+			worldRequests++
+			_, _ = w.Write([]byte(`[["player",{"key":"player","_tag":"player","in":"world","at":{"x":1,"y":0,"z":0}}]]`))
+		case "/inventory":
+			inventoryRequests++
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	got, err := client.actionAndRefresh(t.Context(), action{Tag: "move", Dir: "E"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if actRequests != 1 || worldRequests != 1 || inventoryRequests != 0 {
+		t.Fatalf("requests act/world/inventory = %d/%d/%d, want 1/1/0", actRequests, worldRequests, inventoryRequests)
+	}
+	if got.inventory != nil {
+		t.Fatalf("movement refresh inventory = %#v, want nil to preserve existing inventory", got.inventory)
+	}
+	if len(got.world) != 1 || got.world[0].Key != "player" {
+		t.Fatalf("movement world snapshot = %#v", got.world)
+	}
+}
+
 func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	encoded, err := json.Marshal(actionPayload{Action: action{Tag: "move", Dir: "E"}})
 	if err != nil {
@@ -49,6 +89,24 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	wantPickup := `{"action":{"_tag":"pickupMulti","keys":[]}}`
 	if string(emptyPickup) != wantPickup {
 		t.Fatalf("encoded pickup = %s, want %s", emptyPickup, wantPickup)
+	}
+
+	lootTake, err := json.Marshal(actionPayload{Action: action{Tag: "lootTakeMulti", ContainerKey: "cooler-1", Keys: []string{"beer-1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLootTake := `{"action":{"_tag":"lootTakeMulti","containerKey":"cooler-1","keys":["beer-1"]}}`
+	if string(lootTake) != wantLootTake {
+		t.Fatalf("encoded loot take = %s, want %s", lootTake, wantLootTake)
+	}
+
+	lootPut, err := json.Marshal(actionPayload{Action: action{Tag: "lootPutMulti", ContainerKey: "cooler-1", Keys: []string{"water-1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLootPut := `{"action":{"_tag":"lootPutMulti","containerKey":"cooler-1","keys":["water-1"]}}`
+	if string(lootPut) != wantLootPut {
+		t.Fatalf("encoded loot put = %s, want %s", lootPut, wantLootPut)
 	}
 }
 
@@ -91,6 +149,20 @@ func TestFindTravelDirectionsUsesKnownPassableTiles(t *testing.T) {
 
 func charmRuneKey(value rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{value}}
+}
+
+func TestNormalizeBubbleTeaInputRecognizesAltLoot(t *testing.T) {
+	got := normalizeBubbleTeaInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: true})
+	if got != "M-l" {
+		t.Fatalf("alt-l normalized to %q, want M-l", got)
+	}
+	if _, ok := parseMovementCommand("M-l"); ok {
+		t.Fatal("Alt-l should not parse as a no-pickup run")
+	}
+	command, ok := parseMovementCommand("M+l")
+	if !ok || command.tag != "no-pickup-run" || command.dir != "E" {
+		t.Fatalf("M+l parsed as %#v, %v; want no-pickup-run east", command, ok)
+	}
 }
 
 func TestFindTravelDirectionsUsesCampgroundMarkerPassability(t *testing.T) {
@@ -250,6 +322,138 @@ func TestViewRendersPickupInterfaceInInventorySlot(t *testing.T) {
 	}
 	if strings.Contains(view, "inventory") || strings.Contains(view, "beer") {
 		t.Fatalf("inventory sidebar should be replaced by pickup interface: %q", view)
+	}
+}
+
+func TestViewRendersLootInterfaceInInventorySlot(t *testing.T) {
+	m := newModel()
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+	m.inventory = []entity{{Key: "water-1", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}}}
+	m.popup = &popupState{
+		kind:         popupLoot,
+		title:        "Loot cooler",
+		containerKey: "cooler-1",
+		mode:         lootTake,
+		items:        []entity{{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}}},
+		putItems:     m.inventory,
+		marked:       map[string]bool{},
+	}
+
+	view := m.View()
+	lootIndex := strings.Index(view, "Loot cooler")
+	mapIndex := strings.Index(view, "@")
+	statusIndex := strings.Index(view, "Player: you")
+	if lootIndex < 0 || !strings.Contains(view, "beer") || !strings.Contains(view, "t take · p put") {
+		t.Fatalf("loot interface missing from view: %q", view)
+	}
+	if mapIndex < 0 || lootIndex < mapIndex || lootIndex > statusIndex {
+		t.Fatalf("loot interface should render in the inventory/sidebar slot next to the map; loot index %d, map index %d, status index %d", lootIndex, mapIndex, statusIndex)
+	}
+	if strings.Contains(view, "inventory") || strings.Contains(view, "water") {
+		t.Fatalf("inventory sidebar should be replaced by loot interface in take mode: %q", view)
+	}
+}
+
+func TestStartingPickupInvalidatesPendingLootLoads(t *testing.T) {
+	m := newModel()
+
+	next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: true})
+	if cmd == nil {
+		t.Fatal("M-l should request loot containers")
+	}
+	m = next.(model)
+	staleRequestID := m.lootRequestID
+
+	next, cmd = m.handleKey(charmRuneKey(','))
+	if cmd == nil {
+		t.Fatal(", should request pickup items")
+	}
+	m = next.(model)
+	if staleRequestID == m.lootRequestID {
+		t.Fatalf("pickup should invalidate stale loot request %d", staleRequestID)
+	}
+	if m.popup == nil || m.popup.kind != popupPickup {
+		t.Fatalf("popup after pickup = %#v, want pickup", m.popup)
+	}
+
+	next, _ = m.Update(lootContainersLoadedMsg{
+		requestID:  staleRequestID,
+		containers: []entity{{Key: "cooler-1", Tag: "cooler", In: "world", At: pos{X: 0, Y: 0, Z: 0}}},
+	})
+	m = next.(model)
+	if m.popup == nil || m.popup.kind != popupPickup {
+		t.Fatalf("stale loot response should not replace pickup popup, got %#v", m.popup)
+	}
+}
+
+func TestMovementInvalidatesPendingLootLoads(t *testing.T) {
+	m := newModel()
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+
+	next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: true})
+	if cmd == nil {
+		t.Fatal("M-l should request loot containers")
+	}
+	m = next.(model)
+	staleRequestID := m.lootRequestID
+
+	next, cmd = m.handleKey(charmRuneKey('l'))
+	if cmd == nil {
+		t.Fatal("movement should dispatch a move command")
+	}
+	m = next.(model)
+	if staleRequestID == m.lootRequestID {
+		t.Fatalf("movement should invalidate stale loot request %d", staleRequestID)
+	}
+
+	next, _ = m.Update(lootContainersLoadedMsg{
+		requestID:  staleRequestID,
+		containers: []entity{{Key: "cooler-1", Tag: "cooler", In: "world", At: pos{X: 0, Y: 0, Z: 0}}},
+	})
+	m = next.(model)
+	if m.popup != nil {
+		t.Fatalf("stale loot response should not open popup after movement, got %#v", m.popup)
+	}
+}
+
+func TestLootPopupSwitchesBetweenTakeAndPutLists(t *testing.T) {
+	m := newModel()
+	m.popup = &popupState{
+		kind:         popupLoot,
+		title:        "Loot cooler",
+		containerKey: "cooler-1",
+		mode:         lootTake,
+		items:        []entity{{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}}},
+		putItems:     []entity{{Key: "water-1", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}}},
+		marked:       map[string]bool{},
+	}
+
+	next, cmd := m.handlePopupKey("p")
+	if cmd != nil {
+		t.Fatalf("loot mode switch returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || m.popup.mode != lootPut {
+		t.Fatalf("loot mode after p = %#v, want put", m.popup)
+	}
+	if !strings.Contains(m.View(), "water") || strings.Contains(m.View(), "beer") {
+		t.Fatalf("put mode should show inventory items only: %q", m.View())
+	}
+
+	next, cmd = m.handlePopupKey("t")
+	if cmd != nil {
+		t.Fatalf("loot mode switch returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup == nil || m.popup.mode != lootTake {
+		t.Fatalf("loot mode after t = %#v, want take", m.popup)
 	}
 }
 

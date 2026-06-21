@@ -1,6 +1,12 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
 import { Schema } from "effect"
-import { ItemCollection, Key, SAction, World } from "./schemas.js"
+import {
+  ContainerCollection,
+  ItemCollection,
+  Key,
+  SAction,
+  World
+} from "./schemas.js"
 
 export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
@@ -20,6 +26,19 @@ export class GameApiGroup extends HttpApiGroup.make("game")
     HttpApiEndpoint.get("getPickupItemsFor", "/getPickupFor").addSuccess(
       ItemCollection
     ).setUrlParams(Schema.Struct({ key: Key }))
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getLootContainersFor",
+      "/loot/containersFor"
+    ).addSuccess(ContainerCollection).setUrlParams(
+      Schema.Struct({ key: Key })
+    )
+  )
+  .add(
+    HttpApiEndpoint.get("getLootItemsFor", "/loot/itemsFor")
+      .addSuccess(ItemCollection)
+      .setUrlParams(Schema.Struct({ key: Key, containerKey: Key }))
   )
   .add(
     HttpApiEndpoint.post("doAction", "/act")

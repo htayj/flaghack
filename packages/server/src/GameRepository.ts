@@ -1,15 +1,18 @@
 import type { Action } from "@flaghack/domain/schemas"
-import { Effect } from "effect"
+import { Effect, HashMap } from "effect"
 import type { TKey } from "./entity.js"
 import {
   actPlayerAction as apiDoPlayerAction,
   DefaultGameStateStoreLive,
   eGetWorld as apiGetWorld,
   getInventory as apiGetInventory,
+  getLootContainersFor as apiGetLootContainersFor,
+  getLootItemsFor as apiGetLootItemsFor,
   getPickupItemsFor as apiGetPickupItemsFor
 } from "./gameloop.js"
 import { GameStateStore } from "./GameStateStore.js"
 import { getLogs as apiGetLogs } from "./log.js"
+import { measureEffect } from "./perf.js"
 
 export class GameRepository
   extends Effect.Service<GameRepository>()("api/GameRepository", {
@@ -22,14 +25,72 @@ export class GameRepository
         Effect.provideService(effect, GameStateStore, store)
 
       return {
-        getLogs: apiGetLogs,
-        getWorld: withStore(apiGetWorld),
-        getInventory: withStore(apiGetInventory("player")),
+        getLogs: measureEffect(
+          { operation: "backend.api", phase: "getLogs" },
+          apiGetLogs
+        ),
+        getWorld: measureEffect(
+          {
+            counts: (world) => ({ worldSize: HashMap.size(world) }),
+            operation: "backend.api",
+            phase: "getWorld"
+          },
+          withStore(apiGetWorld)
+        ),
+        getInventory: measureEffect(
+          {
+            counts: (inventory) => ({
+              itemCount: HashMap.size(inventory)
+            }),
+            operation: "backend.api",
+            phase: "getInventory"
+          },
+          withStore(apiGetInventory("player"))
+        ),
         getPickupItemsFor(k: TKey) {
-          return withStore(apiGetPickupItemsFor(k))
+          return measureEffect(
+            {
+              counts: (items) => ({ itemCount: HashMap.size(items) }),
+              operation: "backend.api",
+              phase: "getPickupItemsFor",
+              traceId: k
+            },
+            withStore(apiGetPickupItemsFor(k))
+          )
+        },
+        getLootContainersFor(k: TKey) {
+          return measureEffect(
+            {
+              counts: (containers) => ({
+                containerCount: HashMap.size(containers)
+              }),
+              operation: "backend.api",
+              phase: "getLootContainersFor",
+              traceId: k
+            },
+            withStore(apiGetLootContainersFor(k))
+          )
+        },
+        getLootItemsFor(k: TKey, containerKey: TKey) {
+          return measureEffect(
+            {
+              counts: (items) => ({ itemCount: HashMap.size(items) }),
+              operation: "backend.api",
+              phase: "getLootItemsFor",
+              traceId: containerKey
+            },
+            withStore(apiGetLootItemsFor(k, containerKey))
+          )
         },
         doPlayerAction(action: Action) {
-          return withStore(apiDoPlayerAction(action))
+          return measureEffect(
+            {
+              operation: "backend.api",
+              phase: "doPlayerAction",
+              traceId: action._tag
+            },
+            withStore(apiDoPlayerAction(action))
+          )
         }
       } as const
     })

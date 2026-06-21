@@ -5,7 +5,7 @@ import { NodeHttpClient } from "@effect/platform-node"
 import { GameApi } from "@flaghack/domain/GameApi"
 import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
-import { mkdtemp, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import * as path from "node:path"
@@ -46,6 +46,21 @@ const DEFAULT_CLI_COMMAND = "pnpm run cli"
 
 const shellQuote = (value: string): string =>
   `'${value.replaceAll("'", `'"'"'`)}'`
+
+const perfEnvAssignments = () =>
+  ["FLAGHACK_PERF_FILE", "FLAGHACK_PERF_STDOUT", "FLAGHACK_PERF_RUN_ID"]
+    .flatMap((name) => {
+      const value = process.env[name]?.trim()
+      return value === undefined || value === ""
+        ? []
+        : [`${name}=${shellQuote(value)}`]
+    })
+    .join(" ")
+
+const perfExportCommands = () => {
+  const assignments = perfEnvAssignments()
+  return assignments === "" ? "" : `export ${assignments}; `
+}
 
 const tmux = (args: Array<string>) =>
   execFileSync("tmux", args, {
@@ -139,13 +154,60 @@ const waitForPaneOutput = async (pane: string) => {
   throw new Error("timed out waiting for CLI pane output")
 }
 
+const waitForDefaultCliReady = async (pane: string): Promise<void> => {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
+    if (paneDead(pane)) {
+      throw new Error(
+        "CLI tmux pane exited before the default UI rendered"
+      )
+    }
+
+    const capture = stripAnsi(capturePane(pane))
+    if (
+      capture.includes("Flag Hack Charmbracelet UI")
+      || capture.includes("Player:")
+    ) {
+      return
+    }
+    await delay(POLL_INTERVAL_MS)
+  }
+  throw new Error("timed out waiting for default CLI UI to render")
+}
+
+const perfFilePath = () => process.env.FLAGHACK_PERF_FILE?.trim()
+
+const waitForPerfRecord = async (
+  predicate: (record: Record<string, unknown>) => boolean
+): Promise<void> => {
+  const path = perfFilePath()
+  if (path === undefined || path === "") return
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
+    const content = await readFile(path, "utf8").catch(() => "")
+    const found = content.split(/\r?\n/u).some((line) => {
+      if (line.trim() === "") return false
+      try {
+        const record = JSON.parse(line) as Record<string, unknown>
+        return predicate(record)
+      } catch {
+        return false
+      }
+    })
+    if (found) return
+    await delay(POLL_INTERVAL_MS)
+  }
+  throw new Error("timed out waiting for requested perf record")
+}
+
 const run = async () => {
   const tmuxVersion = tmux(["-V"]).trim()
   const cliCommand = process.env.FLAGHACK_TMUX_CLI_COMMAND
     ?? DEFAULT_CLI_COMMAND
   const cliCommandWithApiUrl = `export FLAGHACK_API_URL=${
     shellQuote(BASE_URL)
-  }; ${cliCommand}`
+  }; ${perfExportCommands()}${cliCommand}`
   if (await isTcpPortOpen(PORT, HOST)) {
     throw new Error(
       `localhost:${PORT} is already in use; stop the existing server before running the tmux E2E gate`
@@ -171,9 +233,9 @@ const run = async () => {
       "100",
       "-y",
       "36",
-      `FLAGHACK_PORT=${
+      `${perfEnvAssignments()} FLAGHACK_PORT=${
         String(PORT)
-      } pnpm exec tsx packages/server/src/server.ts`
+      } pnpm exec tsx packages/server/src/server.ts`.trim()
     ])
     sessionCreated = true
     serverPane = tmux([
@@ -200,8 +262,20 @@ const run = async () => {
     ]).trim()
 
     await waitForPaneOutput(cliPane)
+    if (cliCommand === DEFAULT_CLI_COMMAND) {
+      await waitForDefaultCliReady(cliPane)
+    }
+    await waitForPerfRecord((record) =>
+      record.source === "charm"
+      && record.operation === "frontend.component"
+      && record.phase === "board"
+    )
     tmux(["send-keys", "-t", cliPane, "j"])
     await delay(1_000)
+    await waitForPerfRecord((record) =>
+      record.source === "charm"
+      && record.operation === "frontend.response_to_redraw_finished"
+    )
 
     const capture = capturePane(cliPane)
     await writeFile(capturePath, capture)
@@ -214,7 +288,11 @@ const run = async () => {
     }
 
     console.log(
-      `tmux E2E smoke passed with ${tmuxVersion}; capture=${capturePath}`
+      `tmux E2E smoke passed with ${tmuxVersion}; capture=${capturePath}${
+        process.env.FLAGHACK_PERF_FILE === undefined
+          ? ""
+          : `; perf=${process.env.FLAGHACK_PERF_FILE}`
+      }`
     )
   } catch (error) {
     if (cliPane !== undefined) {

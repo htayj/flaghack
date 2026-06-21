@@ -286,6 +286,10 @@ export const normalizeGameInput = (
       return `C-${controlMatch[1]}`
     }
 
+    if (full === "M-l") {
+      return "M-l"
+    }
+
     switch (full) {
       case "backspace":
         return "C-h"

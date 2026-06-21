@@ -9,6 +9,11 @@ import {
   spawn
 } from "node:child_process"
 import { Socket } from "node:net"
+import {
+  makePerfTraceId,
+  measureAsync,
+  measureEffect
+} from "./perf-output.js"
 
 const DEFAULT_TEST_PORT = 3000
 const HOST = "127.0.0.1"
@@ -119,18 +124,97 @@ const stopChild = async (child: ChildProcessWithoutNullStreams) => {
   await waitForExit(child, 2_000)
 }
 
-const makeClientSmoke = () =>
+const measureClientEffect = <A, E, R>(
+  phase: string,
+  effect: Effect.Effect<A, E, R>,
+  counts?: (value: A) => Record<string, number | string | boolean>
+) =>
+  measureEffect(
+    {
+      counts,
+      operation: "client.api",
+      phase,
+      source: "api-smoke",
+      suite: "api-smoke"
+    },
+    effect
+  )
+
+const makeClientSmoke = (recordPerf: boolean) =>
   Effect.gen(function*() {
     const client = yield* HttpApiClient.make(GameApi, {
       baseUrl: BASE_URL
     })
-    const world = yield* client.game.getWorld()
-    const logsBefore = yield* client.game.getLogs()
-    const inventory = yield* client.game.getInventory()
-    yield* client.game.doAction({ payload: { action: { _tag: "noop" } } })
-    const logsAfter = yield* client.game.getLogs()
+    const run = <A, E, R>(
+      phase: string,
+      effect: Effect.Effect<A, E, R>,
+      counts?: (value: A) => Record<string, number | string | boolean>
+    ) => recordPerf ? measureClientEffect(phase, effect, counts) : effect
 
-    return { inventory, logsAfter, logsBefore, world } as const
+    const world = yield* run(
+      "getWorld",
+      client.game.getWorld(),
+      (value) => ({
+        worldSize: HashMap.size(value)
+      })
+    )
+    const logsBefore = yield* run(
+      "getLogs.before",
+      client.game.getLogs(),
+      (value) => ({
+        logCount: value.length
+      })
+    )
+    const inventory = yield* run(
+      "getInventory",
+      client.game.getInventory(),
+      (value) => ({
+        itemCount: HashMap.size(value)
+      })
+    )
+    const lootContainers = yield* run(
+      "getLootContainersFor",
+      client.game.getLootContainersFor({
+        urlParams: { key: "player" }
+      }),
+      (value) => ({ containerCount: HashMap.size(value) })
+    )
+    const firstLootContainer =
+      Array.from(HashMap.values(lootContainers))[0]
+    const lootItems = firstLootContainer === undefined
+      ? HashMap.empty()
+      : yield* run(
+        "getLootItemsFor",
+        client.game.getLootItemsFor({
+          urlParams: {
+            containerKey: firstLootContainer.key,
+            key: "player"
+          }
+        }),
+        (value) => ({ itemCount: HashMap.size(value) })
+      )
+    yield* run(
+      "doAction.move",
+      client.game.doAction({
+        payload: { action: { _tag: "move", dir: "E" } }
+      })
+    )
+    const logsAfter = yield* run(
+      "getLogs.after",
+      client.game.getLogs(),
+      (value) => ({
+        logCount: value.length
+      })
+    )
+
+    return {
+      inventory,
+      logsAfter,
+      logsBefore,
+      lootContainers,
+      lootItems,
+      world
+    } as const
   }).pipe(Effect.provide(NodeHttpClient.layerUndici))
 
 const waitForApiReady = async (child: ChildProcessWithoutNullStreams) => {
@@ -145,7 +229,7 @@ const waitForApiReady = async (child: ChildProcessWithoutNullStreams) => {
     }
 
     try {
-      await Effect.runPromise(makeClientSmoke())
+      await Effect.runPromise(makeClientSmoke(false))
       return
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
@@ -179,10 +263,21 @@ const run = async () => {
   const tail = tailProcess(child)
 
   try {
-    await waitForApiReady(child)
-    const result = await Effect.runPromise(makeClientSmoke())
+    await measureAsync(
+      {
+        operation: "server.spawn_to_ready",
+        phase: "total",
+        source: "api-smoke",
+        suite: "api-smoke",
+        traceId: makePerfTraceId("api-ready")
+      },
+      () => waitForApiReady(child)
+    )
+    const result = await Effect.runPromise(makeClientSmoke(true))
     const worldSize = HashMap.size(result.world)
     const inventorySize = HashMap.size(result.inventory)
+    const lootContainerSize = HashMap.size(result.lootContainers)
+    const lootItemSize = HashMap.size(result.lootItems)
 
     if (worldSize <= 0) {
       throw new Error("getWorld returned an empty world")
@@ -194,7 +289,7 @@ const run = async () => {
     }
 
     console.log(
-      `API smoke passed: world=${worldSize}, inventory=${inventorySize}, logs=${result.logsAfter.length}`
+      `API smoke passed: world=${worldSize}, inventory=${inventorySize}, lootContainers=${lootContainerSize}, lootItems=${lootItemSize}, logs=${result.logsAfter.length}`
     )
   } catch (error) {
     console.error("API smoke failed.")

@@ -1,10 +1,4 @@
-import {
-  AnyCreature,
-  AnyItem,
-  conforms,
-  EEntity,
-  Hippie
-} from "@flaghack/domain/schemas"
+import { EEntity } from "@flaghack/domain/schemas"
 import type {
   DirectionalVariant as DirectionalVariantSchema,
   Entity as EntitySchema,
@@ -13,10 +7,11 @@ import type {
 } from "@flaghack/domain/schemas"
 import { Data, Effect, HashMap, Option, Random } from "effect"
 import { range } from "effect/Array"
-import { filter, findFirst } from "effect/HashMap"
+import { filter } from "effect/HashMap"
 import { Set } from "immutable"
 import {
   campgroundHumanDisplayNames,
+  type Creature,
   hippie,
   makeAcidcop,
   makeHippie,
@@ -30,6 +25,7 @@ import {
   type Cooler,
   cooler,
   hotdog,
+  type Item,
   makeGroundFlag,
   makeWaterBottle,
   salsa
@@ -44,7 +40,6 @@ import type { TPos } from "./position.js"
 import {
   effigy,
   floor,
-  isTerrain,
   sign,
   temple,
   tent,
@@ -84,13 +79,56 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
   contained: T,
   container: C
 ) => container.key === contained.in
-export const isCreature = conforms(AnyCreature)
+
+const creatureTags = new globalThis.Set<Entity["_tag"]>([
+  "player",
+  "ranger",
+  "hippie",
+  "wook",
+  "acidcop",
+  "lesser_egregore",
+  "greater_egregore",
+  "collective_egregore"
+])
+const itemTags = new globalThis.Set<Entity["_tag"]>([
+  "flag",
+  "water",
+  "acid",
+  "booze",
+  "beer",
+  "milk",
+  "poptart",
+  "trailmix",
+  "pancake",
+  "bacon",
+  "soup",
+  "hotdog",
+  "cheese",
+  "salsa",
+  "hammer",
+  "nails",
+  "cooler"
+])
+const terrainTags = new globalThis.Set<Entity["_tag"]>([
+  "wall",
+  "floor",
+  "tunnel",
+  "tent",
+  "sign",
+  "effigy",
+  "temple"
+])
+
+export const isCreature = (e: Entity): e is Creature =>
+  creatureTags.has(e._tag)
+export const isTerrain = (e: Entity): boolean => terrainTags.has(e._tag)
 export const isImpassable = (e: Entity) => e._tag === "wall"
 export const isPassableTerrain = (e: Entity) =>
   isTerrain(e) && !isImpassable(e)
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
-export const isHippie = conforms(Hippie)
-export const isItem = conforms(AnyItem)
+export const isHippie = (e: Entity) => e._tag === "hippie"
+export const isItem = (e: Entity): e is Item => itemTags.has(e._tag)
+export const isContainer = (e: Entity): e is Cooler => e._tag === "cooler"
 // export const creaturesFrom = <T extends World>(
 //   w: T
 // ): HashMap.HashMap<string, Creature> => w.pipe(filter(isCreature))
@@ -100,6 +138,8 @@ export const isAt = (p: TPos) => <T extends Entity>(e: T) =>
   e.in === "world" && collideP(p)(e.at)
 export const itemsAt = (world: World) => (pos: TPos) =>
   world.pipe(filter(isItem), filter(isAt(pos)))
+export const containersAt = (world: World) => (pos: TPos) =>
+  world.pipe(filter(isContainer), filter(isAt(pos)))
 
 export const actPosition =
   (w: World) => <T extends Entity>(e: Option.Option<T>, by: TPos) => {
@@ -108,21 +148,25 @@ export const actPosition =
       onSome: (e: T) => {
         const newPosition = shift(e.at, by)
         const eCollides = collideP(newPosition)
-        const destinationEntities = w.pipe(filter((o) => eCollides(o.at)))
-        const destinationTerrain = destinationEntities.pipe(
-          findFirst(isPassableTerrain)
-        )
-        const collidedEntity = destinationEntities.pipe(
-          findFirst((e) =>
-            isCreature(e) || (isTerrain(e) && isImpassable(e))
-          )
-        ) // todo: find a better way of detecting collision
+        let hasPassableTerrain = false
+        let hasBlockingEntity = false
 
-        // log(`collided entity ${JSON.stringify(collidedEntity)}`)
-        if (
-          Option.isSome(destinationTerrain)
-          && Option.isNone(collidedEntity)
-        ) {
+        for (const candidate of w.pipe(HashMap.values)) {
+          if (!eCollides(candidate.at)) continue
+
+          if (isPassableTerrain(candidate)) {
+            hasPassableTerrain = true
+          }
+          if (
+            isCreature(candidate)
+            || (isTerrain(candidate) && isImpassable(candidate))
+          ) {
+            hasBlockingEntity = true
+            break
+          }
+        }
+
+        if (hasPassableTerrain && !hasBlockingEntity) {
           return Option.some(movePosition(e, by))
         }
         return Option.some(e)

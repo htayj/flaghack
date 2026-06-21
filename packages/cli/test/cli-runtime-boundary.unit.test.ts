@@ -123,6 +123,11 @@ const liveRuntimeCallClassification = (
   if (/apiGetPickupItemsFor\s*\(\s*"player"\s*\)/.test(argumentSource)) {
     return "comma apiGetPickupItemsFor player"
   }
+  if (
+    /apiGetLootContainersFor\s*\(\s*"player"\s*\)/.test(argumentSource)
+  ) {
+    return "loot apiGetLootContainersFor player"
+  }
   if (/apiDoPlayerAction\s*\(\s*action\.value\s*\)/.test(argumentSource)) {
     return "movement apiDoPlayerAction action value"
   }
@@ -150,6 +155,12 @@ const liveRuntimeCallClassification = (
       .test(argumentSource)
   ) {
     return "drop apiDoPlayerAction dropMulti"
+  }
+  if (/EAction\.lootTakeMulti\s*\(/.test(argumentSource)) {
+    return "loot apiDoPlayerAction lootTakeMulti"
+  }
+  if (/EAction\.lootPutMulti\s*\(/.test(argumentSource)) {
+    return "loot apiDoPlayerAction lootPutMulti"
   }
 
   return "unclassified"
@@ -190,7 +201,7 @@ describe("CLI runtime boundary", () => {
       findPropertyAccesses(sourceFile, "Effect", "runPromise")
     ).toHaveLength(0)
     expect(findEffectProvideMainLiveCalls(sourceFile)).toHaveLength(0)
-    expect(liveRuntimeCalls).toHaveLength(7)
+    expect(liveRuntimeCalls).toHaveLength(10)
     expect(
       liveRuntimeCalls.map((call) =>
         liveRuntimeCallClassification(call, sourceFile)
@@ -198,11 +209,14 @@ describe("CLI runtime boundary", () => {
     ).toEqual([
       "initial apiGetWorld",
       "travel runTravelToTarget target",
+      "loot apiGetLootContainersFor player",
       "comma apiGetPickupItemsFor player",
       "directional runDirectionalMovement",
       "movement apiDoPlayerAction action value",
       "pickup apiDoPlayerAction pickupMulti",
-      "drop apiDoPlayerAction dropMulti"
+      "drop apiDoPlayerAction dropMulti",
+      "loot apiDoPlayerAction lootTakeMulti",
+      "loot apiDoPlayerAction lootPutMulti"
     ])
   })
 

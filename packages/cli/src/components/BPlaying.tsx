@@ -33,6 +33,7 @@ import {
 } from "../tuiGame.js"
 import BGameBoard from "./BGameBoard.js"
 import Inventory from "./Inventory.js"
+import LootPopup from "./LootPopup.js"
 import Messages from "./Messages.js"
 import MultiDropPopup from "./MultiDropPopup.js"
 import PickupPopup from "./PickupPopup.js"
@@ -40,6 +41,8 @@ import Status from "./Status.js"
 
 const apiDoPlayerAction = GameClient.doPlayerAction
 const apiGetInventory = GameClient.getInventory
+const apiGetLootContainersFor = GameClient.getLootContainersFor
+const apiGetLootItemsFor = GameClient.getLootItemsFor
 const apiGetPickupItemsFor = GameClient.getPickupItemsFor
 const apiGetWorld = GameClient.getWorld
 
@@ -96,6 +99,7 @@ export default function BPlaying({ onQuit }: Props) {
   const gameref = useRef<BoxElement>(null)
   const pickupRef = useRef<BoxElement>(null)
   const dropRef = useRef<BoxElement>(null)
+  const lootRef = useRef<BoxElement>(null)
   const pendingMovementPrefix = useRef<MovementPrefix | undefined>(
     undefined
   )
@@ -103,11 +107,19 @@ export default function BPlaying({ onQuit }: Props) {
   const activeAutoMoveId = useRef<number | undefined>(undefined)
   const nextAutoMoveId = useRef(0)
   const pickupRequestId = useRef(0)
+  const lootRequestId = useRef(0)
   // const [debugdump, setDebugdump] = useState<string>("aaaa")
   const [world, setWorld] = useState<World>(HashMap.empty())
   const [pickupContents, setPickupContents] = useState<World>(
     HashMap.empty()
   )
+  const [lootContents, setLootContents] = useState<World>(HashMap.empty())
+  const [lootContainerKey, setLootContainerKey] = useState<
+    Key | undefined
+  >(
+    undefined
+  )
+  const [lootContainerName, setLootContainerName] = useState("container")
   const [inventory, setInventory] = useState<World>(HashMap.empty())
   const [travelTarget, setTravelTarget] = useState<Pos | undefined>(
     undefined
@@ -140,7 +152,8 @@ export default function BPlaying({ onQuit }: Props) {
       apiGetWorld.pipe(
         Effect.tap((world) => Effect.sync(() => setWorld(world))),
         Effect.tap(() => Effect.sync(() => pickupRef.current?.hide())),
-        Effect.tap(() => Effect.sync(() => dropRef.current?.hide()))
+        Effect.tap(() => Effect.sync(() => dropRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => lootRef.current?.hide()))
       )
     )
   }, [world])
@@ -183,6 +196,7 @@ export default function BPlaying({ onQuit }: Props) {
       "C-u",
       "C-b",
       "C-n",
+      "M-l",
       "backspace",
       "linefeed",
       "g",
@@ -359,9 +373,51 @@ export default function BPlaying({ onQuit }: Props) {
         }
       }
     }
+    const beginLoot = () => {
+      pendingMovementPrefix.current = undefined
+      lootRequestId.current += 1
+      const requestId = lootRequestId.current
+      setLootContents(HashMap.empty())
+      setLootContainerKey(undefined)
+      setLootContainerName("container")
+      pickupRef.current?.hide()
+      dropRef.current?.hide()
+      void LiveRuntime.runPromise(
+        apiGetLootContainersFor("player").pipe(
+          Effect.flatMap((containers) => {
+            const container = Array.from(HashMap.values(containers)).sort(
+              (left, right) => left.key.localeCompare(right.key)
+            )[0]
+            if (container === undefined) {
+              return Effect.sync(() => {
+                if (lootRequestId.current !== requestId) return
+                setMessages(prependMessage("no floor container here"))
+              })
+            }
+            return apiGetLootItemsFor("player", container.key).pipe(
+              Effect.tap((contents) =>
+                Effect.sync(() => {
+                  if (lootRequestId.current !== requestId) return
+                  setLootContainerKey(container.key)
+                  setLootContainerName(container._tag)
+                  setLootContents(contents)
+                  setMessages(prependMessage(`looting ${container._tag}`))
+                  lootRef.current?.show()
+                  lootRef.current?.focus()
+                })
+              )
+            )
+          })
+        )
+      )
+    }
     const handleGameKey = (input: string, key?: BlessedKeyLike) => {
       const normalizedInput = normalizeGameInput(input, key)
       if (cancelActiveAutoMove()) return
+
+      if (normalizedInput !== "M-l") {
+        lootRequestId.current += 1
+      }
 
       setMessages(prependMessage(`doing ${normalizedInput}`))
 
@@ -398,8 +454,12 @@ export default function BPlaying({ onQuit }: Props) {
         return
       }
 
-      if (normalizedInput === ",") {
+      if (normalizedInput === "M-l") {
+        beginLoot()
+      } else if (normalizedInput === ",") {
         pendingMovementPrefix.current = undefined
+        lootRef.current?.hide()
+        dropRef.current?.hide()
         pickupRequestId.current += 1
         const requestId = pickupRequestId.current
         setPickupContents(HashMap.empty())
@@ -418,6 +478,8 @@ export default function BPlaying({ onQuit }: Props) {
         pickupRef.current?.focus()
       } else if (normalizedInput === "d") {
         pendingMovementPrefix.current = undefined
+        pickupRef.current?.hide()
+        lootRef.current?.hide()
         setMessages(prependMessage("dropping"))
         dropRef.current?.show()
         dropRef.current?.focus()
@@ -518,6 +580,34 @@ export default function BPlaying({ onQuit }: Props) {
       )
     )
   }
+  const onTakeLoot = (lootItems: ReadonlyArray<Key>) => {
+    const containerKey = lootContainerKey
+    if (containerKey === undefined) return
+    lootRequestId.current += 1
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(
+        EAction.lootTakeMulti({ containerKey, keys: lootItems })
+      ).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => lootRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
+    )
+  }
+  const onPutLoot = (lootItems: ReadonlyArray<Key>) => {
+    const containerKey = lootContainerKey
+    if (containerKey === undefined) return
+    lootRequestId.current += 1
+    void LiveRuntime.runPromise(
+      apiDoPlayerAction(
+        EAction.lootPutMulti({ containerKey, keys: lootItems })
+      ).pipe(
+        Effect.andThen(refreshWorldAndInventory),
+        Effect.tap(() => Effect.sync(() => lootRef.current?.hide())),
+        Effect.tap(() => Effect.sync(() => gameref.current?.focus()))
+      )
+    )
+  }
   const onCancelMultiDrop = () => {
     setMessages(prependMessage(`canceling multidrop`))
     dropRef.current?.hide()
@@ -527,6 +617,12 @@ export default function BPlaying({ onQuit }: Props) {
     pickupRequestId.current += 1
     setMessages(prependMessage(`canceling pickup`))
     pickupRef.current?.hide()
+    gameref.current?.focus()
+  }
+  const onCancelLoot = () => {
+    lootRequestId.current += 1
+    setMessages(prependMessage(`canceling loot`))
+    lootRef.current?.hide()
     gameref.current?.focus()
   }
 
@@ -546,6 +642,15 @@ export default function BPlaying({ onQuit }: Props) {
         onSubmit={onDoPickup}
         onCancel={onCancelPickup}
         log={log}
+      />
+      <LootPopup
+        lootRef={lootRef}
+        containerName={lootContainerName}
+        takeItems={lootContents}
+        putItems={inventory}
+        onTake={onTakeLoot}
+        onPut={onPutLoot}
+        onCancel={onCancelLoot}
       />
       <MultiDropPopup
         dropRef={dropRef}

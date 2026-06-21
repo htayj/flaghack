@@ -168,6 +168,10 @@ export const AnyItem = oneof(
   AnyContainer
 )
 export const ItemCollection = S.HashMap({ key: Key, value: AnyItem })
+export const ContainerCollection = S.HashMap({
+  key: Key,
+  value: AnyContainer
+})
 // ===========================
 // Creatures
 // ===========================
@@ -299,7 +303,15 @@ const ActionOptions = [
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
   S.TaggedStruct("pickupMulti", { keys: S.Array(Key) }),
-  S.TaggedStruct("dropMulti", { keys: S.Array(Key) })
+  S.TaggedStruct("dropMulti", { keys: S.Array(Key) }),
+  S.TaggedStruct("lootTakeMulti", {
+    containerKey: Key,
+    keys: S.Array(Key)
+  }),
+  S.TaggedStruct("lootPutMulti", {
+    containerKey: Key,
+    keys: S.Array(Key)
+  })
 ]
 export const SAction = S.Union(
   ...ActionOptions

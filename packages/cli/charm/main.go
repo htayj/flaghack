@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -41,9 +42,10 @@ type entity struct {
 }
 
 type action struct {
-	Tag  string
-	Dir  string
-	Keys []string
+	Tag          string
+	Dir          string
+	ContainerKey string
+	Keys         []string
 }
 
 func (a action) MarshalJSON() ([]byte, error) {
@@ -51,7 +53,10 @@ func (a action) MarshalJSON() ([]byte, error) {
 	if a.Dir != "" {
 		payload["dir"] = a.Dir
 	}
-	if a.Tag == "pickupMulti" || a.Tag == "dropMulti" {
+	if a.ContainerKey != "" {
+		payload["containerKey"] = a.ContainerKey
+	}
+	if a.Tag == "pickupMulti" || a.Tag == "dropMulti" || a.Tag == "lootTakeMulti" || a.Tag == "lootPutMulti" {
 		if a.Keys == nil {
 			payload["keys"] = []string{}
 		} else {
@@ -68,6 +73,7 @@ type actionPayload struct {
 type apiClient struct {
 	baseURL string
 	http    *http.Client
+	perf    *perfRecorder
 }
 
 type snapshot struct {
@@ -91,13 +97,24 @@ type popupKind string
 const (
 	popupPickup popupKind = "pickup"
 	popupDrop   popupKind = "drop"
+	popupLoot   popupKind = "loot"
+)
+
+type lootMode string
+
+const (
+	lootTake lootMode = "take"
+	lootPut  lootMode = "put"
 )
 
 type popupState struct {
-	kind   popupKind
-	title  string
-	items  []entity
-	marked map[string]bool
+	kind         popupKind
+	title        string
+	containerKey string
+	mode         lootMode
+	items        []entity
+	putItems     []entity
+	marked       map[string]bool
 }
 
 type autoRunResult struct {
@@ -106,29 +123,60 @@ type autoRunResult struct {
 	kind  string
 }
 
-type stateLoadedMsg struct {
+type autoRunSnapshot struct {
+	result   autoRunResult
 	snapshot snapshot
-	err      error
+}
+
+type stateLoadedMsg struct {
+	snapshot         snapshot
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
 }
 
 type pickupLoadedMsg struct {
-	requestID int
-	items     []entity
-	err       error
+	requestID        int
+	items            []entity
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
+}
+
+type lootContainersLoadedMsg struct {
+	requestID        int
+	containers       []entity
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
+}
+
+type lootItemsLoadedMsg struct {
+	requestID        int
+	items            []entity
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
 }
 
 type actionDoneMsg struct {
-	snapshot snapshot
-	err      error
+	snapshot         snapshot
+	err              error
+	caseName         string
+	perfTraceID      string
+	responseReceived time.Time
 }
 
 type autoDoneMsg struct {
-	id             int
-	cancel         <-chan struct{}
-	mutationSerial int
-	result         autoRunResult
-	snapshot       snapshot
-	err            error
+	id               int
+	cancel           <-chan struct{}
+	mutationSerial   int
+	result           autoRunResult
+	snapshot         snapshot
+	err              error
+	caseName         string
+	perfTraceID      string
+	responseReceived time.Time
 }
 
 type model struct {
@@ -142,11 +190,13 @@ type model struct {
 	lookTarget             *pos
 	popup                  *popupState
 	pickupRequestID        int
+	lootRequestID          int
 	mutationSerial         int
 	autoCancel             chan struct{}
 	autoID                 int
 	width                  int
 	height                 int
+	perf                   *perfRecorder
 }
 
 var (
@@ -168,12 +218,15 @@ func main() {
 }
 
 func newModel() model {
+	perf := newPerfRecorderFromEnv("charm")
 	return model{
 		client: apiClient{
 			baseURL: resolveBaseURL(os.Environ()),
 			http:    &http.Client{Timeout: 10 * time.Second},
+			perf:    perf,
 		},
 		messages: []string{},
+		perf:     perf,
 	}
 }
 
@@ -204,6 +257,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.world = msg.snapshot.world
 		m.inventory = msg.snapshot.inventory
+		m.perf.markResponseReceived("loadState", "initial", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case pickupLoadedMsg:
 		if m.popup == nil || m.popup.kind != popupPickup || msg.requestID != m.pickupRequestID {
@@ -215,14 +269,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.popup.items = msg.items
 		m.popup.marked = map[string]bool{}
+		m.perf.markResponseReceived("loadPickup", "pickup", msg.perfTraceID, msg.responseReceived)
+		return m, nil
+	case lootContainersLoadedMsg:
+		if msg.requestID != m.lootRequestID {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.addMessage("loot failed: " + msg.err.Error())
+			return m, nil
+		}
+		if len(msg.containers) == 0 {
+			m.popup = nil
+			m.addMessage("no floor container here")
+			return m, nil
+		}
+		sort.SliceStable(msg.containers, func(i, j int) bool { return msg.containers[i].Key < msg.containers[j].Key })
+		container := msg.containers[0]
+		m.popup = &popupState{kind: popupLoot, title: "Loot " + container.Tag, containerKey: container.Key, mode: lootTake, items: []entity{}, putItems: m.inventory, marked: map[string]bool{}}
+		m.addMessage("looting " + container.Tag)
+		m.perf.markResponseReceived("loadLootContainers", "loot", msg.perfTraceID, msg.responseReceived)
+		return m, loadLootItemsCmd(m.client, m.lootRequestID, container.Key)
+	case lootItemsLoadedMsg:
+		if m.popup == nil || m.popup.kind != popupLoot || msg.requestID != m.lootRequestID {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.addMessage("loot failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.popup.items = msg.items
+		m.popup.marked = map[string]bool{}
+		m.perf.markResponseReceived("loadLootItems", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case actionDoneMsg:
 		if msg.err != nil {
 			m.addMessage("action failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.world = msg.snapshot.world
-		m.inventory = msg.snapshot.inventory
+		if msg.snapshot.world != nil {
+			m.world = msg.snapshot.world
+		}
+		if msg.snapshot.inventory != nil {
+			m.inventory = msg.snapshot.inventory
+		}
+		m.perf.markResponseReceived("actionAndRefresh", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case autoDoneMsg:
 		isCurrentAutoMove := m.autoCancel != nil && m.autoCancel == msg.cancel && m.autoID == msg.id
@@ -242,6 +333,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inventory = msg.snapshot.inventory
 		}
 		m.addMessage(formatAutoResult(msg.result))
+		m.perf.markResponseReceived("autoMove", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -260,6 +352,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.popup != nil {
 		return m.handlePopupKey(input)
+	}
+
+	if input != "M-l" {
+		m.lootRequestID++
 	}
 
 	m.addMessage("doing " + input)
@@ -302,6 +398,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		target := clampTravelTarget(player.At, m.world)
 		m.lookTarget = &target
 		return m, nil
+	case "M-l":
+		m.pendingMovementPrefix = ""
+		m.lootRequestID++
+		m.popup = nil
+		m.addMessage("looting")
+		return m, loadLootContainersCmd(m.client, m.lootRequestID)
 	case ",":
 		m.pendingMovementPrefix = ""
 		m.pickupRequestID++
@@ -423,20 +525,35 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 	case "q", "r", "escape":
 		kind := popup.kind
 		m.popup = nil
-		if kind == popupDrop {
+		switch kind {
+		case popupDrop:
 			m.addMessage("canceling multidrop")
-		} else {
+		case popupLoot:
+			m.addMessage("canceling loot")
+		default:
 			m.addMessage("canceling pickup")
+		}
+		return m, nil
+	case "t":
+		if popup.kind == popupLoot {
+			popup.mode = lootTake
+			popup.marked = map[string]bool{}
+		}
+		return m, nil
+	case "p":
+		if popup.kind == popupLoot {
+			popup.mode = lootPut
+			popup.marked = map[string]bool{}
 		}
 		return m, nil
 	case ",":
 		popup.marked = map[string]bool{}
-		for _, item := range popup.items {
+		for _, item := range popupVisibleItems(*popup) {
 			popup.marked[item.Key] = true
 		}
 		return m, nil
 	case " ", "space":
-		valid := itemKeySet(popup.items)
+		valid := itemKeySet(popupVisibleItems(*popup))
 		keys := []string{}
 		for key := range popup.marked {
 			if valid[key] {
@@ -445,10 +562,18 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		}
 		sort.Strings(keys)
 		kind := popup.kind
+		containerKey := popup.containerKey
+		mode := popup.mode
 		m.popup = nil
 		m.mutationSerial++
 		if kind == popupPickup {
 			return m, actionAndRefreshCmd(m.client, action{Tag: "pickupMulti", Keys: keys})
+		}
+		if kind == popupLoot {
+			if mode == lootPut {
+				return m, actionAndRefreshCmd(m.client, action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys})
+			}
+			return m, actionAndRefreshCmd(m.client, action{Tag: "lootTakeMulti", ContainerKey: containerKey, Keys: keys})
 		}
 		return m, actionAndRefreshCmd(m.client, action{Tag: "dropMulti", Keys: keys})
 	default:
@@ -465,9 +590,10 @@ func (m model) startRepeatedMovement(command moveCommand) (tea.Model, tea.Cmd) {
 	m.autoCancel = cancel
 	initialWorld := cloneEntities(m.world)
 	client := m.client
+	traceID := client.perf.nextTraceID("charm.autorun")
 	return m, func() tea.Msg {
 		result, snap, err := client.runDirectionalMovement(context.Background(), initialWorld, command, cancel)
-		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err}
+		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: command.tag, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
@@ -480,10 +606,11 @@ func (m model) startTravel(target pos) (tea.Model, tea.Cmd) {
 	m.autoCancel = cancel
 	initialWorld := cloneEntities(m.world)
 	client := m.client
+	traceID := client.perf.nextTraceID("charm.travel")
 	m.addMessage("traveling")
 	return m, func() tea.Msg {
 		result, snap, err := client.runTravel(context.Background(), initialWorld, target, cancel)
-		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err}
+		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: "travel", perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
@@ -506,23 +633,39 @@ func (m *model) cancelActiveAutoMove() bool {
 }
 
 func (m model) View() string {
-	cursorTarget := m.travelTarget
-	if m.lookTarget != nil {
-		cursorTarget = m.lookTarget
-	}
-	board := renderBoard(m.world, cursorTarget)
-	sidebar := renderSidebarArea(m.inventory, m.popup)
-	main := lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
-	sections := []string{
-		renderEventArea(m.world, m.messages, m.lookTarget),
-		main,
-		renderStatus(m.world),
-	}
-	if m.popup != nil && m.popup.kind == popupDrop {
-		sections = append(sections, renderPopup(*m.popup))
-	}
-	sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · #quit"))
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	view := m.perf.measureString("frontend.view", "total", "", "", map[string]int{"worldSize": len(m.world), "inventorySize": len(m.inventory)}, func() string {
+		cursorTarget := m.travelTarget
+		if m.lookTarget != nil {
+			cursorTarget = m.lookTarget
+		}
+		board := m.perf.measureString("frontend.component", "board", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
+			return renderBoard(m.world, cursorTarget)
+		})
+		sidebar := m.perf.measureString("frontend.component", "sidebar", "", "", map[string]int{"inventorySize": len(m.inventory)}, func() string {
+			return renderSidebarArea(m.inventory, m.popup)
+		})
+		main := m.perf.measureString("frontend.component", "main_join", "", "", nil, func() string {
+			return lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
+		})
+		sections := []string{
+			m.perf.measureString("frontend.component", "event", "", "", map[string]int{"messageCount": len(m.messages)}, func() string {
+				return renderEventArea(m.world, m.messages, m.lookTarget)
+			}),
+			main,
+			m.perf.measureString("frontend.component", "status", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
+				return renderStatus(m.world)
+			}),
+		}
+		if m.popup != nil && m.popup.kind == popupDrop {
+			sections = append(sections, m.perf.measureString("frontend.component", "popup", "drop", "", map[string]int{"itemCount": len(m.popup.items)}, func() string {
+				return renderPopup(*m.popup)
+			}))
+		}
+		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · #quit"))
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	})
+	m.perf.finishRedraws()
+	return view
 }
 
 func renderBoard(world []entity, target *pos) string {
@@ -543,7 +686,7 @@ func renderBoard(world []entity, target *pos) string {
 }
 
 func renderSidebarArea(inventory []entity, popup *popupState) string {
-	if popup != nil && popup.kind == popupPickup {
+	if popup != nil && (popup.kind == popupPickup || popup.kind == popupLoot) {
 		return renderSidebarPopup(*popup)
 	}
 	return renderSidebar(inventory)
@@ -630,11 +773,25 @@ func renderPopup(popup popupState) string {
 }
 
 func renderSidebarPopup(popup popupState) string {
-	lines := []string{popup.title, mutedStyle.Render(", all · space ok · Esc cancels")}
-	if len(popup.items) == 0 {
-		lines = append(lines, mutedStyle.Render("(nothing available)"))
+	lines := []string{popup.title}
+	if popup.kind == popupLoot {
+		modeLabel := "take"
+		if popup.mode == lootPut {
+			modeLabel = "put"
+		}
+		lines = append(lines, modeLabel, mutedStyle.Render("t take · p put"))
 	} else {
-		for _, item := range popup.items {
+		lines = append(lines, mutedStyle.Render(", all · space ok · Esc cancels"))
+	}
+	items := popupVisibleItems(popup)
+	if len(items) == 0 {
+		if popup.kind == popupLoot && popup.mode == lootPut {
+			lines = append(lines, mutedStyle.Render("(inventory empty)"))
+		} else {
+			lines = append(lines, mutedStyle.Render("(nothing available)"))
+		}
+	} else {
+		for _, item := range items {
 			prefix := "  "
 			line := item.Tag
 			if popup.marked[item.Key] {
@@ -648,46 +805,84 @@ func renderSidebarPopup(popup popupState) string {
 }
 
 func loadStateCmd(client apiClient) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.loadState")
 	return func() tea.Msg {
 		snap, err := client.loadState(context.Background())
-		return stateLoadedMsg{snapshot: snap, err: err}
+		return stateLoadedMsg{snapshot: snap, err: err, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
 func loadPickupCmd(client apiClient, requestID int) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.pickup")
 	return func() tea.Msg {
 		items, err := client.getPickupItemsFor(context.Background(), "player")
-		return pickupLoadedMsg{requestID: requestID, items: items, err: err}
+		return pickupLoadedMsg{requestID: requestID, items: items, err: err, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func loadLootContainersCmd(client apiClient, requestID int) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.lootContainers")
+	return func() tea.Msg {
+		containers, err := client.getLootContainersFor(context.Background(), "player")
+		return lootContainersLoadedMsg{requestID: requestID, containers: containers, err: err, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func loadLootItemsCmd(client apiClient, requestID int, containerKey string) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.lootItems")
+	return func() tea.Msg {
+		items, err := client.getLootItemsFor(context.Background(), "player", containerKey)
+		return lootItemsLoadedMsg{requestID: requestID, items: items, err: err, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
 func actionAndRefreshCmd(client apiClient, act action) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.action")
 	return func() tea.Msg {
 		snap, err := client.actionAndRefresh(context.Background(), act)
-		return actionDoneMsg{snapshot: snap, err: err}
+		return actionDoneMsg{snapshot: snap, err: err, caseName: act.Tag, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
 func (c apiClient) loadState(ctx context.Context) (snapshot, error) {
-	world, err := c.getCollection(ctx, "/world")
-	if err != nil {
-		return snapshot{}, err
-	}
-	inventory, err := c.getCollection(ctx, "/inventory")
-	if err != nil {
-		inventory = []entity{}
-	}
-	return snapshot{world: world, inventory: inventory}, nil
+	return measurePerfCall(c.perf, "frontend.api", "loadState", "", "", nil, func() (snapshot, error) {
+		world, err := c.getCollection(ctx, "/world")
+		if err != nil {
+			return snapshot{}, err
+		}
+		inventory, err := c.getCollection(ctx, "/inventory")
+		if err != nil {
+			inventory = []entity{}
+		}
+		return snapshot{world: world, inventory: inventory}, nil
+	})
 }
 
 func (c apiClient) actionAndRefresh(ctx context.Context, act action) (snapshot, error) {
-	if err := c.doAction(ctx, act); err != nil {
-		return snapshot{}, err
-	}
-	return c.loadState(ctx)
+	return measurePerfCall(c.perf, "frontend.api", "actionAndRefresh", act.Tag, "", nil, func() (snapshot, error) {
+		if err := c.doAction(ctx, act); err != nil {
+			return snapshot{}, err
+		}
+		if act.Tag == "move" {
+			world, err := c.getCollection(ctx, "/world")
+			if err != nil {
+				return snapshot{}, err
+			}
+			return snapshot{world: world}, nil
+		}
+		return c.loadState(ctx)
+	})
 }
 
 func (c apiClient) runDirectionalMovement(ctx context.Context, initialWorld []entity, command moveCommand, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	measured, err := measurePerfCall(c.perf, "frontend.api", "runDirectionalMovement", command.tag, "", nil, func() (autoRunSnapshot, error) {
+		result, snap, err := c.runDirectionalMovementUnmeasured(ctx, initialWorld, command, cancel)
+		return autoRunSnapshot{result: result, snapshot: snap}, err
+	})
+	return measured.result, measured.snapshot, err
+}
+
+func (c apiClient) runDirectionalMovementUnmeasured(ctx context.Context, initialWorld []entity, command moveCommand, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	label := commandLabel(command)
 	world := initialWorld
 	currentDirection := command.dir
@@ -734,6 +929,14 @@ func (c apiClient) runDirectionalMovement(ctx context.Context, initialWorld []en
 }
 
 func (c apiClient) runTravel(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	measured, err := measurePerfCall(c.perf, "frontend.api", "runTravel", "travel", "", nil, func() (autoRunSnapshot, error) {
+		result, snap, err := c.runTravelUnmeasured(ctx, initialWorld, target, cancel)
+		return autoRunSnapshot{result: result, snapshot: snap}, err
+	})
+	return measured.result, measured.snapshot, err
+}
+
+func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	world := initialWorld
 	steps := 0
 	for steps < maxAutoMoveSteps {
@@ -782,61 +985,75 @@ func cancelled(cancel <-chan struct{}) bool {
 }
 
 func (c apiClient) getPickupItemsFor(ctx context.Context, key string) ([]entity, error) {
-	return c.getCollection(ctx, "/getPickupFor?key="+key)
+	return c.getCollection(ctx, "/getPickupFor?key="+url.QueryEscape(key))
+}
+
+func (c apiClient) getLootContainersFor(ctx context.Context, key string) ([]entity, error) {
+	return c.getCollection(ctx, "/loot/containersFor?key="+url.QueryEscape(key))
+}
+
+func (c apiClient) getLootItemsFor(ctx context.Context, key string, containerKey string) ([]entity, error) {
+	path := "/loot/itemsFor?key=" + url.QueryEscape(key) + "&containerKey=" + url.QueryEscape(containerKey)
+	return c.getCollection(ctx, path)
 }
 
 func (c apiClient) getCollection(ctx context.Context, path string) ([]entity, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := c.http.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-		return nil, fmt.Errorf("GET %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
-	}
-	var raw [][]json.RawMessage
-	if err := json.NewDecoder(response.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	items := make([]entity, 0, len(raw))
-	for _, pair := range raw {
-		if len(pair) < 2 {
-			continue
-		}
-		var item entity
-		if err := json.Unmarshal(pair[1], &item); err != nil {
+	return measurePerfCall(c.perf, "frontend.http", "GET", path, "", nil, func() ([]entity, error) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+		if err != nil {
 			return nil, err
 		}
-		items = append(items, item)
-	}
-	return items, nil
+		response, err := c.http.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+			return nil, fmt.Errorf("GET %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
+		}
+		var raw [][]json.RawMessage
+		if err := json.NewDecoder(response.Body).Decode(&raw); err != nil {
+			return nil, err
+		}
+		items := make([]entity, 0, len(raw))
+		for _, pair := range raw {
+			if len(pair) < 2 {
+				continue
+			}
+			var item entity
+			if err := json.Unmarshal(pair[1], &item); err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, nil
+	})
 }
 
 func (c apiClient) doAction(ctx context.Context, act action) error {
-	body, err := json.Marshal(actionPayload{Action: act})
-	if err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/act", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	request.Header.Set("content-type", "application/json")
-	response, err := c.http.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-		return fmt.Errorf("POST /act failed: %s %s", response.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
+	_, err := measurePerfCall(c.perf, "frontend.http", "POST", "/act", "", nil, func() (struct{}, error) {
+		body, err := json.Marshal(actionPayload{Action: act})
+		if err != nil {
+			return struct{}{}, err
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/act", bytes.NewReader(body))
+		if err != nil {
+			return struct{}{}, err
+		}
+		request.Header.Set("content-type", "application/json")
+		response, err := c.http.Do(request)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+			return struct{}{}, fmt.Errorf("POST /act failed: %s %s", response.Status, strings.TrimSpace(string(body)))
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 func normalizeBubbleTeaInput(msg tea.KeyMsg) string {
@@ -860,6 +1077,8 @@ func normalizeBubbleTeaInput(msg tea.KeyMsg) string {
 		return "C-b"
 	case "ctrl+n":
 		return "C-n"
+	case "alt+l":
+		return "M-l"
 	case "enter":
 		return "enter"
 	case "esc":
@@ -1594,6 +1813,13 @@ func turnAmount(from, to string) int {
 		return clockwise + 8
 	}
 	return clockwise
+}
+
+func popupVisibleItems(popup popupState) []entity {
+	if popup.kind == popupLoot && popup.mode == lootPut {
+		return popup.putItems
+	}
+	return popup.items
 }
 
 func itemKeySet(items []entity) map[string]bool {

@@ -5,7 +5,12 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { doAction } from "../src/actions.js"
 import { player } from "../src/creatures.js"
-import { makeGroundFlag, makeWaterBottle } from "../src/items.js"
+import {
+  makeBeer,
+  makeCooler,
+  makeGroundFlag,
+  makeWaterBottle
+} from "../src/items.js"
 import type { Entity } from "../src/world.js"
 
 const actionsSourcePath = fileURLToPath(
@@ -55,7 +60,7 @@ describe("server actions", () => {
     }
   })
 
-  it("moves pickupMulti item keys into the player container", () => {
+  it("moves pickupMulti floor item keys into the player container", () => {
     const actor = player(2, 3, 0)
     const item = makeGroundFlag("flag-1", { x: 2, y: 3, z: 0 })
     const secondItem = makeWaterBottle("water-1", 2, 3, 0)
@@ -76,6 +81,28 @@ describe("server actions", () => {
 
     expect(entityByKey(next, item.key)?.in).toBe(actor.key)
     expect(entityByKey(next, secondItem.key)?.in).toBe(actor.key)
+  })
+
+  it("does not let pickupMulti take contained items from a floor container", () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 2, 3, 0)
+    const beer = makeBeer("beer-1", 2, 3, 0, cooler.key)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [cooler.key, cooler],
+        [beer.key, beer]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.pickupMulti({ keys: [beer.key] }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, beer.key)?.in).toBe(cooler.key)
   })
 
   it("blocks movement into ungenerated void outside terrain bounds", () => {
@@ -145,5 +172,89 @@ describe("server actions", () => {
     expect(dropped?.at).toEqual(actor.at)
     expect(secondDropped?.in).toBe("world")
     expect(secondDropped?.at).toEqual(actor.at)
+  })
+
+  it("does not let dropMulti move items that are not in the player's inventory", () => {
+    const actor = player(5, 6, 0)
+    const item = makeWaterBottle("water-1", 5, 6, 0, "world")
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [item.key, item]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.dropMulti({ keys: [item.key] }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, item.key)?.in).toBe("world")
+    expect(entityByKey(next, item.key)?.at).toEqual(item.at)
+  })
+
+  it("loots items out of and into an accessible floor container", () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 2, 3, 0)
+    const beer = makeBeer("beer-1", 2, 3, 0, cooler.key)
+    const water = makeWaterBottle("water-1", 0, 0, 0, actor.key)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [cooler.key, cooler],
+        [beer.key, beer],
+        [water.key, water]
+      ])
+    })
+
+    const afterTake = Effect.runSync(
+      doAction(gs, {
+        action: EAction.lootTakeMulti({
+          containerKey: cooler.key,
+          keys: [beer.key]
+        }),
+        entity: actor
+      })
+    )
+    const afterPut = Effect.runSync(
+      doAction(afterTake, {
+        action: EAction.lootPutMulti({
+          containerKey: cooler.key,
+          keys: [water.key]
+        }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(afterTake, beer.key)?.in).toBe(actor.key)
+    expect(entityByKey(afterPut, water.key)?.in).toBe(cooler.key)
+    expect(entityByKey(afterPut, water.key)?.at).toEqual(cooler.at)
+  })
+
+  it("ignores loot actions for containers that are not on the actor's floor tile", () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 4, 3, 0)
+    const beer = makeBeer("beer-1", 4, 3, 0, cooler.key)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [cooler.key, cooler],
+        [beer.key, beer]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.lootTakeMulti({
+          containerKey: cooler.key,
+          keys: [beer.key]
+        }),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, beer.key)?.in).toBe(cooler.key)
   })
 })

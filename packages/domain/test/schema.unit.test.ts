@@ -5,6 +5,7 @@ import {
   AnyItem,
   AnyTerrain,
   conforms,
+  ContainerCollection,
   Entity,
   ItemCollection,
   Pos,
@@ -138,7 +139,7 @@ describe("domain source schemas", () => {
     }
   })
 
-  it("decodes current movement and multi-item actions", () => {
+  it("decodes current movement, multi-item, and loot actions", () => {
     expectRight(S.decodeUnknownEither(SAction)({ _tag: "move", dir: "N" }))
     expectRight(
       S.decodeUnknownEither(SAction)({
@@ -150,6 +151,20 @@ describe("domain source schemas", () => {
       S.decodeUnknownEither(SAction)({
         _tag: "dropMulti",
         keys: ["floor-1", "flag-1"]
+      })
+    )
+    expectRight(
+      S.decodeUnknownEither(SAction)({
+        _tag: "lootTakeMulti",
+        containerKey: sampleCooler.key,
+        keys: [sampleBeer.key]
+      })
+    )
+    expectRight(
+      S.decodeUnknownEither(SAction)({
+        _tag: "lootPutMulti",
+        containerKey: sampleCooler.key,
+        keys: [sampleItem.key]
       })
     )
 
@@ -170,10 +185,14 @@ describe("domain source schemas", () => {
     expect(Either.isRight(S.validateEither(World)(world))).toBe(true)
   })
 
-  it("narrows item collections to item HashMap values", () => {
+  it("narrows item and container collections to the right HashMap values", () => {
     const itemCollection = HashMap.fromIterable([[
       sampleItem.key,
       sampleItem
+    ]])
+    const containerCollection = HashMap.fromIterable([[
+      sampleCooler.key,
+      sampleCooler
     ]])
     const terrainCollection = HashMap.fromIterable([[
       sampleFloor.key,
@@ -182,6 +201,16 @@ describe("domain source schemas", () => {
 
     expect(
       Either.isRight(S.validateEither(ItemCollection)(itemCollection))
+    )
+      .toBe(true)
+    expect(
+      Either.isRight(
+        S.validateEither(ContainerCollection)(containerCollection)
+      )
+    )
+      .toBe(true)
+    expect(
+      Either.isLeft(S.validateEither(ContainerCollection)(itemCollection))
     )
       .toBe(true)
     expect(

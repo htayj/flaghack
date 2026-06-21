@@ -2,12 +2,16 @@ import { describe, expect, it } from "@effect/vitest"
 import {
   AnyCreature,
   AnyTerrain,
-  conforms
+  conforms,
+  GameState
 } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { vi } from "vitest"
-import type { CampgroundGenLevel } from "../src/world.js"
+import { player } from "../src/creatures.js"
+import { GameStateStore } from "../src/GameStateStore.js"
+import { makeBeer, makeCooler, makeWaterBottle } from "../src/items.js"
+import type { CampgroundGenLevel, Entity } from "../src/world.js"
 
 type CampgroundGenLevelFn = typeof CampgroundGenLevel
 type WorldModule = Record<string, unknown> & {
@@ -34,6 +38,25 @@ const runGetPickupItemsFor = async (key: string) => {
     module.getPickupItemsFor(key).pipe(
       Effect.provide(module.DefaultGameStateStoreLive)
     )
+  )
+}
+
+const runWithWorld = async <A>(
+  worldEntities: ReadonlyArray<Entity>,
+  effectForModule: (
+    module: Awaited<ReturnType<typeof importGameloop>>
+  ) => Effect.Effect<A, never, GameStateStore>
+): Promise<A> => {
+  const module = await importGameloop()
+  const testState = GameState.make({
+    world: HashMap.fromIterable(
+      worldEntities.map((entity) => [entity.key, entity] as const)
+    )
+  })
+  const layer = GameStateStore.Default(Effect.succeed(testState))
+
+  return Effect.runSync(
+    effectForModule(module).pipe(Effect.provide(layer))
   )
 }
 
@@ -229,5 +252,50 @@ describe("getPickupItemsFor", () => {
 
     expect(inventoryBody).toContain("filter(isItem)")
     expect(pickupBody).toContain("HashMap.filter(isItem)")
+  })
+})
+
+describe("loot queries", () => {
+  it("returns floor containers under the player", async () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 2, 3, 0)
+    const offTileCooler = makeCooler("cooler-2", 3, 3, 0)
+    const water = makeWaterBottle("water-1", 2, 3, 0)
+
+    const containers = await runWithWorld(
+      [actor, cooler, offTileCooler, water],
+      (module) => module.getLootContainersFor(actor.key)
+    )
+    const values = Array.from(HashMap.values(containers))
+
+    expect(values.map((entity) => entity.key)).toEqual([cooler.key])
+  })
+
+  it("returns items inside an accessible floor container", async () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 2, 3, 0)
+    const beer = makeBeer("beer-1", 2, 3, 0, cooler.key)
+    const water = makeWaterBottle("water-1", 2, 3, 0)
+
+    const contents = await runWithWorld(
+      [actor, cooler, beer, water],
+      (module) => module.getLootItemsFor(actor.key, cooler.key)
+    )
+    const values = Array.from(HashMap.values(contents))
+
+    expect(values.map((entity) => entity.key)).toEqual([beer.key])
+  })
+
+  it("does not return contents for inaccessible containers", async () => {
+    const actor = player(2, 3, 0)
+    const cooler = makeCooler("cooler-1", 3, 3, 0)
+    const beer = makeBeer("beer-1", 3, 3, 0, cooler.key)
+
+    const contents = await runWithWorld(
+      [actor, cooler, beer],
+      (module) => module.getLootItemsFor(actor.key, cooler.key)
+    )
+
+    expect(Array.from(HashMap.values(contents))).toHaveLength(0)
   })
 })

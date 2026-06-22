@@ -149,6 +149,8 @@ const zindex = (entity: Entity): number => {
     case "tunnel":
       return 0
     case "wall":
+    case "tent-wall":
+    case "tent-post":
     case "sign":
     case "effigy":
     case "temple":

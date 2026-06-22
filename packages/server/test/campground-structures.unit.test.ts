@@ -44,6 +44,7 @@ describe("tentStructureTiles", () => {
 
     expectCoordinateKeys(oneSpace.roofCoordinates, ["11,11"])
     expectCoordinateKeys(oneSpace.doorCoordinates, ["11,12"])
+    expectCoordinateKeys(oneSpace.postCoordinates, [])
     expectCoordinateKeys(oneSpace.wallCoordinates, [
       "10,10",
       "11,10",
@@ -59,6 +60,7 @@ describe("tentStructureTiles", () => {
 
     expectCoordinateKeys(twoSpace.roofCoordinates, ["21,21", "22,21"])
     expectCoordinateKeys(twoSpace.doorCoordinates, ["21,22"])
+    expectCoordinateKeys(twoSpace.postCoordinates, [])
     expect(coordinateKeySet(twoSpace.wallCoordinates).has("21,22")).toBe(
       false
     )
@@ -93,6 +95,7 @@ describe("tentStructureTiles", () => {
     const wallKeys = coordinateKeySet(carport.wallCoordinates)
     const roofKeys = coordinateKeySet(carport.roofCoordinates)
 
+    expectCoordinateKeys(carport.postCoordinates, [])
     expect(new Set(carport.roofCoordinates.map(({ x }) => x)).size)
       .toBeGreaterThanOrEqual(3)
     expect(new Set(carport.roofCoordinates.map(({ y }) => y)).size)
@@ -132,36 +135,39 @@ describe("tentStructureTiles", () => {
       postSpacing: 3
     })
     const wallKeys = coordinateKeySet(popup.wallCoordinates)
+    const postKeys = coordinateKeySet(popup.postCoordinates)
     const roofKeys = coordinateKeySet(popup.roofCoordinates)
 
     expect(popup.roofCoordinates.length).toBe(8 * 5)
+    expect(popup.wallCoordinates).toEqual([])
     expect(new Set(popup.roofCoordinates.map(({ x }) => x)).size)
       .toBeGreaterThanOrEqual(4)
     expect(new Set(popup.roofCoordinates.map(({ y }) => y)).size)
       .toBeGreaterThanOrEqual(4)
-    expect(wallKeys.has("19,19")).toBe(true)
-    expect(wallKeys.has("28,19")).toBe(true)
-    expect(wallKeys.has("19,25")).toBe(true)
-    expect(wallKeys.has("28,25")).toBe(true)
+    expect(postKeys.has("19,19")).toBe(true)
+    expect(postKeys.has("28,19")).toBe(true)
+    expect(postKeys.has("19,25")).toBe(true)
+    expect(postKeys.has("28,25")).toBe(true)
 
     for (const roofKey of roofKeys) {
       expect(wallKeys.has(roofKey)).toBe(false)
+      expect(postKeys.has(roofKey)).toBe(false)
     }
-    for (let left = 0; left < popup.wallCoordinates.length; left += 1) {
+    for (let left = 0; left < popup.postCoordinates.length; left += 1) {
       for (
         let right = left + 1;
-        right < popup.wallCoordinates.length;
+        right < popup.postCoordinates.length;
         right += 1
       ) {
-        const a = popup.wallCoordinates[left]
-        const b = popup.wallCoordinates[right]
+        const a = popup.postCoordinates[left]
+        const b = popup.postCoordinates[right]
         expect(
           a !== undefined && b !== undefined && areCardinallyAdjacent(a, b)
         ).toBe(false)
       }
     }
 
-    const topEdgePostXs = popup.wallCoordinates
+    const topEdgePostXs = popup.postCoordinates
       .filter(({ y }) => y === 19)
       .map(({ x }) => x)
       .sort((a, b) => a - b)
@@ -171,10 +177,5 @@ describe("tentStructureTiles", () => {
       )
     )
       .toEqual([3, 3, 3])
-
-    for (const wallCoordinate of popup.wallCoordinates) {
-      expect(tentWallVariant(popup.wallCoordinates, wallCoordinate)).not
-        .toBe("none")
-    }
   })
 })

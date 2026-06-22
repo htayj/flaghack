@@ -230,10 +230,13 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 
 func TestTileForCampgroundMarkers(t *testing.T) {
 	tests := []struct {
-		tag  string
-		char string
+		tag     string
+		char    string
+		variant string
 	}{
 		{tag: "tent", char: "^"},
+		{tag: "tent-wall", char: "│", variant: "vertical"},
+		{tag: "tent-post", char: "┼"},
 		{tag: "sign", char: "?"},
 		{tag: "effigy", char: "Y"},
 		{tag: "temple", char: "Ω"},
@@ -245,7 +248,7 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got := tileFor(entity{Tag: tc.tag})
+		got := tileFor(entity{Tag: tc.tag, Variant: tc.variant})
 		if got.char != tc.char {
 			t.Fatalf("tileFor(%s) char = %q, want %q", tc.tag, got.char, tc.char)
 		}
@@ -256,6 +259,8 @@ func TestDrawWorldLayersFloorInsideTentsWallsItemsAndCreatures(t *testing.T) {
 	floor := entity{Key: "floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	tent := entity{Key: "tent", Tag: "tent", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	wall := entity{Key: "wall", Tag: "wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
+	tentWall := entity{Key: "tent-wall", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
+	tentPost := entity{Key: "tent-post", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	beer := entity{Key: "beer", Tag: "beer", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	player := entity{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Name: "you"}
 
@@ -266,17 +271,27 @@ func TestDrawWorldLayersFloorInsideTentsWallsItemsAndCreatures(t *testing.T) {
 		}
 	}
 
-	wallOverTentWorlds := [][]entity{{tent, wall}, {wall, tent}}
-	for _, world := range wallOverTentWorlds {
-		if got := drawWorld(world, nil)[2][1].char; got != "│" {
-			t.Fatalf("tent/wall tile = %q, want │", got)
+	tentBlockerWorlds := []struct {
+		world []entity
+		want  string
+	}{
+		{world: []entity{tent, wall}, want: "│"},
+		{world: []entity{wall, tent}, want: "│"},
+		{world: []entity{tent, tentWall}, want: "│"},
+		{world: []entity{tentWall, tent}, want: "│"},
+		{world: []entity{tent, tentPost}, want: "┼"},
+		{world: []entity{tentPost, tent}, want: "┼"},
+	}
+	for _, tc := range tentBlockerWorlds {
+		if got := drawWorld(tc.world, nil)[2][1].char; got != tc.want {
+			t.Fatalf("tent/blocker tile = %q, want %s", got, tc.want)
 		}
 	}
 
-	if got := drawWorld([]entity{floor, tent, wall, beer}, nil)[2][1].char; got != "!" {
+	if got := drawWorld([]entity{floor, tent, wall, tentWall, tentPost, beer}, nil)[2][1].char; got != "!" {
 		t.Fatalf("item over terrain tile = %q, want !", got)
 	}
-	if got := drawWorld([]entity{floor, tent, wall, beer, player}, nil)[2][1].char; got != "@" {
+	if got := drawWorld([]entity{floor, tent, wall, tentWall, tentPost, beer, player}, nil)[2][1].char; got != "@" {
 		t.Fatalf("creature over item/terrain tile = %q, want @", got)
 	}
 }
@@ -295,16 +310,23 @@ func TestFindTravelDirectionsUsesKnownPassableTiles(t *testing.T) {
 }
 
 func TestFindTravelDirectionsTreatsWallOverPassableTileAsBlocked(t *testing.T) {
-	world := []entity{
-		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
-		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
-		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+	blockers := []entity{
 		{Key: "wall-1", Tag: "wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
-		{Key: "floor-2", Tag: "floor", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
+		{Key: "tent-wall-1", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
+		{Key: "tent-post-1", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 	}
-	path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 2, Y: 0, Z: 0})
-	if len(path) != 0 {
-		t.Fatalf("path = %#v, want no route through floor+wall coordinate", path)
+	for _, blocker := range blockers {
+		world := []entity{
+			{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+			blocker,
+			{Key: "floor-2", Tag: "floor", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
+		}
+		path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 2, Y: 0, Z: 0})
+		if len(path) != 0 {
+			t.Fatalf("path through %s = %#v, want no route", blocker.Tag, path)
+		}
 	}
 }
 
@@ -344,6 +366,8 @@ func TestFindTravelDirectionsUsesCampgroundMarkerPassability(t *testing.T) {
 func TestDescribeLookTargetListsCoordinatesAndVisibleContents(t *testing.T) {
 	world := []entity{
 		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "tent-wall-1", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
+		{Key: "tent-post-1", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 		{Key: "sign-1", Tag: "sign", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Name: "Camp Type Safety"},
 		{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}},
 	}
@@ -352,7 +376,7 @@ func TestDescribeLookTargetListsCoordinatesAndVisibleContents(t *testing.T) {
 	if !strings.Contains(got, "Look 1,0:") {
 		t.Fatalf("look description missing coordinates: %q", got)
 	}
-	if !strings.Contains(got, "sign: Camp Type Safety") || !strings.Contains(got, "dusty ground") {
+	if !strings.Contains(got, "sign: Camp Type Safety") || !strings.Contains(got, "dusty ground") || !strings.Contains(got, "tent-wall") || !strings.Contains(got, "tent-post") {
 		t.Fatalf("look description missing visible tile contents: %q", got)
 	}
 	if strings.Contains(got, "beer") {

@@ -34,6 +34,21 @@ const flagAt = (
   key
 })
 
+const tentWallAt = (key: string, x: number, y: number): Entity => ({
+  _tag: "tent-wall",
+  at: { x, y, z: 0 },
+  in: "world",
+  key,
+  variant: "vertical"
+})
+
+const tentPostAt = (key: string, x: number, y: number): Entity => ({
+  _tag: "tent-post",
+  at: { x, y, z: 0 },
+  in: "world",
+  key
+})
+
 const worldFrom = (entities: ReadonlyArray<Entity>): World =>
   HashMap.fromIterable(entities.map((entity) => [entity.key, entity]))
 
@@ -105,6 +120,31 @@ describe("campground active region", () => {
     expect(actorWorldKeys.has(far.key)).toBe(false)
     expect(actorWorldKeys.has(otherLevel.key)).toBe(false)
     expect(actorWorldKeys.has(heldItem.key)).toBe(false)
+  })
+
+  it("keeps tent walls and posts in bounded collision worlds", () => {
+    const actor = player(96, 120, 0)
+    const wall = tentWallAt("tent-wall-1", 96, 119)
+    const post = tentPostAt("tent-post-1", 97, 120)
+    const world = worldFrom([
+      floorAt("extent-0", 0, 0),
+      floorAt("extent-max", 359, 159),
+      actor,
+      wall,
+      post
+    ])
+
+    const region = campgroundActiveRegionForWorld(world, actor)
+
+    expect(region).toBeDefined()
+    if (region === undefined) return
+    const collisionWorldKeys = new Set(
+      Array.from(HashMap.values(region.collisionWorld)).map((entity) =>
+        entity.key
+      )
+    )
+    expect(collisionWorldKeys.has(wall.key)).toBe(true)
+    expect(collisionWorldKeys.has(post.key)).toBe(true)
   })
 
   it("does not activate on smaller non-campground worlds", () => {

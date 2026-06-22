@@ -36,6 +36,21 @@ const wall = {
   variant: "vertical"
 } satisfies Entity
 
+const tentWall = {
+  _tag: "tent-wall",
+  key: "tent-wall-1",
+  at: position,
+  in: "world",
+  variant: "vertical"
+} satisfies Entity
+
+const tentPost = {
+  _tag: "tent-post",
+  key: "tent-post-1",
+  at: position,
+  in: "world"
+} satisfies Entity
+
 const player = {
   _tag: "player",
   key: "player",
@@ -77,6 +92,18 @@ const wallTile = {
   bright: false
 }
 
+const tentWallTile = {
+  char: "│",
+  color: "yellow",
+  bright: false
+}
+
+const tentPostTile = {
+  char: "┼",
+  color: "yellow",
+  bright: false
+}
+
 const playerTile = {
   char: "@",
   color: "white"
@@ -112,7 +139,7 @@ describe("web drawWorld layering", () => {
     }
   })
 
-  it("draws floor inside tents and walls over tent terrain regardless of insertion order", () => {
+  it("draws floor inside tents and tent blockers over tent terrain regardless of insertion order", () => {
     const floorUnderTentWorlds = [
       HashMap.fromIterable<string, Entity>([
         [floor.key, floor],
@@ -123,22 +150,55 @@ describe("web drawWorld layering", () => {
         [floor.key, floor]
       ])
     ]
-    const wallOverTentWorlds = [
-      HashMap.fromIterable<string, Entity>([
-        [tent.key, tent],
-        [wall.key, wall]
-      ]),
-      HashMap.fromIterable<string, Entity>([
-        [wall.key, wall],
-        [tent.key, tent]
-      ])
+    const tentBlockerWorlds = [
+      {
+        tile: wallTile,
+        worlds: [
+          HashMap.fromIterable<string, Entity>([
+            [tent.key, tent],
+            [wall.key, wall]
+          ]),
+          HashMap.fromIterable<string, Entity>([
+            [wall.key, wall],
+            [tent.key, tent]
+          ])
+        ]
+      },
+      {
+        tile: tentWallTile,
+        worlds: [
+          HashMap.fromIterable<string, Entity>([
+            [tent.key, tent],
+            [tentWall.key, tentWall]
+          ]),
+          HashMap.fromIterable<string, Entity>([
+            [tentWall.key, tentWall],
+            [tent.key, tent]
+          ])
+        ]
+      },
+      {
+        tile: tentPostTile,
+        worlds: [
+          HashMap.fromIterable<string, Entity>([
+            [tent.key, tent],
+            [tentPost.key, tentPost]
+          ]),
+          HashMap.fromIterable<string, Entity>([
+            [tentPost.key, tentPost],
+            [tent.key, tent]
+          ])
+        ]
+      }
     ]
 
     for (const world of floorUnderTentWorlds) {
       expect(drawWorld(world)[2]?.[1]).toEqual(floorTile)
     }
-    for (const world of wallOverTentWorlds) {
-      expect(drawWorld(world)[2]?.[1]).toEqual(wallTile)
+    for (const { tile, worlds } of tentBlockerWorlds) {
+      for (const world of worlds) {
+        expect(drawWorld(world)[2]?.[1]).toEqual(tile)
+      }
     }
   })
 
@@ -147,6 +207,8 @@ describe("web drawWorld layering", () => {
       [player.key, player],
       [flag.key, flag],
       [wall.key, wall],
+      [tentWall.key, tentWall],
+      [tentPost.key, tentPost],
       [tent.key, tent],
       [floor.key, floor]
     ])

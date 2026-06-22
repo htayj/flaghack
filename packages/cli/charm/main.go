@@ -1459,7 +1459,7 @@ func findTravelDirections(world []entity, start, target pos) []string {
 		if isPassableTerrain(item) {
 			passable[posKey(item.At)] = item.At
 		}
-		if item.Tag == "wall" || (isCreature(item) && !samePos(item.At, start)) {
+		if isImpassableTerrain(item) || (isCreature(item) && !samePos(item.At, start)) {
 			blocked[posKey(item.At)] = true
 		}
 	}
@@ -1629,6 +1629,10 @@ func tileFor(item entity) tile {
 		return tile{char: ":", color: lipgloss.Color("14"), bright: true}
 	case "wall":
 		return tile{char: wallChar(item.Variant), color: lipgloss.Color("15")}
+	case "tent-wall":
+		return tile{char: wallChar(item.Variant), color: lipgloss.Color("11")}
+	case "tent-post":
+		return tile{char: "┼", color: lipgloss.Color("11")}
 	case "tunnel":
 		return tile{char: "#", color: lipgloss.Color("15")}
 	case "floor":
@@ -1690,7 +1694,7 @@ func zIndex(item entity) int {
 		return -1
 	case "floor", "tunnel":
 		return 0
-	case "wall", "sign", "effigy", "temple":
+	case "wall", "tent-wall", "tent-post", "sign", "effigy", "temple":
 		return 2
 	default:
 		if isCreature(item) {
@@ -1705,15 +1709,19 @@ func zIndex(item entity) int {
 
 func isTerrain(item entity) bool {
 	switch item.Tag {
-	case "wall", "floor", "tunnel", "tent", "sign", "effigy", "temple":
+	case "wall", "tent-wall", "tent-post", "floor", "tunnel", "tent", "sign", "effigy", "temple":
 		return true
 	default:
 		return false
 	}
 }
 
+func isImpassableTerrain(item entity) bool {
+	return item.Tag == "wall" || item.Tag == "tent-wall" || item.Tag == "tent-post"
+}
+
 func isPassableTerrain(item entity) bool {
-	return isTerrain(item) && item.Tag != "wall"
+	return isTerrain(item) && !isImpassableTerrain(item)
 }
 
 func isCreature(item entity) bool {
@@ -1833,6 +1841,10 @@ func describeEntityForLook(item entity) string {
 		return "road"
 	case "wall":
 		return "wall"
+	case "tent-wall":
+		return "tent-wall"
+	case "tent-post":
+		return "tent-post"
 	case "tent":
 		return "tent"
 	case "sign":
@@ -1915,12 +1927,19 @@ func nonPlayerCreaturesAdjacentTo(world []entity, p pos) []entity {
 }
 
 func isKnownPassablePosition(world []entity, p pos) bool {
+	hasPassable := false
 	for _, item := range world {
-		if item.In == "world" && samePos(item.At, p) && isPassableTerrain(item) {
-			return true
+		if item.In != "world" || !samePos(item.At, p) {
+			continue
+		}
+		if isImpassableTerrain(item) {
+			return false
+		}
+		if isPassableTerrain(item) {
+			hasPassable = true
 		}
 	}
-	return false
+	return hasPassable
 }
 
 func isKnownCorridorPosition(world []entity, p pos) bool {

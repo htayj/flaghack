@@ -55,6 +55,8 @@ const getTile = (e: Entity | undefined): Tile =>
       hammer: () => tile({ color: "white", bright: true, char: "T" }),
       nails: () => tile({ color: "cyan", bright: true, char: ":" }),
       wall: () => tile({ color: "white", char: "#" }),
+      "tent-wall": () => tile({ color: "yellow", char: "#" }),
+      "tent-post": () => tile({ color: "yellow", char: "┼" }),
       tunnel: () => tile({ color: "black", bright: true, char: "," }),
       floor: () => tile({ color: "black", bright: true, char: "." }),
       tent: () => tile({ color: "yellow", bright: true, char: "^" }),

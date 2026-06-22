@@ -40,6 +40,14 @@ const campgroundMarkerAt = (
   ...(tag === "sign" ? { name: "Camp Functional" } : {})
 } as Entity)
 
+const tentBlockerAt = (tag: "tent-wall" | "tent-post"): Entity => ({
+  _tag: tag,
+  at: { x: 1, y: 0, z: 0 },
+  in: "world",
+  key: `${tag}-1`,
+  ...(tag === "tent-wall" ? { variant: "vertical" as const } : {})
+} as Entity)
+
 describe("server actions", () => {
   it("does not run nested effects in action handlers", () => {
     const actionsSource = readFileSync(actionsSourcePath, "utf8")
@@ -174,6 +182,30 @@ describe("server actions", () => {
       )
 
       expect(entityByKey(next, actor.key)?.at).toEqual(marker.at)
+    }
+  })
+
+  it("blocks movement into tent wall and post terrain", () => {
+    for (const tag of ["tent-wall", "tent-post"] as const) {
+      const actor = player(0, 0, 0)
+      const blocker = tentBlockerAt(tag)
+      const gs = GameState.make({
+        world: HashMap.fromIterable<string, Entity>([
+          [actor.key, actor],
+          ["floor-0", floorAt("floor-0", 0, 0)],
+          ["floor-1", floorAt("floor-1", 1, 0)],
+          [blocker.key, blocker]
+        ])
+      })
+
+      const next = Effect.runSync(
+        doAction(gs, {
+          action: EAction.move({ dir: "E" }),
+          entity: actor
+        })
+      )
+
+      expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
     }
   })
 

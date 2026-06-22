@@ -196,6 +196,11 @@ export const Wall = S.TaggedStruct("wall", {
   ...EntityBaseFields,
   variant: DirectionalVariant
 })
+export const TentWall = S.TaggedStruct("tent-wall", {
+  ...EntityBaseFields,
+  variant: DirectionalVariant
+})
+export const TentPost = S.TaggedStruct("tent-post", EntityBaseFields)
 export const Floor = S.TaggedStruct("floor", EntityBaseFields)
 export const Tunnel = S.TaggedStruct("tunnel", EntityBaseFields)
 export const Tent = S.TaggedStruct("tent", EntityBaseFields)
@@ -208,6 +213,8 @@ export const Temple = S.TaggedStruct("temple", EntityBaseFields)
 
 export const AnyTerrain = S.Union(
   Wall,
+  TentWall,
+  TentPost,
   Floor,
   Tunnel,
   Tent,

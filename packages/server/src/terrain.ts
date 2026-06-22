@@ -7,6 +7,8 @@ import {
   type Sign as SignSchema,
   type Temple as TempleSchema,
   type Tent as TentSchema,
+  type TentPost as TentPostSchema,
+  type TentWall as TentWallSchema,
   type Tunnel as TunnelSchema,
   type Wall as WallSchema
 } from "@flaghack/domain/schemas"
@@ -15,6 +17,8 @@ import { KeyGenerator } from "./keyGenerator.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof WallSchema.Type
+export type TentWall = typeof TentWallSchema.Type
+export type TentPost = typeof TentPostSchema.Type
 export type Floor = typeof FloorSchema.Type
 export type Tunnel = typeof TunnelSchema.Type
 export type Tent = typeof TentSchema.Type
@@ -36,6 +40,30 @@ export const makeWall = (
   in: "world",
   _tag: "wall",
   variant: variant ?? "none",
+  key
+})
+export const makeTentWall = (
+  key: string,
+  x: number,
+  y: number,
+  z: number,
+  variant?: DirectionalVariant
+): TentWall => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "tent-wall",
+  variant: variant ?? "none",
+  key
+})
+export const makeTentPost = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): TentPost => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "tent-post",
   key
 })
 export const makeFloor = (
@@ -117,6 +145,29 @@ export const wall = (
     const key = yield* keyGenerator.nextKey
 
     return makeWall(key, x, y, z, variant)
+  })
+export const tentWall = (
+  x: number,
+  y: number,
+  z: number,
+  variant?: DirectionalVariant
+): Effect.Effect<TentWall, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeTentWall(key, x, y, z, variant)
+  })
+export const tentPost = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<TentPost, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeTentPost(key, x, y, z)
   })
 export const floor = (
   x: number,

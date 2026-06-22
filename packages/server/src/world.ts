@@ -47,6 +47,8 @@ import {
   sign,
   temple,
   tent,
+  tentPost,
+  tentWall,
   testWalls,
   tunnel,
   wall
@@ -106,6 +108,8 @@ const itemTags = new globalThis.Set<Entity["_tag"]>([
 ])
 const terrainTags = new globalThis.Set<Entity["_tag"]>([
   "wall",
+  "tent-wall",
+  "tent-post",
   "floor",
   "tunnel",
   "tent",
@@ -117,7 +121,8 @@ const terrainTags = new globalThis.Set<Entity["_tag"]>([
 export const isCreature = (e: Entity): e is Creature =>
   creatureTags.has(e._tag)
 export const isTerrain = (e: Entity): boolean => terrainTags.has(e._tag)
-export const isImpassable = (e: Entity) => e._tag === "wall"
+export const isImpassable = (e: Entity) =>
+  e._tag === "wall" || e._tag === "tent-wall" || e._tag === "tent-post"
 export const isPassableTerrain = (e: Entity) =>
   isTerrain(e) && !isImpassable(e)
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
@@ -644,6 +649,7 @@ export type TentStructureSpec =
 export type TentStructureTiles = {
   readonly roofCoordinates: ReadonlyArray<GridPosition>
   readonly wallCoordinates: ReadonlyArray<GridPosition>
+  readonly postCoordinates: ReadonlyArray<GridPosition>
   readonly doorCoordinates: ReadonlyArray<GridPosition>
   readonly floorCoordinates: ReadonlyArray<GridPosition>
 }
@@ -765,6 +771,7 @@ const personalTentStructureTiles = (
     floorCoordinates: uniqueGridPositions(
       roofCoordinates.concat(doorCoordinates)
     ),
+    postCoordinates: [],
     roofCoordinates,
     wallCoordinates
   }
@@ -815,6 +822,7 @@ const carportStructureTiles = (
   return {
     doorCoordinates: [],
     floorCoordinates: roofCoordinates,
+    postCoordinates: [],
     roofCoordinates,
     wallCoordinates: uniqueGridPositions(wallCoordinates)
   }
@@ -856,7 +864,7 @@ const popupStructureTiles = (
     spec.origin.y,
     spec.origin.y + height - 1
   )
-  const wallCoordinates = popupPostCoordinates(
+  const postCoordinates = popupPostCoordinates(
     spec.origin.x - 1,
     spec.origin.x + width,
     spec.origin.y - 1,
@@ -867,8 +875,9 @@ const popupStructureTiles = (
   return {
     doorCoordinates: [],
     floorCoordinates: roofCoordinates,
+    postCoordinates,
     roofCoordinates,
-    wallCoordinates
+    wallCoordinates: []
   }
 }
 
@@ -1228,6 +1237,13 @@ const campWallCoordinates = (
     structureTiles.flatMap((tiles) => tiles.wallCoordinates)
   )
 
+const campPostCoordinates = (
+  structureTiles: ReadonlyArray<TentStructureTiles>
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    structureTiles.flatMap((tiles) => tiles.postCoordinates)
+  )
+
 const campFloorCoordinates = (
   structureTiles: ReadonlyArray<TentStructureTiles>
 ): Array<GridPosition> =>
@@ -1496,10 +1512,14 @@ export const makeCampgroundLevel = (
     const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
     const rawStructureRoofCoordinates = campRoofCoordinates(structureTiles)
     const rawStructureWallCoordinates = campWallCoordinates(structureTiles)
+    const rawStructurePostCoordinates = campPostCoordinates(structureTiles)
     const structureRoofCoordinates = rawStructureRoofCoordinates.filter(
       (coordinate) => !roadKeys.has(gridKey(coordinate))
     )
     const structureWallCoordinates = rawStructureWallCoordinates.filter(
+      (coordinate) => !roadKeys.has(gridKey(coordinate))
+    )
+    const structurePostCoordinates = rawStructurePostCoordinates.filter(
       (coordinate) => !roadKeys.has(gridKey(coordinate))
     )
     const structureFloorCoordinates = campFloorCoordinates(structureTiles)
@@ -1511,6 +1531,7 @@ export const makeCampgroundLevel = (
         .concat(templeWalls)
         .concat([templeMarker])
         .concat(structureWallCoordinates)
+        .concat(structurePostCoordinates)
         .map(gridKey)
     )
     const requiredFloorCoordinates = uniqueGridPositions(
@@ -1534,6 +1555,7 @@ export const makeCampgroundLevel = (
       .concat(templeWalls)
       .concat([templeMarker])
       .concat(structureWallCoordinates)
+      .concat(structurePostCoordinates)
       .concat(structureRoofCoordinates)
       .concat(themeCamps.map((layout) => layout.signPosition))
       .concat(themeCamps.map((layout) => layout.coolerPosition))
@@ -1565,12 +1587,17 @@ export const makeCampgroundLevel = (
     const tentWalls = yield* Effect.forEach(
       structureWallCoordinates,
       ({ x, y }) =>
-        wall(
+        tentWall(
           x,
           y,
           dlvl,
           tentWallVariant(structureWallCoordinates, { x, y })
         ),
+      { concurrency: 1 }
+    )
+    const tentPosts = yield* Effect.forEach(
+      structurePostCoordinates,
+      ({ x, y }) => tentPost(x, y, dlvl),
       { concurrency: 1 }
     )
     const tentRoofs = yield* Effect.forEach(
@@ -1619,6 +1646,7 @@ export const makeCampgroundLevel = (
       ...roads,
       ...templeWallEntities,
       ...tentWalls,
+      ...tentPosts,
       ...tentRoofs,
       ...signs,
       ...effigies,

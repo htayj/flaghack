@@ -374,23 +374,36 @@ describe("domain source schemas", () => {
         at: { x: 0, y: 0, z: 0 }
       },
       {
+        _tag: "tent-wall" as const,
+        key: "tent-wall-1",
+        in: "world",
+        at: { x: 1, y: 0, z: 0 },
+        variant: "vertical" as const
+      },
+      {
+        _tag: "tent-post" as const,
+        key: "tent-post-1",
+        in: "world",
+        at: { x: 2, y: 0, z: 0 }
+      },
+      {
         _tag: "sign" as const,
         key: "sign-1",
         in: "world",
-        at: { x: 1, y: 0, z: 0 },
+        at: { x: 3, y: 0, z: 0 },
         name: "Camp Schema"
       },
       {
         _tag: "effigy" as const,
         key: "effigy-1",
         in: "world",
-        at: { x: 2, y: 0, z: 0 }
+        at: { x: 4, y: 0, z: 0 }
       },
       {
         _tag: "temple" as const,
         key: "temple-1",
         in: "world",
-        at: { x: 3, y: 0, z: 0 }
+        at: { x: 5, y: 0, z: 0 }
       }
     ]
     const world = HashMap.fromIterable(

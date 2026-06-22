@@ -53,6 +53,21 @@ const makeWall = (variant: WallVariant): Wall => ({
   variant
 })
 
+const makeTentWall = (variant: WallVariant): Entity => ({
+  _tag: "tent-wall",
+  key: `tent-wall-${variant}`,
+  in: "world",
+  at: { x: 0, y: 0, z: 0 },
+  variant
+})
+
+const tentPost = {
+  _tag: "tent-post",
+  key: "tent-post-1",
+  in: "world",
+  at: { x: 0, y: 0, z: 0 }
+} satisfies Entity
+
 describe("getTile", () => {
   it("renders every directional wall variant", () => {
     for (const variant of wallVariants) {
@@ -72,6 +87,14 @@ describe("getTile", () => {
           at: { x: 0, y: 0, z: 0 }
         },
         tile: { char: "^", color: "yellow", bright: true }
+      },
+      {
+        entity: makeTentWall("vertical"),
+        tile: { char: "│", color: "yellow", bright: false }
+      },
+      {
+        entity: tentPost,
+        tile: { char: "┼", color: "yellow", bright: false }
       },
       {
         entity: {

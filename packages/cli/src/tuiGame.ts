@@ -411,10 +411,12 @@ export const moveTravelTarget = (
   clampTravelTarget(addPositions(target, movementDeltas[direction]), world)
 export const travelPrompt = (target: Pos): string =>
   `Travel target ${target.x},${target.y}: hjkl/yubn move, Enter travel, Esc cancel`
-const isPassableTravelTerrain = (entity: Entity): boolean =>
-  isTerrain(entity) && entity._tag !== "wall"
 const isImpassableTravelTerrain = (entity: Entity): boolean =>
-  isTerrain(entity) && entity._tag === "wall"
+  isTerrain(entity)
+  && (entity._tag === "wall" || entity._tag === "tent-wall"
+    || entity._tag === "tent-post")
+const isPassableTravelTerrain = (entity: Entity): boolean =>
+  isTerrain(entity) && !isImpassableTravelTerrain(entity)
 const findPlayerEntity = (world: World): Entity | undefined =>
   Array.from(world.pipe(HashMap.values)).find((entity) =>
     entity._tag === "player"
@@ -931,6 +933,8 @@ const zindex = (entity: Entity): number => {
     case "tunnel":
       return 0
     case "wall":
+    case "tent-wall":
+    case "tent-post":
     case "sign":
     case "effigy":
     case "temple":

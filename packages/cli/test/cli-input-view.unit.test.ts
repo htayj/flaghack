@@ -90,6 +90,23 @@ const wallAt = (
   key: `wall-${x}-${y}`,
   variant
 })
+const tentWallAt = (
+  x: number,
+  y: number,
+  variant: "none" | "vertical" = "none"
+): Entity => ({
+  _tag: "tent-wall",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `tent-wall-${x}-${y}`,
+  variant
+})
+const tentPostAt = (x: number, y: number): Entity => ({
+  _tag: "tent-post",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `tent-post-${x}-${y}`
+})
 const playerAt = (x: number, y: number): Entity => ({
   _tag: "player",
   at: { x, y, z: 0 },
@@ -600,21 +617,48 @@ describe("CLI campground camera", () => {
     expect(tiles[10]?.[40]?.char).toBe("@")
   })
 
-  it("draws floor inside tents and walls over tent terrain regardless of insertion order", () => {
+  it("draws floor inside tents and tent blockers over tent terrain regardless of insertion order", () => {
     const floorUnderTentWorlds = [
       worldFromEntities([floorAt(1, 2), tentAt(1, 2)]),
       worldFromEntities([tentAt(1, 2), floorAt(1, 2)])
     ]
-    const wallOverTentWorlds = [
-      worldFromEntities([tentAt(1, 2), wallAt(1, 2, "vertical")]),
-      worldFromEntities([wallAt(1, 2, "vertical"), tentAt(1, 2)])
+    const tentBlockerWorlds = [
+      {
+        char: "│",
+        worlds: [
+          worldFromEntities([tentAt(1, 2), wallAt(1, 2, "vertical")]),
+          worldFromEntities([wallAt(1, 2, "vertical"), tentAt(1, 2)])
+        ]
+      },
+      {
+        char: "│",
+        worlds: [
+          worldFromEntities([
+            tentAt(1, 2),
+            tentWallAt(1, 2, "vertical")
+          ]),
+          worldFromEntities([
+            tentWallAt(1, 2, "vertical"),
+            tentAt(1, 2)
+          ])
+        ]
+      },
+      {
+        char: "┼",
+        worlds: [
+          worldFromEntities([tentAt(1, 2), tentPostAt(1, 2)]),
+          worldFromEntities([tentPostAt(1, 2), tentAt(1, 2)])
+        ]
+      }
     ]
 
     for (const world of floorUnderTentWorlds) {
       expect(drawWorld(world)[2]?.[1]?.char).toBe("·")
     }
-    for (const world of wallOverTentWorlds) {
-      expect(drawWorld(world)[2]?.[1]?.char).toBe("│")
+    for (const { char, worlds } of tentBlockerWorlds) {
+      for (const world of worlds) {
+        expect(drawWorld(world)[2]?.[1]?.char).toBe(char)
+      }
     }
   })
 
@@ -624,6 +668,8 @@ describe("CLI campground camera", () => {
         floorAt(1, 2),
         tentAt(1, 2),
         wallAt(1, 2, "vertical"),
+        tentWallAt(1, 2, "vertical"),
+        tentPostAt(1, 2),
         waterAt(1, 2),
         playerAt(1, 2)
       ])
@@ -1188,20 +1234,28 @@ describe("CLI NetHack travel pathfinding", () => {
     )).toEqual([])
   })
 
-  it("does not route through a passable tile that also has a wall", () => {
-    const world = worldFromEntities([
-      playerAt(0, 0),
-      floorAt(0, 0),
-      floorAt(1, 0),
+  it("does not route through a passable tile that also has a wall, tent wall, or post", () => {
+    const blockers = [
       wallAt(1, 0),
-      floorAt(2, 0)
-    ])
+      tentWallAt(1, 0),
+      tentPostAt(1, 0)
+    ]
 
-    expect(findTravelDirections(
-      world,
-      { x: 0, y: 0, z: 0 },
-      { x: 2, y: 0, z: 0 }
-    )).toEqual([])
+    for (const blocker of blockers) {
+      const world = worldFromEntities([
+        playerAt(0, 0),
+        floorAt(0, 0),
+        floorAt(1, 0),
+        blocker,
+        floorAt(2, 0)
+      ])
+
+      expect(findTravelDirections(
+        world,
+        { x: 0, y: 0, z: 0 },
+        { x: 2, y: 0, z: 0 }
+      )).toEqual([])
+    }
   })
 
   it("treats creature-occupied floor tiles as blocked while routing", () => {

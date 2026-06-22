@@ -51,6 +51,21 @@ const tentPost = {
   in: "world"
 } satisfies Entity
 
+const closedDoor = {
+  _tag: "door",
+  key: "door-closed-1",
+  at: position,
+  in: "world",
+  open: false,
+  variant: "vertical"
+} satisfies Entity
+
+const openDoor = {
+  ...closedDoor,
+  key: "door-open-1",
+  open: true
+} satisfies Entity
+
 const player = {
   _tag: "player",
   key: "player",
@@ -100,6 +115,18 @@ const tentWallTile = {
 
 const tentPostTile = {
   char: "┼",
+  color: "yellow",
+  bright: false
+}
+
+const closedDoorTile = {
+  char: "│",
+  color: "yellow",
+  bright: false
+}
+
+const openDoorTile = {
+  char: "+",
   color: "yellow",
   bright: false
 }
@@ -200,6 +227,24 @@ describe("web drawWorld layering", () => {
         expect(drawWorld(world)[2]?.[1]).toEqual(tile)
       }
     }
+  })
+
+  it("draws closed doors as dark-yellow walls and open doors as dark-yellow plus signs", () => {
+    expect(
+      drawWorld(
+        HashMap.fromIterable<string, Entity>([[
+          closedDoor.key,
+          closedDoor
+        ]])
+      )[2]
+        ?.[1]
+    ).toEqual(closedDoorTile)
+    expect(
+      drawWorld(
+        HashMap.fromIterable<string, Entity>([[openDoor.key, openDoor]])
+      )[2]
+        ?.[1]
+    ).toEqual(openDoorTile)
   })
 
   it("draws creatures over items and terrain", () => {

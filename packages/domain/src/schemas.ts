@@ -203,6 +203,11 @@ export const Wall = S.TaggedStruct("wall", {
   ...EntityBaseFields,
   variant: DirectionalVariant
 })
+export const Door = S.TaggedStruct("door", {
+  ...EntityBaseFields,
+  open: S.Boolean,
+  variant: DirectionalVariant
+})
 export const TentWall = S.TaggedStruct("tent-wall", {
   ...EntityBaseFields,
   variant: DirectionalVariant
@@ -220,6 +225,7 @@ export const Temple = S.TaggedStruct("temple", EntityBaseFields)
 
 export const AnyTerrain = S.Union(
   Wall,
+  Door,
   TentWall,
   TentPost,
   Floor,
@@ -247,6 +253,8 @@ const ActionOptions = [
   S.TaggedStruct("apply", {}),
   S.TaggedStruct("noop", {}),
   S.TaggedStruct("move", { dir: Direction }),
+  S.TaggedStruct("open", { dir: Direction }),
+  S.TaggedStruct("close", { dir: Direction }),
   S.TaggedStruct("pickupMulti", { keys: S.Array(Key) }),
   S.TaggedStruct("dropMulti", { keys: S.Array(Key) }),
   S.TaggedStruct("lootTakeMulti", {

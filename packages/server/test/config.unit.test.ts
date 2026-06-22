@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   DEFAULT_SERVER_PORT,
+  resolveSaveFilePath,
   resolveServerConfig,
   resolveServerPort
 } from "../src/config.js"
@@ -12,9 +13,15 @@ const testDir = dirname(fileURLToPath(import.meta.url))
 const serverSourcePath = join(testDir, "../src/server.ts")
 
 describe("server runtime config", () => {
-  it("defaults to port 3000", () => {
+  it("defaults to port 3000 and an XDG/HOME save file path", () => {
     expect(resolveServerPort({})).toBe(DEFAULT_SERVER_PORT)
-    expect(resolveServerConfig({})).toEqual({ port: DEFAULT_SERVER_PORT })
+    expect(resolveServerConfig({ HOME: "/home/tester" })).toEqual({
+      port: DEFAULT_SERVER_PORT,
+      saveFilePath: "/home/tester/.local/state/flag-hack/save.json"
+    })
+    expect(resolveSaveFilePath({ XDG_STATE_HOME: "/state" })).toBe(
+      "/state/flag-hack/save.json"
+    )
   })
 
   it("uses trimmed FLAGHACK_PORT before PORT", () => {
@@ -27,6 +34,19 @@ describe("server runtime config", () => {
     expect(resolveServerPort({ PORT: " 4002 " })).toBe(4002)
     expect(resolveServerPort({ FLAGHACK_PORT: " ", PORT: "4003" }))
       .toBe(4003)
+  })
+
+  it("uses a trimmed explicit FLAGHACK_SAVE_PATH before XDG/HOME defaults", () => {
+    expect(
+      resolveServerConfig({
+        FLAGHACK_SAVE_PATH: " /tmp/flaghack-save.json ",
+        HOME: "/home/tester",
+        XDG_STATE_HOME: "/state"
+      })
+    ).toEqual({
+      port: DEFAULT_SERVER_PORT,
+      saveFilePath: "/tmp/flaghack-save.json"
+    })
   })
 
   it("falls back to the default when port env values are empty", () => {

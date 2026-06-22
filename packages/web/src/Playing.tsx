@@ -18,7 +18,13 @@ import type {
 import { Effect, HashMap, Option } from "effect"
 import { size } from "effect/HashMap"
 import { List, Map } from "immutable"
-import { type KeyboardEvent, useEffect, useRef, useState } from "react"
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState
+} from "react"
 import type { Tiles } from "./GameBoard.tsx"
 import GameBoard from "./GameBoard.tsx"
 import {
@@ -26,7 +32,9 @@ import {
   getInventory,
   getPickupItemsFor,
   getWorld,
-  LiveRuntime
+  LiveRuntime,
+  quitGame,
+  saveGame
 } from "./GameClient.js"
 import Inventory from "./Inventory.tsx"
 import Messages, { MAX_VISIBLE_MESSAGES } from "./Messages.tsx"
@@ -48,31 +56,71 @@ type Pos = typeof PosSchema.Type
 type Props = {
   username: string
 }
+type Direction = "N" | "E" | "S" | "W" | "NE" | "NW" | "SE" | "SW"
+type DirectionalActionKind = "open" | "close"
+type ExtendedCommand = "quit" | "save"
+const quitWarningPrompt =
+  "Really quit? This permanently ends the game; save exits without quitting. [yn]"
 const getTileOrDefault = (e: Entity | undefined): Tile =>
   e === undefined ? { color: "black", char: " " } : getTile(e)
 
-export const parseInput = (input: string): Option.Option<Action> => {
+const directionForInput = (input: string): Direction | undefined => {
   switch (input) {
     case "j":
-      return Option.some(EAction.move({ dir: "S" }))
+      return "S"
     case "h":
-      return Option.some(EAction.move({ dir: "W" }))
+      return "W"
     case "k":
-      return Option.some(EAction.move({ dir: "N" }))
+      return "N"
     case "l":
-      return Option.some(EAction.move({ dir: "E" }))
+      return "E"
     case "y":
-      return Option.some(EAction.move({ dir: "NW" }))
+      return "NW"
     case "u":
-      return Option.some(EAction.move({ dir: "NE" }))
+      return "NE"
     case "b":
-      return Option.some(EAction.move({ dir: "SW" }))
+      return "SW"
     case "n":
-      return Option.some(EAction.move({ dir: "SE" }))
+      return "SE"
+    default:
+      return undefined
+  }
+}
+
+export const parseInput = (input: string): Option.Option<Action> => {
+  const dir = directionForInput(input)
+  return dir === undefined
+    ? Option.none()
+    : Option.some(EAction.move({ dir }))
+}
+
+export const parseDirectionalActionInput = (
+  kind: DirectionalActionKind,
+  input: string
+): Option.Option<Action> => {
+  const dir = directionForInput(input)
+  if (dir === undefined) return Option.none()
+
+  return Option.some(
+    kind === "open" ? EAction.open({ dir }) : EAction.close({ dir })
+  )
+}
+
+export const parseExtendedCommand = (
+  input: string
+): Option.Option<ExtendedCommand> => {
+  switch (input.trim().replace(/^#/u, "").toLowerCase()) {
+    case "quit":
+      return Option.some("quit")
+    case "save":
+      return Option.some("save")
     default:
       return Option.none()
   }
 }
+
+const directionActionPrompt = (kind: DirectionalActionKind): string =>
+  `${kind === "open" ? "Open" : "Close"} direction: hjkl/yubn, Esc cancel`
 
 const getPosition = (e: Entity): Pos | undefined =>
   e.in === "world" ? e.at : undefined
@@ -149,6 +197,7 @@ const zindex = (entity: Entity): number => {
     case "tunnel":
       return 0
     case "wall":
+    case "door":
     case "tent-wall":
     case "tent-post":
     case "sign":
@@ -208,14 +257,34 @@ export default function BPlaying(_props: Props) {
   )
   const [showPickup, setShowPickup] = useState<boolean>(false)
   const [inventory, setInventory] = useState<World>(HashMap.empty())
-  const refreshWorldAndInventory = Effect.all({
-    world: getWorld,
-    inventory: getInventory
-  }).pipe(
-    Effect.tap(({ world }) => Effect.sync(() => setWorld(world))),
-    Effect.tap(({ inventory }) =>
-      Effect.sync(() => setInventory(inventory))
-    )
+  const [pendingDirectionalAction, setPendingDirectionalAction] = useState<
+    DirectionalActionKind | undefined
+  >(undefined)
+  const [pendingExtendedCommand, setPendingExtendedCommand] = useState<
+    string | undefined
+  >(undefined)
+  const [pendingQuitConfirmation, setPendingQuitConfirmation] = useState(
+    false
+  )
+  const [terminalState, setTerminalState] = useState<
+    "quit" | "saved" | undefined
+  >(undefined)
+  const terminalPendingRef = useRef(false)
+  const refreshWorldAndInventory = Effect.suspend(() =>
+    terminalPendingRef.current
+      ? Effect.void
+      : Effect.all({
+        world: getWorld,
+        inventory: getInventory
+      }).pipe(
+        Effect.tap(({ inventory, world }) =>
+          Effect.sync(() => {
+            if (terminalPendingRef.current) return
+            setWorld(world)
+            setInventory(inventory)
+          })
+        )
+      )
   )
 
   useEffect(() => {
@@ -234,6 +303,17 @@ export default function BPlaying(_props: Props) {
       )
     )
   }, [world])
+  const runPlayerAction = useCallback(
+    (action: Action) => {
+      if (terminalPendingRef.current) return
+      void LiveRuntime.runPromise(
+        doPlayerAction(action).pipe(
+          Effect.andThen(refreshWorldAndInventory)
+        )
+      )
+    },
+    [refreshWorldAndInventory]
+  )
   const theDrawMatrix = drawWorld(world)
 
   // const handleKeyDown = (event: any) =>
@@ -243,12 +323,178 @@ export default function BPlaying(_props: Props) {
   //     Match.when(188, () => markAll()) // ,
   //   )
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const input = event.key
+    const input = event.ctrlKey
+      ? `C-${event.key.toLowerCase()}`
+      : event.key
+
+    if (input === "C-s" || input === "C-q") {
+      event.preventDefault()
+    }
+
+    if (terminalState !== undefined || terminalPendingRef.current) {
+      event.preventDefault()
+      return
+    }
+
+    const saveAndExit = () => {
+      setPendingDirectionalAction(undefined)
+      setPendingExtendedCommand(undefined)
+      setPendingQuitConfirmation(false)
+      terminalPendingRef.current = true
+      setMessages(prependMessage("saving"))
+      void LiveRuntime.runPromise(
+        saveGame.pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              setTerminalState("saved")
+              setMessages(prependMessage("saved; you may close this tab"))
+            })
+          ),
+          Effect.catchAllCause((cause) =>
+            Effect.sync(() => {
+              terminalPendingRef.current = false
+              setMessages(prependMessage(`save failed: ${String(cause)}`))
+            })
+          )
+        )
+      )
+    }
+
+    const beginQuitConfirmation = () => {
+      setPendingDirectionalAction(undefined)
+      setPendingExtendedCommand(undefined)
+      setPendingQuitConfirmation(true)
+      setMessages(prependMessage(quitWarningPrompt))
+    }
+
+    if (pendingQuitConfirmation) {
+      switch (input.toLowerCase()) {
+        case "y":
+          setPendingQuitConfirmation(false)
+          terminalPendingRef.current = true
+          setMessages(prependMessage("quitting"))
+          void LiveRuntime.runPromise(
+            quitGame.pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  setTerminalState("quit")
+                  setMessages(
+                    prependMessage("game quit; you may close this tab")
+                  )
+                })
+              ),
+              Effect.catchAllCause((cause) =>
+                Effect.sync(() => {
+                  terminalPendingRef.current = false
+                  setMessages(
+                    prependMessage(`quit failed: ${String(cause)}`)
+                  )
+                })
+              )
+            )
+          )
+          return
+        case "n":
+        case "escape":
+          setPendingQuitConfirmation(false)
+          setMessages(prependMessage("quit canceled"))
+          return
+        default:
+          setMessages(prependMessage(quitWarningPrompt))
+          return
+      }
+    }
+
+    if (pendingExtendedCommand !== undefined) {
+      switch (input) {
+        case "Escape":
+          setPendingExtendedCommand(undefined)
+          setMessages(prependMessage("canceled extended command"))
+          return
+        case "Backspace":
+          setPendingExtendedCommand(pendingExtendedCommand.slice(0, -1))
+          return
+        case "Enter": {
+          const command = parseExtendedCommand(pendingExtendedCommand)
+          setPendingExtendedCommand(undefined)
+          if (Option.isSome(command) && command.value === "save") {
+            saveAndExit()
+          } else if (Option.isSome(command) && command.value === "quit") {
+            beginQuitConfirmation()
+          } else {
+            setMessages(
+              prependMessage(
+                `unknown extended command: #${pendingExtendedCommand}`
+              )
+            )
+          }
+          return
+        }
+        default:
+          if (/^[a-z]$/iu.test(input)) {
+            setPendingExtendedCommand(
+              `${pendingExtendedCommand}${input.toLowerCase()}`
+            )
+          } else {
+            setPendingExtendedCommand(undefined)
+          }
+          return
+      }
+    }
+
+    if (pendingDirectionalAction !== undefined) {
+      if (input === "Escape") {
+        setPendingDirectionalAction(undefined)
+        setMessages(prependMessage(`canceled ${pendingDirectionalAction}`))
+        return
+      }
+
+      const directionalAction = parseDirectionalActionInput(
+        pendingDirectionalAction,
+        input
+      )
+      setPendingDirectionalAction(undefined)
+      if (Option.isNone(directionalAction)) {
+        setMessages(prependMessage(`canceled ${pendingDirectionalAction}`))
+        return
+      }
+
+      runPlayerAction(directionalAction.value)
+      return
+    }
+
+    if (input === "C-s") {
+      saveAndExit()
+      return
+    }
+
+    if (input === "C-q") {
+      beginQuitConfirmation()
+      return
+    }
+
+    if (input === "#") {
+      setPendingDirectionalAction(undefined)
+      setPendingExtendedCommand("")
+      setMessages(prependMessage("extended command: #"))
+      return
+    }
+
+    if (input === "o" || input === "c") {
+      const kind = input === "o" ? "open" : "close"
+      setPendingDirectionalAction(kind)
+      setMessages(prependMessage(directionActionPrompt(kind)))
+      return
+    }
+
     if (input === ",") {
       void LiveRuntime.runPromise(
         getPickupItemsFor("player").pipe(
           Effect.tap((contents) =>
-            Effect.sync(() => setPickupContents(contents))
+            Effect.sync(() => {
+              if (terminalPendingRef.current) return
+              setPickupContents(contents)
+            })
           )
         )
       )
@@ -259,17 +505,14 @@ export default function BPlaying(_props: Props) {
         return
       }
 
-      void LiveRuntime.runPromise(
-        doPlayerAction(action.value).pipe(
-          Effect.andThen(refreshWorldAndInventory)
-        )
-      )
+      runPlayerAction(action.value)
     }
   }
   // useEffect(() => {}) was the legacy react-blessed keyboard path.
 
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
+    if (terminalState !== undefined || terminalPendingRef.current) return
     void LiveRuntime.runPromise(
       doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
         Effect.andThen(refreshWorldAndInventory),
@@ -295,6 +538,12 @@ export default function BPlaying(_props: Props) {
       tabIndex={0}
     >
       <Messages messages={messages} />
+      {terminalState === "saved"
+        ? <p role="status">Game saved. You may close this tab.</p>
+        : null}
+      {terminalState === "quit"
+        ? <p role="status">Game quit. You may close this tab.</p>
+        : null}
       <GameBoard tiles={theDrawMatrix} />
       <PickupPopup
         items={pickupContents}

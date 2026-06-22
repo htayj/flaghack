@@ -316,6 +316,57 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 	}
 }
 
+func TestDoorDirectionPromptDispatchesOpenAndCloseActions(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "door-1", Tag: "door", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+
+	next, cmd := m.handleKey(charmRuneKey('o'))
+	if cmd != nil {
+		t.Fatalf("open key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.pendingDoorAction != "open" || !strings.Contains(m.messages[0], "Open direction") {
+		t.Fatalf("open prompt state = %q messages=%#v", m.pendingDoorAction, m.messages)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('L'))
+	if cmd != nil {
+		t.Fatalf("shifted run direction in door prompt returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.pendingDoorAction != "" || !strings.Contains(m.messages[0], "canceled open") {
+		t.Fatalf("shifted direction should cancel prompt, pending=%q messages=%#v", m.pendingDoorAction, m.messages)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('o'))
+	if cmd != nil {
+		t.Fatalf("open key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	next, cmd = m.handleKey(charmRuneKey('l'))
+	if cmd == nil {
+		t.Fatal("open direction should dispatch an open action")
+	}
+	m = next.(model)
+	if m.pendingDoorAction != "" {
+		t.Fatalf("pending door action after direction = %q, want cleared", m.pendingDoorAction)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('c'))
+	if cmd != nil {
+		t.Fatalf("close key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.pendingDoorAction != "close" || !strings.Contains(m.messages[0], "Close direction") {
+		t.Fatalf("close prompt state = %q messages=%#v", m.pendingDoorAction, m.messages)
+	}
+}
+
 func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	encoded, err := json.Marshal(actionPayload{Action: action{Tag: "move", Dir: "E"}})
 	if err != nil {
@@ -370,6 +421,15 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	if string(quaff) != wantQuaff {
 		t.Fatalf("encoded quaff = %s, want %s", quaff, wantQuaff)
 	}
+
+	open, err := json.Marshal(actionPayload{Action: action{Tag: "open", Dir: "E"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOpen := `{"action":{"_tag":"open","dir":"E"}}`
+	if string(open) != wantOpen {
+		t.Fatalf("encoded open = %s, want %s", open, wantOpen)
+	}
 }
 
 func TestTileForCampgroundMarkers(t *testing.T) {
@@ -381,6 +441,7 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 		{tag: "tent", char: "^"},
 		{tag: "tent-wall", char: "│", variant: "vertical"},
 		{tag: "tent-post", char: "┼"},
+		{tag: "door", char: "│", variant: "vertical"},
 		{tag: "sign", char: "?"},
 		{tag: "effigy", char: "Y"},
 		{tag: "temple", char: "Ω"},
@@ -405,6 +466,8 @@ func TestDrawWorldLayersFloorInsideTentsWallsItemsAndCreatures(t *testing.T) {
 	wall := entity{Key: "wall", Tag: "wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
 	tentWall := entity{Key: "tent-wall", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
 	tentPost := entity{Key: "tent-post", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	closedDoor := entity{Key: "door-closed", Tag: "door", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
+	openDoor := entity{Key: "door-open", Tag: "door", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical", Open: true}
 	beer := entity{Key: "beer", Tag: "beer", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	player := entity{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Name: "you"}
 
@@ -431,6 +494,12 @@ func TestDrawWorldLayersFloorInsideTentsWallsItemsAndCreatures(t *testing.T) {
 			t.Fatalf("tent/blocker tile = %q, want %s", got, tc.want)
 		}
 	}
+	if got := drawWorld([]entity{floor, closedDoor}, nil)[2][1].char; got != "│" {
+		t.Fatalf("closed door tile = %q, want │", got)
+	}
+	if got := drawWorld([]entity{floor, openDoor}, nil)[2][1].char; got != "+" {
+		t.Fatalf("open door tile = %q, want +", got)
+	}
 
 	if got := drawWorld([]entity{floor, tent, wall, tentWall, tentPost, beer}, nil)[2][1].char; got != "!" {
 		t.Fatalf("item over terrain tile = %q, want !", got)
@@ -453,9 +522,10 @@ func TestFindTravelDirectionsUsesKnownPassableTiles(t *testing.T) {
 	}
 }
 
-func TestFindTravelDirectionsTreatsWallOverPassableTileAsBlocked(t *testing.T) {
+func TestFindTravelDirectionsTreatsClosedDoorsAndWallsOverPassableTilesAsBlocked(t *testing.T) {
 	blockers := []entity{
 		{Key: "wall-1", Tag: "wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "door-1", Tag: "door", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
 		{Key: "tent-wall-1", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
 		{Key: "tent-post-1", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 	}
@@ -489,6 +559,66 @@ func TestNormalizeBubbleTeaInputRecognizesAltLoot(t *testing.T) {
 	command, ok := parseMovementCommand("M+l")
 	if !ok || command.tag != "no-pickup-run" || command.dir != "E" {
 		t.Fatalf("M+l parsed as %#v, %v; want no-pickup-run east", command, ok)
+	}
+}
+
+func TestSaveAndQuitControlKeysCallLifecycleEndpoints(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/save", "/quit":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}}}
+
+	next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = next.(model)
+	if cmd == nil {
+		t.Fatal("Ctrl-S should save and exit through a command")
+	}
+	if _, ok := cmd().(saveDoneMsg); !ok {
+		t.Fatalf("Ctrl-S command returned unexpected message")
+	}
+	if len(paths) != 1 || paths[0] != "/save" {
+		t.Fatalf("paths after save = %#v, want [/save]", paths)
+	}
+
+	if !m.pendingTerminalAction {
+		t.Fatal("Ctrl-S should suppress gameplay while save is pending")
+	}
+
+	m = newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}}}
+	next, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m = next.(model)
+	if cmd != nil || !m.pendingQuitConfirmation || !strings.Contains(m.messages[0], "save exits without quitting") {
+		t.Fatalf("Ctrl-Q prompt state pending=%v cmd=%#v messages=%#v", m.pendingQuitConfirmation, cmd, m.messages)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('y'))
+	m = next.(model)
+	if cmd == nil {
+		t.Fatal("confirming quit should call quit endpoint")
+	}
+	if _, ok := cmd().(quitDoneMsg); !ok {
+		t.Fatalf("quit command returned unexpected message")
+	}
+	if m.pendingQuitConfirmation {
+		t.Fatal("quit confirmation should clear after y")
+	}
+	if len(paths) != 2 || paths[1] != "/quit" {
+		t.Fatalf("paths after quit = %#v, want second /quit", paths)
 	}
 }
 

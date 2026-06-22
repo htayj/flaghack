@@ -6,6 +6,7 @@ import {
   AnyTerrain,
   conforms,
   ContainerCollection,
+  Door,
   DrinkItemTags,
   EAction,
   EEntity,
@@ -295,6 +296,12 @@ describe("domain source schemas", () => {
         keys: [sampleBeer.key, "water-1"]
       })
     )
+    expectRight(
+      S.decodeUnknownEither(SAction)({ _tag: "open", dir: "E" })
+    )
+    expectRight(
+      S.decodeUnknownEither(SAction)({ _tag: "close", dir: "W" })
+    )
 
     expect(
       Either.isLeft(
@@ -399,6 +406,25 @@ describe("domain source schemas", () => {
         at: { x: 0, y: 0, z: 0 }
       })
     ).toBe(false)
+  })
+
+  it("validates door terrain payloads", () => {
+    const closedDoor = Door.make({
+      at: { x: 1, y: 0, z: 0 },
+      in: "world",
+      key: "door-1",
+      open: false,
+      variant: "vertical"
+    })
+    const openDoor = { ...closedDoor, key: "door-2", open: true }
+
+    expect(Either.isRight(S.validateEither(AnyTerrain)(closedDoor)))
+      .toBe(true)
+    expect(Either.isRight(S.validateEither(AnyTerrain)(openDoor)))
+      .toBe(true)
+    expect(Either.isRight(S.validateEither(Entity)(closedDoor))).toBe(
+      true
+    )
   })
 
   it("validates campground terrain markers in worlds", () => {

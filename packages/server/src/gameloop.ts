@@ -52,6 +52,7 @@ import {
   setupIsComplete,
   setupStateFor
 } from "./setup.js"
+import { makeDoor, makeFloor } from "./terrain.js"
 import {
   CampgroundGenLevel,
   campgroundReservedTravelCorridorCoordinates,
@@ -79,6 +80,10 @@ const spawnDistanceSquared = (entity: Entity): number =>
   + (entity.at.y - campgroundSpawnAnchor.y) ** 2
   + (entity.at.z - campgroundSpawnAnchor.z) ** 2
 
+const doorFixtureRequested = (): boolean =>
+  process.env.FLAGHACK_GAME_FIXTURE === "door"
+  || process.env.FLAGHACK_DOOR_FIXTURE === "1"
+
 const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> => {
   const spawnFloor = Array.from(world.pipe(HashMap.values))
     .filter((entity) => entity._tag === "floor")
@@ -101,6 +106,10 @@ const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> => {
 
 const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
   function*() {
+    if (doorFixtureRequested()) {
+      return yield* makeDoorFixtureGameState()
+    }
+
     const testLevel: World = yield* CampgroundGenLevel(777, 0).pipe(
       Effect.orDie
     )
@@ -127,6 +136,28 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
     })
   }
 )
+
+const makeDoorFixtureGameState = (): Effect.Effect<TGameState> =>
+  Effect.sync(() => {
+    const testPlayer = player(0, 0, 0)
+    const entities: Array<Entity> = [
+      testPlayer,
+      makeFloor("door-fixture-floor-0", 0, 0, 0),
+      makeFloor("door-fixture-floor-1", 1, 0, 0),
+      makeFloor("door-fixture-floor-2", 2, 0, 0),
+      makeDoor("door-fixture-door-1", 1, 0, 0, false, "vertical")
+    ]
+
+    return GameState.make({
+      setup: { phase: "complete" },
+      world: HashMap.fromIterable(entities.map((entity) =>
+        [
+          entity.key,
+          entity
+        ] as const
+      ))
+    })
+  })
 
 export const DefaultGameStateStoreLive = GameStateStore.Default(
   makeInitialGameState

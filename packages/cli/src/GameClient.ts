@@ -1,11 +1,19 @@
 import { HttpApiClient } from "@effect/platform"
-import { GameApi } from "@flaghack/domain/GameApi"
+import {
+  GameApi,
+  LocalMutationHeaderName,
+  LocalMutationHeaderValue
+} from "@flaghack/domain/GameApi"
 import type { RoleId } from "@flaghack/domain/roles"
 import type { Action, Key } from "@flaghack/domain/schemas"
 import { Effect } from "effect"
 import { resolveCliApiBaseUrl } from "./config.js"
 
 type Key = typeof Key.Type
+
+const localMutationHeaders = {
+  [LocalMutationHeaderName]: LocalMutationHeaderValue
+} as const
 
 export class GameClient
   extends Effect.Service<GameClient>()("cli/GameClient", {
@@ -45,6 +53,15 @@ export class GameClient
           Effect.zipRight(client.game.doAction({ payload: { action } }))
         )
       }
+      const saveGame = client.game.saveGame({
+        headers: localMutationHeaders
+      })
+      const restoreGame = client.game.restoreGame({
+        headers: localMutationHeaders
+      })
+      const quitGame = client.game.quitGame({
+        headers: localMutationHeaders
+      })
       function selectRole(roleId: RoleId) {
         return client.game.selectRole({ payload: { roleId } })
       }
@@ -60,6 +77,9 @@ export class GameClient
         getLootContainersFor,
         getLootItemsFor,
         doPlayerAction,
+        saveGame,
+        restoreGame,
+        quitGame,
         selectRole,
         confirmSetup
       } as const

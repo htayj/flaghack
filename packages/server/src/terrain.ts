@@ -2,6 +2,7 @@ import {
   AnyTerrain,
   conforms,
   type DirectionalVariant as DirectionalVariantSchema,
+  type Door as DoorSchema,
   type Effigy as EffigySchema,
   type Floor as FloorSchema,
   type Sign as SignSchema,
@@ -17,6 +18,7 @@ import { KeyGenerator } from "./keyGenerator.js"
 
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof WallSchema.Type
+export type Door = typeof DoorSchema.Type
 export type TentWall = typeof TentWallSchema.Type
 export type TentPost = typeof TentPostSchema.Type
 export type Floor = typeof FloorSchema.Type
@@ -39,6 +41,21 @@ export const makeWall = (
   at: { x, y, z },
   in: "world",
   _tag: "wall",
+  variant: variant ?? "none",
+  key
+})
+export const makeDoor = (
+  key: string,
+  x: number,
+  y: number,
+  z: number,
+  open: boolean,
+  variant?: DirectionalVariant
+): Door => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "door",
+  open,
   variant: variant ?? "none",
   key
 })
@@ -145,6 +162,19 @@ export const wall = (
     const key = yield* keyGenerator.nextKey
 
     return makeWall(key, x, y, z, variant)
+  })
+export const door = (
+  x: number,
+  y: number,
+  z: number,
+  open = false,
+  variant?: DirectionalVariant
+): Effect.Effect<Door, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeDoor(key, x, y, z, open, variant)
   })
 export const tentWall = (
   x: number,

@@ -10,6 +10,13 @@ import {
   World
 } from "./schemas.js"
 
+export const LocalMutationHeaderName = "x-flaghack-client-intent"
+export const LocalMutationHeaderValue = "local-game-command"
+
+const LocalMutationHeaders = Schema.Struct({
+  [LocalMutationHeaderName]: Schema.Literal(LocalMutationHeaderValue)
+})
+
 export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
     HttpApiEndpoint.get("getLogs", "/logs").addSuccess(
@@ -37,6 +44,21 @@ export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
     HttpApiEndpoint.post("confirmSetup", "/setup/confirm").setPayload(
       Schema.Struct({ confirm: Schema.Boolean })
+    )
+  )
+  .add(
+    HttpApiEndpoint.post("saveGame", "/save").setHeaders(
+      LocalMutationHeaders
+    )
+  )
+  .add(
+    HttpApiEndpoint.post("restoreGame", "/restore").setHeaders(
+      LocalMutationHeaders
+    )
+  )
+  .add(
+    HttpApiEndpoint.post("quitGame", "/quit").setHeaders(
+      LocalMutationHeaders
     )
   )
   .add(

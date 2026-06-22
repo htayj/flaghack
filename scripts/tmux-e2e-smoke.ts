@@ -240,6 +240,7 @@ const run = async () => {
   const session = `flag-hack-smoke-${process.pid}-${Date.now()}`
   const artifactDir = await mkdtemp(path.join(tmpdir(), "flag-hack-tmux-"))
   const capturePath = path.join(artifactDir, "cli-pane.txt")
+  const saveFilePath = path.join(artifactDir, "save.json")
   let sessionCreated = false
   let cliPane: string | undefined
   let serverPane: string | undefined
@@ -258,6 +259,8 @@ const run = async () => {
       "36",
       `${perfEnvAssignments()} FLAGHACK_PORT=${
         String(PORT)
+      } FLAGHACK_SAVE_PATH=${
+        shellQuote(saveFilePath)
       } pnpm exec tsx packages/server/src/server.ts`.trim()
     ])
     sessionCreated = true

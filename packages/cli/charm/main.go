@@ -24,6 +24,8 @@ const (
 	maxVisibleMsgs             = 50
 	maxAutoMoveSteps           = boardWidth * boardHeight
 	defaultBaseURL             = "http://127.0.0.1:3000"
+	localMutationHeaderName    = "x-flaghack-client-intent"
+	localMutationHeaderValue   = "local-game-command"
 	travelWorldRefreshInterval = 24
 )
 
@@ -48,6 +50,7 @@ type entity struct {
 	In         string      `json:"in"`
 	Tag        string      `json:"_tag"`
 	Variant    string      `json:"variant,omitempty"`
+	Open       bool        `json:"open,omitempty"`
 	Name       string      `json:"name,omitempty"`
 	Role       string      `json:"role,omitempty"`
 	Attributes *attributes `json:"attributes,omitempty"`
@@ -242,6 +245,18 @@ type setupDoneMsg struct {
 	responseReceived time.Time
 }
 
+type saveDoneMsg struct {
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
+}
+
+type quitDoneMsg struct {
+	err              error
+	perfTraceID      string
+	responseReceived time.Time
+}
+
 type autoDoneMsg struct {
 	id               int
 	cancel           <-chan struct{}
@@ -255,28 +270,31 @@ type autoDoneMsg struct {
 }
 
 type model struct {
-	client                 apiClient
-	world                  []entity
-	inventory              []entity
-	roles                  []role
-	setup                  setupState
-	messages               []string
-	debugMessages          bool
-	pendingMovementPrefix  string
-	pendingExtendedCommand *string
-	travelTarget           *pos
-	lookTarget             *pos
-	popup                  *popupState
-	pickupRequestID        int
-	lootRequestID          int
-	mutationSerial         int
-	setupRequestID         int
-	setupPending           bool
-	autoCancel             chan struct{}
-	autoID                 int
-	width                  int
-	height                 int
-	perf                   *perfRecorder
+	client                  apiClient
+	world                   []entity
+	inventory               []entity
+	roles                   []role
+	setup                   setupState
+	messages                []string
+	debugMessages           bool
+	pendingMovementPrefix   string
+	pendingDoorAction       string
+	pendingExtendedCommand  *string
+	pendingQuitConfirmation bool
+	pendingTerminalAction   bool
+	travelTarget            *pos
+	lookTarget              *pos
+	popup                   *popupState
+	pickupRequestID         int
+	lootRequestID           int
+	mutationSerial          int
+	setupRequestID          int
+	setupPending            bool
+	autoCancel              chan struct{}
+	autoID                  int
+	width                   int
+	height                  int
+	perf                    *perfRecorder
 }
 
 var (
@@ -386,7 +404,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perf.markResponseReceived("loadState", "initial", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case pickupLoadedMsg:
-		if m.popup == nil || m.popup.kind != popupPickup || msg.requestID != m.pickupRequestID {
+		if m.pendingTerminalAction || m.popup == nil || m.popup.kind != popupPickup || msg.requestID != m.pickupRequestID {
 			return m, nil
 		}
 		if msg.err != nil {
@@ -398,7 +416,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perf.markResponseReceived("loadPickup", "pickup", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case lootContainersLoadedMsg:
-		if msg.requestID != m.lootRequestID {
+		if m.pendingTerminalAction || msg.requestID != m.lootRequestID {
 			return m, nil
 		}
 		if msg.err != nil {
@@ -417,7 +435,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perf.markResponseReceived("loadLootContainers", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, loadLootItemsCmd(m.client, m.lootRequestID, container.Key)
 	case lootItemsLoadedMsg:
-		if m.popup == nil || m.popup.kind != popupLoot || msg.requestID != m.lootRequestID {
+		if m.pendingTerminalAction || m.popup == nil || m.popup.kind != popupLoot || msg.requestID != m.lootRequestID {
 			return m, nil
 		}
 		if msg.err != nil {
@@ -429,6 +447,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perf.markResponseReceived("loadLootItems", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case actionDoneMsg:
+		if m.pendingTerminalAction {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.addMessage("action failed: " + msg.err.Error())
 			return m, nil
@@ -437,6 +458,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perf.markResponseReceived("actionAndRefresh", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case setupDoneMsg:
+		if m.pendingTerminalAction {
+			return m, nil
+		}
 		if msg.requestID != m.setupRequestID {
 			return m, nil
 		}
@@ -448,7 +472,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applySnapshot(msg.snapshot)
 		m.perf.markResponseReceived("setup", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
+	case saveDoneMsg:
+		if msg.err != nil {
+			m.pendingTerminalAction = false
+			m.addMessage("save failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.addMessage("saved")
+		m.perf.markResponseReceived("save", "save", msg.perfTraceID, msg.responseReceived)
+		return m, tea.Quit
+	case quitDoneMsg:
+		if msg.err != nil {
+			m.pendingTerminalAction = false
+			m.addMessage("quit failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.addMessage("quit")
+		m.perf.markResponseReceived("quit", "quit", msg.perfTraceID, msg.responseReceived)
+		return m, tea.Quit
 	case autoDoneMsg:
+		if m.pendingTerminalAction {
+			return m, nil
+		}
 		isCurrentAutoMove := m.autoCancel != nil && m.autoCancel == msg.cancel && m.autoID == msg.id
 		isFinishedCurrentAutoMove := m.autoCancel == nil && m.autoID == msg.id && msg.mutationSerial == m.mutationSerial
 		if !isCurrentAutoMove && !isFinishedCurrentAutoMove {
@@ -478,11 +523,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.readyForNormalPlay() {
 		return m.handleSetupKey(input)
 	}
+	if m.pendingTerminalAction {
+		return m, nil
+	}
 	if m.cancelActiveAutoMove() {
 		return m, nil
 	}
 	if m.popup != nil {
 		return m.handlePopupKey(input)
+	}
+
+	if m.pendingQuitConfirmation {
+		return m.handleQuitConfirmationKey(input)
 	}
 
 	if input != "M-l" {
@@ -491,6 +543,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.addDebugMessage("doing " + input)
 
+	if m.pendingDoorAction != "" {
+		return m.handleDoorDirectionKey(input)
+	}
 	if m.pendingExtendedCommand != nil {
 		return m.handleExtendedCommandKey(input)
 	}
@@ -502,13 +557,28 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch input {
+	case "C-s":
+		return m.saveAndExit()
+	case "C-q":
+		return m.beginQuitConfirmation()
 	case "#":
+		m.pendingDoorAction = ""
 		m.pendingMovementPrefix = ""
 		empty := ""
 		m.pendingExtendedCommand = &empty
 		m.addMessage("extended command: #")
 		return m, nil
+	case "o", "c":
+		m.pendingMovementPrefix = ""
+		if input == "o" {
+			m.pendingDoorAction = "open"
+		} else {
+			m.pendingDoorAction = "close"
+		}
+		m.addMessage(doorDirectionPrompt(m.pendingDoorAction))
+		return m, nil
 	case "_":
+		m.pendingDoorAction = ""
 		m.pendingMovementPrefix = ""
 		player, ok := findPlayer(m.world)
 		if !ok {
@@ -620,6 +690,61 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m model) handleDoorDirectionKey(input string) (tea.Model, tea.Cmd) {
+	kind := m.pendingDoorAction
+	if input == "escape" {
+		m.pendingDoorAction = ""
+		m.addMessage("canceled " + kind)
+		return m, nil
+	}
+	dir, ok := baseMovementDirections[input]
+	m.pendingDoorAction = ""
+	if !ok {
+		m.addMessage("canceled " + kind)
+		return m, nil
+	}
+	m.mutationSerial++
+	return m, actionAndRefreshCmd(m.client, action{Tag: kind, Dir: dir})
+}
+
+func (m model) saveAndExit() (tea.Model, tea.Cmd) {
+	m.pendingDoorAction = ""
+	m.pendingExtendedCommand = nil
+	m.pendingMovementPrefix = ""
+	m.pendingQuitConfirmation = false
+	m.pendingTerminalAction = true
+	m.stopActiveAutoMove()
+	m.addMessage("saving")
+	return m, saveGameCmd(m.client)
+}
+
+func (m model) beginQuitConfirmation() (tea.Model, tea.Cmd) {
+	m.pendingDoorAction = ""
+	m.pendingExtendedCommand = nil
+	m.pendingMovementPrefix = ""
+	m.pendingQuitConfirmation = true
+	m.addMessage(quitWarningPrompt())
+	return m, nil
+}
+
+func (m model) handleQuitConfirmationKey(input string) (tea.Model, tea.Cmd) {
+	switch strings.ToLower(input) {
+	case "y":
+		m.pendingQuitConfirmation = false
+		m.pendingTerminalAction = true
+		m.stopActiveAutoMove()
+		m.addMessage("quitting")
+		return m, quitGameCmd(m.client)
+	case "n", "escape":
+		m.pendingQuitConfirmation = false
+		m.addMessage("quit canceled")
+		return m, nil
+	default:
+		m.addMessage(quitWarningPrompt())
+		return m, nil
+	}
+}
+
 func (m model) handleExtendedCommandKey(input string) (tea.Model, tea.Cmd) {
 	commandInput := ""
 	if m.pendingExtendedCommand != nil {
@@ -636,11 +761,14 @@ func (m model) handleExtendedCommandKey(input string) (tea.Model, tea.Cmd) {
 		m.pendingExtendedCommand = &commandInput
 	case "enter", "C-j":
 		m.pendingExtendedCommand = nil
-		if strings.EqualFold(strings.TrimPrefix(commandInput, "#"), "quit") {
-			m.addMessage("quitting")
-			return m, tea.Quit
+		switch strings.ToLower(strings.TrimPrefix(commandInput, "#")) {
+		case "save":
+			return m.saveAndExit()
+		case "quit":
+			return m.beginQuitConfirmation()
+		default:
+			m.addMessage("unknown extended command: #" + commandInput)
 		}
-		m.addMessage("unknown extended command: #" + commandInput)
 	default:
 		if len([]rune(input)) == 1 && isAlpha(input) {
 			commandInput += strings.ToLower(input)
@@ -840,13 +968,22 @@ func (m *model) addDebugMessage(message string) {
 	}
 }
 
-func (m *model) cancelActiveAutoMove() bool {
+func (m *model) stopActiveAutoMove() bool {
 	if m.autoCancel == nil {
 		return false
 	}
 	close(m.autoCancel)
 	m.autoCancel = nil
+	return true
+}
+
+func (m *model) cancelActiveAutoMove() bool {
+	if !m.stopActiveAutoMove() {
+		return false
+	}
+	m.pendingDoorAction = ""
 	m.pendingMovementPrefix = ""
+	m.pendingQuitConfirmation = false
 	m.addMessage("automove canceled")
 	return true
 }
@@ -921,7 +1058,7 @@ func (m model) View() string {
 				return renderPopup(*m.popup)
 			}))
 		}
-		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · _ travel · ; look · , pickup · d drop · e eat · q quaff · M-l loot · item letters select · #quit"))
+		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · o open · c close · _ travel · ; look · , pickup · d drop · e eat · q quaff · M-l loot · item letters select · #save/Ctrl-S save · #quit/Ctrl-Q quit"))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	})
 	m.perf.finishRedraws()
@@ -1238,6 +1375,22 @@ func actionAndRefreshCmd(client apiClient, act action) tea.Cmd {
 	}
 }
 
+func saveGameCmd(client apiClient) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.save")
+	return func() tea.Msg {
+		err := client.saveGame(context.Background())
+		return saveDoneMsg{err: err, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func quitGameCmd(client apiClient) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.quit")
+	return func() tea.Msg {
+		err := client.quitGame(context.Background())
+		return quitDoneMsg{err: err, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
 func (c apiClient) loadState(ctx context.Context) (snapshot, error) {
 	return measurePerfCall(c.perf, "frontend.api", "loadState", "", "", nil, func() (snapshot, error) {
 		return c.getClientState(ctx)
@@ -1502,12 +1655,45 @@ func (c apiClient) doAction(ctx context.Context, act action) error {
 	return c.postJSON(ctx, "/act", actionPayload{Action: act})
 }
 
+func (c apiClient) saveGame(ctx context.Context) error {
+	return c.postNoBody(ctx, "/save")
+}
+
+func (c apiClient) restoreGame(ctx context.Context) error {
+	return c.postNoBody(ctx, "/restore")
+}
+
+func (c apiClient) quitGame(ctx context.Context) error {
+	return c.postNoBody(ctx, "/quit")
+}
+
 func (c apiClient) selectRole(ctx context.Context, roleID string) error {
 	return c.postJSON(ctx, "/setup/role", rolePayload{RoleID: roleID})
 }
 
 func (c apiClient) confirmSetup(ctx context.Context, confirm bool) error {
 	return c.postJSON(ctx, "/setup/confirm", setupConfirmPayload{Confirm: confirm})
+}
+
+func (c apiClient) postNoBody(ctx context.Context, path string) error {
+	_, err := measurePerfCall(c.perf, "frontend.http", "POST", path, "", nil, func() (struct{}, error) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, nil)
+		if err != nil {
+			return struct{}{}, err
+		}
+		request.Header.Set(localMutationHeaderName, localMutationHeaderValue)
+		response, err := c.http.Do(request)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+			return struct{}{}, fmt.Errorf("POST %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 func (c apiClient) postJSON(ctx context.Context, path string, payload any) error {
@@ -1556,6 +1742,10 @@ func normalizeBubbleTeaInput(msg tea.KeyMsg) string {
 		return "C-b"
 	case "ctrl+n":
 		return "C-n"
+	case "ctrl+s":
+		return "C-s"
+	case "ctrl+q":
+		return "C-q"
 	case "alt+l":
 		return "M-l"
 	case "enter":
@@ -1634,6 +1824,18 @@ func parseMovementCommand(input string) (moveCommand, bool) {
 
 func requiresRepeatedMovement(command moveCommand) bool {
 	return command.tag == "run-to-block" || command.tag == "rush" || command.tag == "run" || command.tag == "no-pickup-run"
+}
+
+func doorDirectionPrompt(kind string) string {
+	label := "Open"
+	if kind == "close" {
+		label = "Close"
+	}
+	return label + " direction: hjkl/yubn, Esc cancel"
+}
+
+func quitWarningPrompt() string {
+	return "Really quit? This permanently ends the game; save exits without quitting. [yn]"
 }
 
 func parseAction(input string) (action, bool) {
@@ -1920,6 +2122,11 @@ func tileFor(item entity) tile {
 		return tile{char: ":", color: lipgloss.Color("14"), bright: true}
 	case "wall":
 		return tile{char: wallChar(item.Variant), color: lipgloss.Color("15")}
+	case "door":
+		if item.Open {
+			return tile{char: "+", color: lipgloss.Color("3")}
+		}
+		return tile{char: wallChar(item.Variant), color: lipgloss.Color("3")}
 	case "tent-wall":
 		return tile{char: wallChar(item.Variant), color: lipgloss.Color("11")}
 	case "tent-post":
@@ -1985,7 +2192,7 @@ func zIndex(item entity) int {
 		return -1
 	case "floor", "tunnel":
 		return 0
-	case "wall", "tent-wall", "tent-post", "sign", "effigy", "temple":
+	case "wall", "door", "tent-wall", "tent-post", "sign", "effigy", "temple":
 		return 2
 	default:
 		if isCreature(item) {
@@ -2000,7 +2207,7 @@ func zIndex(item entity) int {
 
 func isTerrain(item entity) bool {
 	switch item.Tag {
-	case "wall", "tent-wall", "tent-post", "floor", "tunnel", "tent", "sign", "effigy", "temple":
+	case "wall", "door", "tent-wall", "tent-post", "floor", "tunnel", "tent", "sign", "effigy", "temple":
 		return true
 	default:
 		return false
@@ -2008,7 +2215,7 @@ func isTerrain(item entity) bool {
 }
 
 func isImpassableTerrain(item entity) bool {
-	return item.Tag == "wall" || item.Tag == "tent-wall" || item.Tag == "tent-post"
+	return item.Tag == "wall" || item.Tag == "tent-wall" || item.Tag == "tent-post" || (item.Tag == "door" && !item.Open)
 }
 
 func isPassableTerrain(item entity) bool {
@@ -2132,6 +2339,11 @@ func describeEntityForLook(item entity) string {
 		return "road"
 	case "wall":
 		return "wall"
+	case "door":
+		if item.Open {
+			return "open door"
+		}
+		return "closed door"
 	case "tent-wall":
 		return "tent-wall"
 	case "tent-post":

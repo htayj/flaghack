@@ -1,12 +1,20 @@
 import { HttpApiClient } from "@effect/platform"
 import { BrowserHttpClient } from "@effect/platform-browser"
-import { GameApi } from "@flaghack/domain/GameApi"
+import {
+  GameApi,
+  LocalMutationHeaderName,
+  LocalMutationHeaderValue
+} from "@flaghack/domain/GameApi"
 import type { RoleId } from "@flaghack/domain/roles"
 import type { Action, Key } from "@flaghack/domain/schemas"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { resolveWebApiBaseUrl } from "./config.js"
 
 type Key = typeof Key.Type
+
+const localMutationHeaders = {
+  [LocalMutationHeaderName]: LocalMutationHeaderValue
+} as const
 
 export class GameClient
   extends Effect.Service<GameClient>()("web/GameClient", {
@@ -38,6 +46,15 @@ export class GameClient
           Effect.zipRight(client.game.doAction({ payload: { action } }))
         )
       }
+      const saveGame = client.game.saveGame({
+        headers: localMutationHeaders
+      })
+      const restoreGame = client.game.restoreGame({
+        headers: localMutationHeaders
+      })
+      const quitGame = client.game.quitGame({
+        headers: localMutationHeaders
+      })
       function selectRole(roleId: RoleId) {
         return client.game.selectRole({ payload: { roleId } })
       }
@@ -51,6 +68,9 @@ export class GameClient
         getInventory,
         getPickupItemsFor,
         doPlayerAction,
+        saveGame,
+        restoreGame,
+        quitGame,
         selectRole,
         confirmSetup
       } as const
@@ -68,5 +88,8 @@ export const getLogs = GameClient.getLogs
 export const getPickupItemsFor = GameClient.getPickupItemsFor
 export const getInventory = GameClient.getInventory
 export const getWorld = GameClient.getWorld
+export const saveGame = GameClient.saveGame
+export const restoreGame = GameClient.restoreGame
+export const quitGame = GameClient.quitGame
 export const selectRole = GameClient.selectRole
 export const confirmSetup = GameClient.confirmSetup

@@ -83,6 +83,12 @@ export const getTile = (e: Entity): Tile =>
         bright: false,
         char: getWallVariantChar(variant)
       }),
+    door: ({ open, variant }) =>
+      tile({
+        color: "yellow",
+        bright: false,
+        char: open ? "+" : getWallVariantChar(variant)
+      }),
     "tent-wall": ({ variant }) =>
       tile({
         color: "yellow",

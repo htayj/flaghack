@@ -12,6 +12,8 @@ import { LiveRuntime } from "./runtime.js"
 import {
   type BlessedKeyLike,
   clampTravelTarget,
+  directionActionPrompt,
+  type DirectionalActionKind,
   directionalMovementResultMessage,
   findPlayerPosition,
   findTravelDirections,
@@ -22,9 +24,11 @@ import {
   type MovementPrefix,
   moveTravelTarget,
   normalizeGameInput,
+  parseDirectionalActionInput,
   parseExtendedCommand,
   parseInput,
   parseMovementCommand,
+  quitWarningPrompt,
   type RepeatedMovementCommand,
   runDirectionalMovement,
   samePosition,
@@ -36,6 +40,8 @@ const apiDoPlayerAction = GameClient.doPlayerAction
 const apiGetInventory = GameClient.getInventory
 const apiGetPickupItemsFor = GameClient.getPickupItemsFor
 const apiGetWorld = GameClient.getWorld
+const apiQuitGame = GameClient.quitGame
+const apiSaveGame = GameClient.saveGame
 
 type Entity = typeof EntitySchema.Type
 type Key = typeof KeySchema.Type
@@ -80,8 +86,11 @@ export class AlternateTuiController {
   private markedPopupItems: ReadonlySet<Key> = new Set()
   private messages: ReadonlyArray<string> = []
   private nextAutoMoveId = 0
+  private pendingDirectionalAction: DirectionalActionKind | undefined
   private pendingExtendedCommand: string | undefined
   private pendingMovementPrefix: MovementPrefix | undefined
+  private pendingQuitConfirmation = false
+  private pendingTerminalAction = false
   private pickupContents: World = emptyWorld()
   private pickupRequestId = 0
   private popupKind: AlternateTuiPopupKind | undefined
@@ -128,6 +137,8 @@ export class AlternateTuiController {
   handleInput(input: string, key?: BlessedKeyLike): void {
     const normalizedInput = normalizeGameInput(input, key)
 
+    if (this.pendingTerminalAction) return
+
     if (this.cancelActiveAutoMove()) return
 
     if (this.popupKind !== undefined) {
@@ -136,6 +147,19 @@ export class AlternateTuiController {
     }
 
     this.addDebugMessage(`doing ${normalizedInput}`)
+
+    if (this.pendingQuitConfirmation) {
+      this.handleQuitConfirmationKey(normalizedInput)
+      return
+    }
+
+    if (this.pendingDirectionalAction !== undefined) {
+      this.handleDirectionalActionKey(
+        this.pendingDirectionalAction,
+        normalizedInput
+      )
+      return
+    }
 
     if (this.pendingExtendedCommand !== undefined) {
       this.handleExtendedCommandKey(normalizedInput)
@@ -147,10 +171,29 @@ export class AlternateTuiController {
       return
     }
 
+    if (normalizedInput === "C-s") {
+      this.saveAndExit()
+      return
+    }
+
+    if (normalizedInput === "C-q") {
+      this.beginQuitConfirmation()
+      return
+    }
+
     if (normalizedInput === "#") {
+      this.pendingDirectionalAction = undefined
       this.pendingMovementPrefix = undefined
       this.pendingExtendedCommand = ""
       this.addMessage("extended command: #")
+      return
+    }
+
+    if (normalizedInput === "o" || normalizedInput === "c") {
+      const kind = normalizedInput === "o" ? "open" : "close"
+      this.pendingDirectionalAction = kind
+      this.pendingMovementPrefix = undefined
+      this.addMessage(directionActionPrompt(kind))
       return
     }
 
@@ -236,7 +279,9 @@ export class AlternateTuiController {
     if (this.activeAutoMoveId === undefined) return false
 
     this.activeAutoMoveId = undefined
+    this.pendingDirectionalAction = undefined
     this.pendingMovementPrefix = undefined
+    this.pendingQuitConfirmation = false
     this.messages = ["automove canceled", ...this.messages].slice(
       0,
       MAX_VISIBLE_MESSAGES
@@ -258,12 +303,34 @@ export class AlternateTuiController {
     }
   }
 
+  private handleDirectionalActionKey(
+    kind: DirectionalActionKind,
+    input: string
+  ): void {
+    if (input === "escape") {
+      this.pendingDirectionalAction = undefined
+      this.addMessage(`canceled ${kind}`)
+      return
+    }
+
+    const action = parseDirectionalActionInput(kind, input)
+    if (Option.isNone(action)) {
+      this.pendingDirectionalAction = undefined
+      this.addMessage(`canceled ${kind}`)
+      return
+    }
+
+    this.pendingDirectionalAction = undefined
+    this.runActionAndRefresh(action.value)
+  }
+
   private finishExtendedCommand(commandInput: string): void {
     const command = parseExtendedCommand(commandInput)
     this.pendingExtendedCommand = undefined
-    if (Option.isSome(command) && command.value === "quit") {
-      this.addMessage("quitting")
-      this.options.onQuit?.()
+    if (Option.isSome(command) && command.value === "save") {
+      this.saveAndExit()
+    } else if (Option.isSome(command) && command.value === "quit") {
+      this.beginQuitConfirmation()
     } else {
       this.addMessage(`unknown extended command: #${commandInput}`)
     }
@@ -294,6 +361,31 @@ export class AlternateTuiController {
         }
         this.pendingExtendedCommand = undefined
         this.emit()
+    }
+  }
+
+  private handleQuitConfirmationKey(input: string): void {
+    switch (input.toLowerCase()) {
+      case "y":
+        this.pendingQuitConfirmation = false
+        this.addMessage("quitting")
+        this.pendingTerminalAction = true
+        this.activeAutoMoveId = undefined
+        this.launch(
+          apiQuitGame.pipe(
+            Effect.tap(() => Effect.sync(() => this.options.onQuit?.()))
+          ),
+          { terminal: true }
+        )
+        return
+      case "n":
+      case "escape":
+        this.pendingQuitConfirmation = false
+        this.addMessage("quit canceled")
+        return
+      default:
+        this.addMessage(quitWarningPrompt)
+        return
     }
   }
 
@@ -372,8 +464,14 @@ export class AlternateTuiController {
     return this.activeAutoMoveId !== autoMoveId
   }
 
-  private launch(effect: LiveRuntimeEffect): void {
+  private launch(
+    effect: LiveRuntimeEffect,
+    options: { readonly terminal?: boolean } = {}
+  ): void {
     void LiveRuntime.runPromise(effect).catch((error: unknown) => {
+      if (options.terminal === true) {
+        this.pendingTerminalAction = false
+      }
       this.addMessage(`error: ${errorMessage(error)}`)
     })
   }
@@ -399,6 +497,14 @@ export class AlternateTuiController {
     })
   }
 
+  private beginQuitConfirmation(): void {
+    this.pendingDirectionalAction = undefined
+    this.pendingExtendedCommand = undefined
+    this.pendingMovementPrefix = undefined
+    this.pendingQuitConfirmation = true
+    this.addMessage(quitWarningPrompt)
+  }
+
   private openDropPopup(): void {
     this.pendingMovementPrefix = undefined
     this.popupKind = "drop"
@@ -419,7 +525,8 @@ export class AlternateTuiController {
         Effect.tap((contents) =>
           Effect.sync(() => {
             if (
-              this.popupKind !== "pickup"
+              this.pendingTerminalAction
+              || this.popupKind !== "pickup"
               || this.pickupRequestId !== pickupRequestId
             ) {
               return
@@ -465,17 +572,43 @@ export class AlternateTuiController {
   }
 
   private refreshWorldAndInventory() {
-    return Effect.all({
-      inventory: apiGetInventory,
-      world: apiGetWorld
-    }).pipe(
-      Effect.tap(({ inventory, world }) =>
-        Effect.sync(() => {
-          this.inventory = inventory
-          this.world = world
-          this.emit()
-        })
-      )
+    return Effect.suspend(() =>
+      this.pendingTerminalAction
+        ? Effect.succeed({ inventory: this.inventory, world: this.world })
+        : Effect.all({
+          inventory: apiGetInventory,
+          world: apiGetWorld
+        }).pipe(
+          Effect.tap(({ inventory, world }) =>
+            Effect.sync(() => {
+              if (this.pendingTerminalAction) return
+              this.inventory = inventory
+              this.world = world
+              this.emit()
+            })
+          )
+        )
+    )
+  }
+
+  private saveAndExit(): void {
+    this.pendingDirectionalAction = undefined
+    this.pendingExtendedCommand = undefined
+    this.pendingMovementPrefix = undefined
+    this.pendingQuitConfirmation = false
+    this.pendingTerminalAction = true
+    this.activeAutoMoveId = undefined
+    this.addMessage("saving")
+    this.launch(
+      apiSaveGame.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            this.addMessage("saved")
+            this.options.onQuit?.()
+          })
+        )
+      ),
+      { terminal: true }
     )
   }
 

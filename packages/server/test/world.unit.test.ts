@@ -165,7 +165,33 @@ const campgroundHumanDisplayNames = [
   "Firefly"
 ] as const
 
+const doorAt = (
+  key: string,
+  x: number,
+  y: number,
+  open: boolean
+): Entity => ({
+  _tag: "door",
+  at: { x, y, z: 0 },
+  in: "world",
+  key,
+  open,
+  variant: "vertical"
+})
+
 describe("world entity predicates", () => {
+  it("classifies closed doors as impassable and open doors as passable terrain", () => {
+    const closedDoor = doorAt("door-closed", 1, 0, false)
+    const openDoor = doorAt("door-open", 2, 0, true)
+
+    expect(isTerrain(closedDoor)).toBe(true)
+    expect(isImpassable(closedDoor)).toBe(true)
+    expect(isPassableTerrain(closedDoor)).toBe(false)
+    expect(isTerrain(openDoor)).toBe(true)
+    expect(isImpassable(openDoor)).toBe(false)
+    expect(isPassableTerrain(openDoor)).toBe(true)
+  })
+
   it("classifies tent wall and post terrain as impassable blockers", () => {
     const blockers = [
       {
@@ -577,6 +603,25 @@ describe("BSPGenLevel", () => {
 
     expect(Effect.isEffect(seededLevel)).toBe(true)
     expect(Effect.isEffect(unseededLevel)).toBe(true)
+  })
+
+  it("places closed doors deterministically in BSP dungeon wall passages", () => {
+    const world = Effect.runSync(BSPGenLevel(4242, 3))
+    const repeatWorld = Effect.runSync(BSPGenLevel(4242, 3))
+    const doors = Array.from(world.pipe(HashMap.values)).filter(
+      (entity) => entity._tag === "door"
+    )
+    const repeatDoors = Array.from(repeatWorld.pipe(HashMap.values))
+      .filter((entity) => entity._tag === "door")
+
+    expect(doors.length).toBeGreaterThan(0)
+    expect(repeatDoors).toEqual(doors)
+    expect(doors.every((door) => door.open === false)).toBe(true)
+    expect(
+      doors.every((door) =>
+        door.variant === "vertical" || door.variant === "horizontal"
+      )
+    ).toBe(true)
   })
 
   it("generates deterministic worlds for the same seed and dungeon level", () => {

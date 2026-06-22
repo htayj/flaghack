@@ -131,6 +131,9 @@ const liveRuntimeCallClassification = (
   ) {
     return "loot apiGetLootContainersFor player"
   }
+  if (/apiDoPlayerAction\s*\(\s*action\s*\)/.test(argumentSource)) {
+    return "player action apiDoPlayerAction action"
+  }
   if (/apiDoPlayerAction\s*\(\s*action\.value\s*\)/.test(argumentSource)) {
     return "movement apiDoPlayerAction action value"
   }
@@ -177,6 +180,12 @@ const liveRuntimeCallClassification = (
   if (/EAction\.lootPutMulti\s*\(/.test(argumentSource)) {
     return "loot apiDoPlayerAction lootPutMulti"
   }
+  if (/apiSaveGame\.pipe\s*\(/.test(argumentSource)) {
+    return "save apiSaveGame"
+  }
+  if (/apiQuitGame\.pipe\s*\(/.test(argumentSource)) {
+    return "quit apiQuitGame"
+  }
 
   return "unclassified"
 }
@@ -216,18 +225,20 @@ describe("CLI runtime boundary", () => {
       findPropertyAccesses(sourceFile, "Effect", "runPromise")
     ).toHaveLength(0)
     expect(findEffectProvideMainLiveCalls(sourceFile)).toHaveLength(0)
-    expect(liveRuntimeCalls).toHaveLength(12)
+    expect(liveRuntimeCalls).toHaveLength(14)
     expect(
       liveRuntimeCalls.map((call) =>
         liveRuntimeCallClassification(call, sourceFile)
       )
     ).toEqual([
       "initial refreshWorldAndInventory",
+      "player action apiDoPlayerAction action",
+      "save apiSaveGame",
+      "quit apiQuitGame",
       "travel runTravelToTarget target",
       "loot apiGetLootContainersFor player",
       "comma apiGetPickupItemsFor player",
       "directional runDirectionalMovement",
-      "movement apiDoPlayerAction action value",
       "pickup apiDoPlayerAction pickupMulti",
       "drop apiDoPlayerAction dropMulti",
       "eat apiDoPlayerAction eatMulti",

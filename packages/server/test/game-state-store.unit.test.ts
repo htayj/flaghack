@@ -66,4 +66,32 @@ describe("GameStateStore", () => {
       true
     )
   })
+
+  it("peeks without initializing and reset clears in-memory state", () => {
+    let initCalls = 0
+    const initialState = Effect.sync(() => {
+      initCalls += 1
+      return emptyState()
+    })
+
+    const program = Effect.gen(function*() {
+      const store = yield* GameStateStore
+      const initialPeek = yield* store.peek
+      const initialized = yield* store.get
+      const populatedPeek = yield* store.peek
+      yield* store.reset
+      const resetPeek = yield* store.peek
+
+      return { initialPeek, initialized, populatedPeek, resetPeek }
+    })
+
+    const { initialPeek, populatedPeek, resetPeek } = Effect.runSync(
+      program.pipe(Effect.provide(GameStateStore.Default(initialState)))
+    )
+
+    expect(initCalls).toBe(1)
+    expect(Option.isNone(initialPeek)).toBe(true)
+    expect(Option.isSome(populatedPeek)).toBe(true)
+    expect(Option.isNone(resetPeek)).toBe(true)
+  })
 })

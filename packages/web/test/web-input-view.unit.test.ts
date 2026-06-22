@@ -6,7 +6,12 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import { MAX_VISIBLE_MESSAGES } from "../src/Messages.tsx"
-import { parseInput, prependMessage } from "../src/Playing.tsx"
+import {
+  parseDirectionalActionInput,
+  parseExtendedCommand,
+  parseInput,
+  prependMessage
+} from "../src/Playing.tsx"
 
 const playingPath = fileURLToPath(
   new URL("../src/Playing.tsx", import.meta.url)
@@ -283,13 +288,30 @@ describe("web input parsing", () => {
     }
   })
 
+  it("maps direction prompt inputs to open and close door actions", () => {
+    expectSomeAction(
+      parseDirectionalActionInput("open", "l"),
+      EAction.open({ dir: "E" })
+    )
+    expectSomeAction(
+      parseDirectionalActionInput("close", "h"),
+      EAction.close({ dir: "W" })
+    )
+  })
+
   it("maps unknown keys to no action", () => {
-    for (const input of ["?", "d"] as const) {
+    for (const input of ["?", "d", "o", "c"] as const) {
       const action = parseInput(input)
 
       expect(Option.isNone(action)).toBe(true)
       expect(action).not.toEqual(Option.some(EAction.noop()))
     }
+  })
+
+  it("parses save and quit extended commands", () => {
+    expect(parseExtendedCommand("#save")).toEqual(Option.some("save"))
+    expect(parseExtendedCommand("quit")).toEqual(Option.some("quit"))
+    expect(Option.isNone(parseExtendedCommand("#pray"))).toBe(true)
   })
 })
 
@@ -343,8 +365,9 @@ describe("web input/view source guards", () => {
   })
 
   it("gates player actions and refreshes after movement actions", () => {
+    const playingSource = readFileSync(playingPath, "utf8")
     const handleKeyDownSource = extractHandleKeyDownSource(
-      readFileSync(playingPath, "utf8")
+      playingSource
     )
     const parseIndex = handleKeyDownSource.indexOf(
       "const action = parseInput(input)"
@@ -353,17 +376,23 @@ describe("web input/view source guards", () => {
       /if\s*\(\s*Option\.isNone\s*\(\s*action\s*\)\s*\)\s*\{\s*return\s*\}/
     )
     const doActionIndex = handleKeyDownSource.indexOf(
-      "doPlayerAction(action.value)"
+      "runPlayerAction(action.value)"
     )
-    const refreshIndex = handleKeyDownSource.indexOf(
+    const runPlayerActionSource = extractConstInitializerSource(
+      playingSource,
+      "runPlayerAction"
+    )
+    const refreshIndex = runPlayerActionSource.indexOf(
       "Effect.andThen(refreshWorldAndInventory)",
-      doActionIndex
+      runPlayerActionSource.indexOf("doPlayerAction(action)")
     )
 
     expect(parseIndex).toBeGreaterThanOrEqual(0)
     expect(guardIndex).toBeGreaterThan(parseIndex)
     expect(doActionIndex).toBeGreaterThan(guardIndex)
-    expect(refreshIndex).toBeGreaterThan(doActionIndex)
+    expect(refreshIndex).toBeGreaterThan(
+      runPlayerActionSource.indexOf("doPlayerAction(action)")
+    )
     expect(handleKeyDownSource).not.toContain("Effect.andThen(getWorld)")
     expect(handleKeyDownSource).not.toContain("getInventory.pipe(")
   })

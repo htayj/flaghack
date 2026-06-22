@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import {
   clampTravelTarget,
+  directionActionPrompt,
   drawWorld,
   filterDrinkItems,
   filterFoodItems,
@@ -24,6 +25,7 @@ import {
   type MovementDirection,
   moveTravelTarget,
   normalizeGameInput,
+  parseDirectionalActionInput,
   parseExtendedCommand,
   parseInput,
   parseMovementCommand,
@@ -106,6 +108,14 @@ const tentPostAt = (x: number, y: number): Entity => ({
   at: { x, y, z: 0 },
   in: "world",
   key: `tent-post-${x}-${y}`
+})
+const doorAt = (x: number, y: number, open: boolean): Entity => ({
+  _tag: "door",
+  at: { x, y, z: 0 },
+  in: "world",
+  key: `door-${open ? "open" : "closed"}-${x}-${y}`,
+  open,
+  variant: "vertical"
 })
 const playerAt = (x: number, y: number): Entity => ({
   _tag: "player",
@@ -662,6 +672,13 @@ describe("CLI campground camera", () => {
     }
   })
 
+  it("draws closed doors as dark-yellow walls and open doors as dark-yellow plus signs", () => {
+    expect(drawWorld(worldFromEntities([doorAt(1, 2, false)]))[2]?.[1])
+      .toEqual({ bright: false, char: "│", color: "yellow" })
+    expect(drawWorld(worldFromEntities([doorAt(1, 2, true)]))[2]?.[1])
+      .toEqual({ bright: false, char: "+", color: "yellow" })
+  })
+
   it("draws creatures over items and terrain", () => {
     const tiles = drawWorld(
       worldFromEntities([
@@ -726,6 +743,22 @@ describe("CLI NetHack movement input parser", () => {
 
   it("maps dot to the rest/no-op action", () => {
     expectSomeAction(parseInput("."), EAction.noop())
+  })
+
+  it("maps direction prompt inputs to open and close door actions", () => {
+    expect(directionActionPrompt("open")).toContain("Open direction")
+    expectSomeAction(
+      parseDirectionalActionInput("open", "l"),
+      EAction.open({ dir: "E" })
+    )
+    expectSomeAction(
+      parseDirectionalActionInput("close", "h"),
+      EAction.close({ dir: "W" })
+    )
+    for (const input of ["L", "C-l", "g+l", "G+l", "m+l", "M+l"]) {
+      expect(Option.isNone(parseDirectionalActionInput("open", input)))
+        .toBe(true)
+    }
   })
 
   it("ignores unknown keys and bare movement prefixes", () => {
@@ -1310,9 +1343,18 @@ describe("CLI NetHack travel pathfinding", () => {
 })
 
 describe("CLI NetHack extended command parser", () => {
-  it("recognizes #quit and quit as the initial extended command", () => {
-    expect(Option.isSome(parseExtendedCommand("#quit"))).toBe(true)
-    expect(Option.isSome(parseExtendedCommand("quit"))).toBe(true)
+  it("recognizes #save/#quit commands with or without the leading #", () => {
+    expect(parseExtendedCommand("#save")).toEqual(Option.some("save"))
+    expect(parseExtendedCommand("save")).toEqual(Option.some("save"))
+    expect(parseExtendedCommand("#quit")).toEqual(Option.some("quit"))
+    expect(parseExtendedCommand("quit")).toEqual(Option.some("quit"))
+  })
+
+  it("normalizes Ctrl-S and Ctrl-Q as save and quit control inputs", () => {
+    expect(normalizeGameInput("\u0013")).toBe("C-s")
+    expect(normalizeGameInput("\u0011")).toBe("C-q")
+    expect(normalizeGameInput("", { full: "C-s" })).toBe("C-s")
+    expect(normalizeGameInput("", { full: "C-q" })).toBe("C-q")
   })
 
   it("ignores unsupported extended commands", () => {
@@ -1376,12 +1418,12 @@ describe("CLI input handling static guards", () => {
       + (guardMatch?.[0].length ?? 0)
     indexAfter(
       handleGameKeyBody,
-      "apiDoPlayerAction(action.value)",
+      "runPlayerAction(action.value)",
       guardEnd
     )
     expectRefreshAfterAction(
-      handleGameKeyBody,
-      "apiDoPlayerAction(action.value)"
+      extractConstInitializerSource(source, "runPlayerAction"),
+      "apiDoPlayerAction(action)"
     )
     expect(handleGameKeyBody).not.toContain("Effect.andThen(apiGetWorld)")
     expect(handleGameKeyBody).not.toContain("apiGetInventory.pipe(")

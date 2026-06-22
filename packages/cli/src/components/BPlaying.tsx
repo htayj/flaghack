@@ -1,14 +1,22 @@
-import { EAction } from "@flaghack/domain/schemas"
+import { type Action, EAction } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option } from "effect"
 import { size } from "effect/HashMap"
 import { List } from "immutable"
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react"
 import type { BoxElement } from "react-blessed"
 import { GameClient } from "../GameClient.js"
 import { LiveRuntime } from "../runtime.js"
 import {
   type BlessedKeyLike,
   clampTravelTarget,
+  directionActionPrompt,
+  type DirectionalActionKind,
   directionalMovementResultMessage,
   drawWorld,
   filterDrinkItems,
@@ -22,11 +30,13 @@ import {
   type MovementPrefix,
   moveTravelTarget,
   normalizeGameInput,
+  parseDirectionalActionInput,
   parseExtendedCommand,
   parseInput,
   parseMovementCommand,
   type Pos,
   prependMessage,
+  quitWarningPrompt,
   runDirectionalMovement,
   samePosition,
   travelPrompt,
@@ -48,11 +58,14 @@ const apiGetLootContainersFor = GameClient.getLootContainersFor
 const apiGetLootItemsFor = GameClient.getLootItemsFor
 const apiGetPickupItemsFor = GameClient.getPickupItemsFor
 const apiGetWorld = GameClient.getWorld
+const apiQuitGame = GameClient.quitGame
+const apiSaveGame = GameClient.saveGame
 
 export {
   BOARD_HEIGHT,
   BOARD_WIDTH,
   clampTravelTarget,
+  directionActionPrompt,
   directionalMovementResultMessage,
   drawWorld,
   filterDrinkItems,
@@ -69,10 +82,12 @@ export {
   moveTravelTarget,
   normalizeGameInput,
   nullMatrix,
+  parseDirectionalActionInput,
   parseExtendedCommand,
   parseInput,
   parseMovementCommand,
   prependMessage,
+  quitWarningPrompt,
   runDirectionalMovement,
   samePosition,
   shouldStopDirectionalRun,
@@ -81,6 +96,7 @@ export {
 } from "../tuiGame.js"
 export type {
   BlessedKeyLike,
+  DirectionalActionKind,
   DirectionalMovementRunResult,
   Entity,
   ExtendedCommand,
@@ -113,7 +129,12 @@ export default function BPlaying(
   const pendingMovementPrefix = useRef<MovementPrefix | undefined>(
     undefined
   )
+  const pendingDirectionalAction = useRef<
+    DirectionalActionKind | undefined
+  >(undefined)
   const pendingExtendedCommand = useRef<string | undefined>(undefined)
+  const pendingQuitConfirmation = useRef(false)
+  const pendingTerminalAction = useRef(false)
   const activeAutoMoveId = useRef<number | undefined>(undefined)
   const nextAutoMoveId = useRef(0)
   const pickupRequestId = useRef(0)
@@ -138,14 +159,24 @@ export default function BPlaying(
   const initialWorldFetchStarted = useRef(false)
   const refreshWorldAndInventory = useMemo(
     () =>
-      Effect.all({
-        world: apiGetWorld,
-        inventory: apiGetInventory
-      }).pipe(
-        Effect.tap(({ world }) => Effect.sync(() => setWorld(world))),
-        Effect.tap(({ inventory }) =>
-          Effect.sync(() => setInventory(inventory))
-        )
+      Effect.suspend(() =>
+        pendingTerminalAction.current
+          ? Effect.succeed({
+            inventory: HashMap.empty(),
+            world: HashMap.empty()
+          })
+          : Effect.all({
+            world: apiGetWorld,
+            inventory: apiGetInventory
+          }).pipe(
+            Effect.tap(({ inventory, world }) =>
+              Effect.sync(() => {
+                if (pendingTerminalAction.current) return
+                setWorld(world)
+                setInventory(inventory)
+              })
+            )
+          )
       ),
     []
   )
@@ -174,6 +205,18 @@ export default function BPlaying(
     const gameBox = gameref.current
     gameBox?.focus()
   }, [])
+
+  const runPlayerAction = useCallback(
+    (action: Action) => {
+      if (pendingTerminalAction.current) return
+      void LiveRuntime.runPromise(
+        apiDoPlayerAction(action).pipe(
+          Effect.andThen(refreshWorldAndInventory)
+        )
+      )
+    },
+    [refreshWorldAndInventory]
+  )
 
   const theDrawMatrix = drawWorld(world, travelTarget)
   const addDebugMessage = (message: string) => {
@@ -212,6 +255,8 @@ export default function BPlaying(
       "C-u",
       "C-b",
       "C-n",
+      "C-s",
+      "C-q",
       "M-l",
       "backspace",
       "linefeed",
@@ -219,11 +264,13 @@ export default function BPlaying(
       "m",
       ".",
       "_",
+      "c",
       "d",
       "e",
       ",",
       "#",
       "S-3",
+      "o",
       "q",
       "i",
       "t",
@@ -247,21 +294,107 @@ export default function BPlaying(
       if (activeAutoMoveId.current === undefined) return false
 
       activeAutoMoveId.current = undefined
+      pendingDirectionalAction.current = undefined
       pendingMovementPrefix.current = undefined
+      pendingQuitConfirmation.current = false
       setMessages(prependMessage("automove canceled"))
       gameref.current?.focus()
       return true
     }
+    const saveAndExit = () => {
+      pendingDirectionalAction.current = undefined
+      pendingExtendedCommand.current = undefined
+      pendingMovementPrefix.current = undefined
+      pendingQuitConfirmation.current = false
+      pendingTerminalAction.current = true
+      activeAutoMoveId.current = undefined
+      setMessages(prependMessage("saving"))
+      void LiveRuntime.runPromise(
+        apiSaveGame.pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              setMessages(prependMessage("saved"))
+              onQuit?.()
+            })
+          ),
+          Effect.catchAllCause((cause) =>
+            Effect.sync(() => {
+              pendingTerminalAction.current = false
+              setMessages(prependMessage(`save failed: ${String(cause)}`))
+            })
+          )
+        )
+      )
+    }
+    const beginQuitConfirmation = () => {
+      pendingDirectionalAction.current = undefined
+      pendingExtendedCommand.current = undefined
+      pendingMovementPrefix.current = undefined
+      pendingQuitConfirmation.current = true
+      setMessages(prependMessage(quitWarningPrompt))
+    }
     const finishExtendedCommand = (commandInput: string) => {
       const command = parseExtendedCommand(commandInput)
       pendingExtendedCommand.current = undefined
-      if (Option.isSome(command) && command.value === "quit") {
-        setMessages(prependMessage("quitting"))
-        onQuit?.()
+      if (Option.isSome(command) && command.value === "save") {
+        saveAndExit()
+      } else if (Option.isSome(command) && command.value === "quit") {
+        beginQuitConfirmation()
       } else {
         setMessages(
           prependMessage(`unknown extended command: #${commandInput}`)
         )
+      }
+    }
+    const handleDirectionalActionKey = (
+      kind: DirectionalActionKind,
+      input: string
+    ) => {
+      if (input === "escape") {
+        pendingDirectionalAction.current = undefined
+        setMessages(prependMessage(`canceled ${kind}`))
+        return
+      }
+
+      const action = parseDirectionalActionInput(kind, input)
+      if (Option.isNone(action)) {
+        pendingDirectionalAction.current = undefined
+        setMessages(prependMessage(`canceled ${kind}`))
+        return
+      }
+
+      pendingDirectionalAction.current = undefined
+      runPlayerAction(action.value)
+    }
+    const handleQuitConfirmationKey = (input: string) => {
+      switch (input.toLowerCase()) {
+        case "y":
+          pendingQuitConfirmation.current = false
+          pendingTerminalAction.current = true
+          activeAutoMoveId.current = undefined
+          setMessages(prependMessage("quitting"))
+          void LiveRuntime.runPromise(
+            apiQuitGame.pipe(
+              Effect.tap(() => Effect.sync(() => onQuit?.())),
+              Effect.catchAllCause((cause) =>
+                Effect.sync(() => {
+                  pendingTerminalAction.current = false
+                  setMessages(
+                    prependMessage(`quit failed: ${String(cause)}`)
+                  )
+                })
+              )
+            )
+          )
+          return
+        case "n":
+        case "escape":
+          pendingQuitConfirmation.current = false
+          setMessages(prependMessage("quit canceled"))
+          return
+        default:
+          setMessages(prependMessage(quitWarningPrompt))
+          return
       }
     }
     const handleExtendedCommandKey = (input: string) => {
@@ -409,14 +542,20 @@ export default function BPlaying(
             )[0]
             if (container === undefined) {
               return Effect.sync(() => {
-                if (lootRequestId.current !== requestId) return
+                if (
+                  pendingTerminalAction.current
+                  || lootRequestId.current !== requestId
+                ) return
                 setMessages(prependMessage("no floor container here"))
               })
             }
             return apiGetLootItemsFor("player", container.key).pipe(
               Effect.tap((contents) =>
                 Effect.sync(() => {
-                  if (lootRequestId.current !== requestId) return
+                  if (
+                    pendingTerminalAction.current
+                    || lootRequestId.current !== requestId
+                  ) return
                   setLootContainerKey(container.key)
                   setLootContainerName(container._tag)
                   setLootContents(contents)
@@ -433,6 +572,7 @@ export default function BPlaying(
     }
     const handleGameKey = (input: string, key?: BlessedKeyLike) => {
       const normalizedInput = normalizeGameInput(input, key)
+      if (pendingTerminalAction.current) return
       if (cancelActiveAutoMove()) return
 
       if (normalizedInput !== "M-l") {
@@ -440,6 +580,19 @@ export default function BPlaying(
       }
 
       addDebugMessage(`doing ${normalizedInput}`)
+
+      if (pendingQuitConfirmation.current) {
+        handleQuitConfirmationKey(normalizedInput)
+        return
+      }
+
+      if (pendingDirectionalAction.current !== undefined) {
+        handleDirectionalActionKey(
+          pendingDirectionalAction.current,
+          normalizedInput
+        )
+        return
+      }
 
       if (pendingExtendedCommand.current !== undefined) {
         handleExtendedCommandKey(normalizedInput)
@@ -451,14 +604,34 @@ export default function BPlaying(
         return
       }
 
+      if (normalizedInput === "C-s") {
+        saveAndExit()
+        return
+      }
+
+      if (normalizedInput === "C-q") {
+        beginQuitConfirmation()
+        return
+      }
+
       if (normalizedInput === "#") {
+        pendingDirectionalAction.current = undefined
         pendingMovementPrefix.current = undefined
         pendingExtendedCommand.current = ""
         setMessages(prependMessage("extended command: #"))
         return
       }
 
+      if (normalizedInput === "o" || normalizedInput === "c") {
+        const kind = normalizedInput === "o" ? "open" : "close"
+        pendingDirectionalAction.current = kind
+        pendingMovementPrefix.current = undefined
+        setMessages(prependMessage(directionActionPrompt(kind)))
+        return
+      }
+
       if (normalizedInput === "_") {
+        pendingDirectionalAction.current = undefined
         pendingMovementPrefix.current = undefined
         const playerPosition = findPlayerPosition(world)
         if (Option.isSome(playerPosition)) {
@@ -490,7 +663,10 @@ export default function BPlaying(
           apiGetPickupItemsFor("player").pipe(
             Effect.tap((contents) =>
               Effect.sync(() => {
-                if (pickupRequestId.current !== requestId) return
+                if (
+                  pendingTerminalAction.current
+                  || pickupRequestId.current !== requestId
+                ) return
                 setPickupContents(contents)
               })
             )
@@ -586,11 +762,7 @@ export default function BPlaying(
         if (Option.isNone(action)) {
           return
         }
-        void LiveRuntime.runPromise(
-          apiDoPlayerAction(action.value).pipe(
-            Effect.andThen(refreshWorldAndInventory)
-          )
-        )
+        runPlayerAction(action.value)
       }
     }
 
@@ -605,11 +777,13 @@ export default function BPlaying(
     debugMessages,
     onQuit,
     refreshWorldAndInventory,
+    runPlayerAction,
     travelTarget,
     world
   ])
 
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     pickupRequestId.current += 1
     void LiveRuntime.runPromise(
       apiDoPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
@@ -620,6 +794,7 @@ export default function BPlaying(
     )
   }
   const onDoDrop = (dropItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     void LiveRuntime.runPromise(
       apiDoPlayerAction(EAction.dropMulti({ keys: dropItems })).pipe(
         Effect.andThen(refreshWorldAndInventory),
@@ -629,6 +804,7 @@ export default function BPlaying(
     )
   }
   const onDoEat = (eatItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     void LiveRuntime.runPromise(
       apiDoPlayerAction(EAction.eatMulti({ keys: eatItems })).pipe(
         Effect.andThen(refreshWorldAndInventory),
@@ -638,6 +814,7 @@ export default function BPlaying(
     )
   }
   const onDoQuaff = (quaffItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     void LiveRuntime.runPromise(
       apiDoPlayerAction(EAction.quaffMulti({ keys: quaffItems })).pipe(
         Effect.andThen(refreshWorldAndInventory),
@@ -647,6 +824,7 @@ export default function BPlaying(
     )
   }
   const onTakeLoot = (lootItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     const containerKey = lootContainerKey
     if (containerKey === undefined) return
     lootRequestId.current += 1
@@ -661,6 +839,7 @@ export default function BPlaying(
     )
   }
   const onPutLoot = (lootItems: ReadonlyArray<Key>) => {
+    if (pendingTerminalAction.current) return
     const containerKey = lootContainerKey
     if (containerKey === undefined) return
     lootRequestId.current += 1

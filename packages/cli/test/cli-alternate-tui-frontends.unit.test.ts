@@ -39,6 +39,17 @@ describe("alternate TUI frontend static guards", () => {
     expect(controller.snapshot().messages).toEqual([])
   })
 
+  it("prompts alternate TUI users for open and close directions", () => {
+    const controller = new AlternateTuiController()
+
+    controller.handleInput("o")
+    expect(controller.snapshot().messages[0]).toContain("Open direction")
+
+    controller.handleInput("escape")
+    controller.handleInput("c")
+    expect(controller.snapshot().messages[0]).toContain("Close direction")
+  })
+
   it("allows alternate clients to opt into debug input trace messages", () => {
     const controller = new AlternateTuiController({ debugMessages: true })
 

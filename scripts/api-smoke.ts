@@ -2,13 +2,20 @@
 
 import { HttpApiClient } from "@effect/platform"
 import { NodeHttpClient } from "@effect/platform-node"
-import { GameApi } from "@flaghack/domain/GameApi"
+import {
+  GameApi,
+  LocalMutationHeaderName,
+  LocalMutationHeaderValue
+} from "@flaghack/domain/GameApi"
 import { Effect, HashMap } from "effect"
 import {
   type ChildProcessWithoutNullStreams,
   spawn
 } from "node:child_process"
+import { mkdtemp, rm } from "node:fs/promises"
 import { Socket } from "node:net"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   makePerfTraceId,
   measureAsync,
@@ -52,6 +59,9 @@ const resolveTestPort = (env: NodeJS.ProcessEnv): number => {
 
 const PORT = resolveTestPort(process.env)
 const BASE_URL = `http://${HOST}:${PORT}`
+const localMutationHeaders = {
+  [LocalMutationHeaderName]: LocalMutationHeaderValue
+} as const
 
 const tailProcess = (
   child: ChildProcessWithoutNullStreams
@@ -139,6 +149,15 @@ const measureClientEffect = <A, E, R>(
     },
     effect
   )
+
+const assertMissingMutationHeadersRejected = async () => {
+  for (const path of ["/save", "/restore", "/quit"] as const) {
+    const response = await fetch(`${BASE_URL}${path}`, { method: "POST" })
+    if (response.ok) {
+      throw new Error(`${path} accepted a mutation without intent header`)
+    }
+  }
+}
 
 const makeApiPing = () =>
   Effect.gen(function*() {
@@ -251,6 +270,28 @@ const makeClientSmoke = (recordPerf: boolean) =>
         logCount: value.length
       })
     )
+    yield* run(
+      "saveGame",
+      client.game.saveGame({ headers: localMutationHeaders })
+    )
+    yield* run(
+      "restoreGame",
+      client.game.restoreGame({ headers: localMutationHeaders })
+    )
+    const restoredClientState = yield* run(
+      "getClientState.restoredAfterSave",
+      client.game.getClientState(),
+      (value) => ({
+        itemCount: HashMap.size(value.inventory),
+        roleCount: value.roles.length,
+        setupPhase: value.setup.phase,
+        worldSize: HashMap.size(value.world)
+      })
+    )
+    yield* run(
+      "quitGame",
+      client.game.quitGame({ headers: localMutationHeaders })
+    )
 
     return {
       clientState,
@@ -260,6 +301,7 @@ const makeClientSmoke = (recordPerf: boolean) =>
       logsBefore,
       lootContainers,
       lootItems,
+      restoredClientState,
       selectedClientState,
       world
     } as const
@@ -295,6 +337,8 @@ const run = async () => {
     )
   }
 
+  const artifactDir = await mkdtemp(join(tmpdir(), "flag-hack-api-"))
+  const saveFilePath = join(artifactDir, "save.json")
   const child = spawn(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["exec", "tsx", "packages/server/src/server.ts"],
@@ -303,6 +347,7 @@ const run = async () => {
       env: {
         ...process.env,
         FLAGHACK_PORT: String(PORT),
+        FLAGHACK_SAVE_PATH: saveFilePath,
         FORCE_COLOR: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
@@ -321,12 +366,16 @@ const run = async () => {
       },
       () => waitForApiReady(child)
     )
+    await assertMissingMutationHeadersRejected()
     const result = await Effect.runPromise(makeClientSmoke(true))
     const worldSize = HashMap.size(result.world)
     const inventorySize = HashMap.size(result.inventory)
     const clientStateWorldSize = HashMap.size(result.clientState.world)
     const lootContainerSize = HashMap.size(result.lootContainers)
     const lootItemSize = HashMap.size(result.lootItems)
+    const restoredWorldSize = HashMap.size(
+      result.restoredClientState.world
+    )
 
     if (worldSize <= 0) {
       throw new Error("getWorld returned an empty world")
@@ -356,6 +405,9 @@ const run = async () => {
     ) {
       throw new Error("getLogs did not decode to an array")
     }
+    if (restoredWorldSize <= 0) {
+      throw new Error("save/restore lifecycle returned an empty world")
+    }
 
     console.log(
       `API smoke passed: world=${worldSize}, clientStateWorld=${clientStateWorldSize}, inventory=${inventorySize}, lootContainers=${lootContainerSize}, lootItems=${lootItemSize}, logs=${result.logsAfter.length}`
@@ -369,6 +421,7 @@ const run = async () => {
     throw error
   } finally {
     await stopChild(child)
+    await rm(artifactDir, { force: true, recursive: true })
   }
 }
 

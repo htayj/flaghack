@@ -49,13 +49,18 @@ const shellQuote = (value: string): string =>
   `'${value.replaceAll("'", `'"'"'`)}'`
 
 const perfEnvAssignments = () =>
-  ["FLAGHACK_PERF_FILE", "FLAGHACK_PERF_STDOUT", "FLAGHACK_PERF_RUN_ID"]
-    .flatMap((name) => {
-      const value = process.env[name]?.trim()
-      return value === undefined || value === ""
-        ? []
-        : [`${name}=${shellQuote(value)}`]
-    })
+  [
+    "FLAGHACK_DOOR_FIXTURE",
+    "FLAGHACK_GAME_FIXTURE",
+    "FLAGHACK_PERF_FILE",
+    "FLAGHACK_PERF_RUN_ID",
+    "FLAGHACK_PERF_STDOUT"
+  ].flatMap((name) => {
+    const value = process.env[name]?.trim()
+    return value === undefined || value === ""
+      ? []
+      : [`${name}=${shellQuote(value)}`]
+  })
     .join(" ")
 
 const perfExportCommands = () => {
@@ -307,6 +312,10 @@ const run = async () => {
   const initialWaitMs = numberFromEnv("FLAGHACK_TMUX_INITIAL_WAIT_MS", 0)
   const finalWaitMs = numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
   const autoSetup = booleanFromEnv("FLAGHACK_TMUX_AUTO_SETUP", true)
+  const allowCliExit = booleanFromEnv(
+    "FLAGHACK_TMUX_ALLOW_CLI_EXIT",
+    false
+  )
   const label =
     process.env.FLAGHACK_TMUX_LABEL?.replace(/[^a-zA-Z0-9_.-]+/gu, "-")
     || "feature"
@@ -316,6 +325,7 @@ const run = async () => {
     path.join(tmpdir(), "flag-hack-tmux-feature-")
   )
   const capturePath = path.join(artifactDir, "cli-pane.txt")
+  const saveFilePath = path.join(artifactDir, "save.json")
   let sessionCreated = false
   let cliPane: string | undefined
   let serverPane: string | undefined
@@ -334,6 +344,8 @@ const run = async () => {
       "40",
       `${perfEnvAssignments()} FLAGHACK_PORT=${
         String(PORT)
+      } FLAGHACK_SAVE_PATH=${
+        shellQuote(saveFilePath)
       } pnpm exec tsx packages/server/src/server.ts`.trim()
     ])
     sessionCreated = true
@@ -346,6 +358,10 @@ const run = async () => {
     ]).trim()
 
     await waitForApiReady(serverPane)
+
+    if (allowCliExit) {
+      tmux(["set-window-option", "-t", session, "remain-on-exit", "on"])
+    }
 
     cliPane = tmux([
       "split-window",
@@ -373,7 +389,7 @@ const run = async () => {
     const capture = capturePane(cliPane)
     await writeFile(capturePath, capture)
 
-    if (paneDead(cliPane)) {
+    if (paneDead(cliPane) && !allowCliExit) {
       throw new Error("CLI tmux pane exited after feature input")
     }
 

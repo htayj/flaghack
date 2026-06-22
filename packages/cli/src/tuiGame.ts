@@ -21,6 +21,8 @@ import { Effect, HashMap, Option } from "effect"
 import { List, Map } from "immutable"
 
 export const MAX_VISIBLE_MESSAGES = 50
+export const quitWarningPrompt =
+  "Really quit? This permanently ends the game; save exits without quitting. [yn]"
 export type Tiles = ReadonlyArray<ReadonlyArray<Tile>>
 
 export const BOARD_HEIGHT = 20
@@ -61,11 +63,12 @@ export type MovementDirection =
   | "SW"
 type BaseMovementInput = keyof typeof baseMovementDirections
 export type MovementPrefix = "g" | "G" | "m" | "M"
+export type DirectionalActionKind = "open" | "close"
+export type ExtendedCommand = "quit" | "save"
 export type BlessedKeyLike = {
   readonly full?: string
   readonly name?: string
 }
-export type ExtendedCommand = "quit"
 export type MovementCommand =
   | { readonly _tag: "walk"; readonly dir: MovementDirection }
   | { readonly _tag: "run-to-block"; readonly dir: MovementDirection }
@@ -196,6 +199,8 @@ const rawControlInputs: Readonly<Record<string, string>> = {
   "\u0015": "C-u",
   "\u0002": "C-b",
   "\u000e": "C-n",
+  "\u0011": "C-q",
+  "\u0013": "C-s",
   "\r": "enter"
 }
 
@@ -293,7 +298,7 @@ export const normalizeGameInput = (
       return "#"
     }
 
-    const controlMatch = /^C-([hjklyubn])$/u.exec(full)
+    const controlMatch = /^C-([hjklyubnqs])$/u.exec(full)
     if (controlMatch?.[1] !== undefined) {
       return `C-${controlMatch[1]}`
     }
@@ -325,6 +330,8 @@ export const parseExtendedCommand = (
   switch (input.trim().replace(/^#/u, "").toLowerCase()) {
     case "quit":
       return Option.some("quit")
+    case "save":
+      return Option.some("save")
     default:
       return Option.none()
   }
@@ -342,6 +349,25 @@ export const parseInput = (input: string): Option.Option<Action> => {
     default:
       return Option.none()
   }
+}
+
+export const directionActionPrompt = (
+  kind: DirectionalActionKind
+): string =>
+  `${kind === "open" ? "Open" : "Close"} direction: hjkl/yubn, Esc cancel`
+
+export const parseDirectionalActionInput = (
+  kind: DirectionalActionKind,
+  input: string
+): Option.Option<Action> => {
+  if (!isBaseMovementInput(input)) return Option.none()
+
+  const dir = baseMovementDirections[input]
+  return Option.some(
+    kind === "open"
+      ? EAction.open({ dir })
+      : EAction.close({ dir })
+  )
 }
 
 const getPosition = (e: Entity): Pos | undefined =>
@@ -414,7 +440,8 @@ export const travelPrompt = (target: Pos): string =>
 const isImpassableTravelTerrain = (entity: Entity): boolean =>
   isTerrain(entity)
   && (entity._tag === "wall" || entity._tag === "tent-wall"
-    || entity._tag === "tent-post")
+    || entity._tag === "tent-post"
+    || (entity._tag === "door" && !entity.open))
 const isPassableTravelTerrain = (entity: Entity): boolean =>
   isTerrain(entity) && !isImpassableTravelTerrain(entity)
 const findPlayerEntity = (world: World): Entity | undefined =>
@@ -933,6 +960,7 @@ const zindex = (entity: Entity): number => {
     case "tunnel":
       return 0
     case "wall":
+    case "door":
     case "tent-wall":
     case "tent-post":
     case "sign":

@@ -6,6 +6,7 @@ import {
 } from "@flaghack/domain/display"
 import {
   type DirectionalVariant as DirectionalVariantSchema,
+  type Door as DoorSchema,
   Entity as EntitySchema,
   type Wall as WallSchema
 } from "@flaghack/domain/schemas"
@@ -13,6 +14,7 @@ import { Either, Schema as S } from "effect"
 
 type WallVariant = typeof DirectionalVariantSchema.Type
 type Entity = typeof EntitySchema.Type
+type Door = typeof DoorSchema.Type
 type Wall = typeof WallSchema.Type
 type ExpectedWallTile = Required<Pick<Tile, "bright" | "char" | "color">>
 
@@ -53,6 +55,15 @@ const makeWall = (variant: WallVariant): Wall => ({
   variant
 })
 
+const makeDoor = (open: boolean, variant: WallVariant): Door => ({
+  _tag: "door",
+  key: `door-${open ? "open" : "closed"}-${variant}`,
+  in: "world",
+  at: { x: 0, y: 0, z: 0 },
+  open,
+  variant
+})
+
 const makeTentWall = (variant: WallVariant): Entity => ({
   _tag: "tent-wall",
   key: `tent-wall-${variant}`,
@@ -75,6 +86,19 @@ describe("getTile", () => {
         expectedWallTiles[variant]
       )
     }
+  })
+
+  it("renders closed doors as dark-yellow wall variants and open doors as plus signs", () => {
+    expect(getTile(makeDoor(false, "vertical"))).toEqual({
+      bright: false,
+      char: "│",
+      color: "yellow"
+    })
+    expect(getTile(makeDoor(true, "vertical"))).toEqual({
+      bright: false,
+      char: "+",
+      color: "yellow"
+    })
   })
 
   it("renders campground terrain markers", () => {

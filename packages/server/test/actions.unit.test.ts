@@ -4,7 +4,7 @@ import { Effect, HashMap } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { doAction } from "../src/actions.js"
-import { player } from "../src/creatures.js"
+import { makeHippie, player } from "../src/creatures.js"
 import {
   makeBeer,
   makeCooler,
@@ -47,6 +47,20 @@ const tentBlockerAt = (tag: "tent-wall" | "tent-post"): Entity => ({
   key: `${tag}-1`,
   ...(tag === "tent-wall" ? { variant: "vertical" as const } : {})
 } as Entity)
+
+const doorAt = (
+  key: string,
+  x: number,
+  y: number,
+  open: boolean
+): Entity => ({
+  _tag: "door",
+  at: { x, y, z: 0 },
+  in: "world",
+  key,
+  open,
+  variant: "vertical"
+})
 
 describe("server actions", () => {
   it("does not run nested effects in action handlers", () => {
@@ -183,6 +197,101 @@ describe("server actions", () => {
 
       expect(entityByKey(next, actor.key)?.at).toEqual(marker.at)
     }
+  })
+
+  it("auto-opens a closed adjacent door when moving into it, then moves through the open door", () => {
+    const actor = player(0, 0, 0)
+    const door = doorAt("door-1", 1, 0, false)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        ["floor-0", floorAt("floor-0", 0, 0)],
+        ["floor-1", floorAt("floor-1", 1, 0)],
+        [door.key, door]
+      ])
+    })
+
+    const afterOpen = Effect.runSync(
+      doAction(gs, {
+        action: EAction.move({ dir: "E" }),
+        entity: actor
+      })
+    )
+    const openedDoor = entityByKey(afterOpen, door.key)
+    const afterMove = Effect.runSync(
+      doAction(afterOpen, {
+        action: EAction.move({ dir: "E" }),
+        entity: entityByKey(afterOpen, actor.key) ?? actor
+      })
+    )
+
+    expect(entityByKey(afterOpen, actor.key)?.at).toEqual(actor.at)
+    expect(openedDoor?._tag === "door" ? openedDoor.open : false).toBe(
+      true
+    )
+    expect(entityByKey(afterMove, actor.key)?.at).toEqual(door.at)
+  })
+
+  it("opens and closes adjacent doors with explicit direction actions", () => {
+    const actor = player(0, 0, 0)
+    const door = doorAt("door-1", 1, 0, false)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        ["floor-0", floorAt("floor-0", 0, 0)],
+        ["floor-1", floorAt("floor-1", 1, 0)],
+        [door.key, door]
+      ])
+    })
+
+    const afterOpen = Effect.runSync(
+      doAction(gs, {
+        action: EAction.open({ dir: "E" }),
+        entity: actor
+      })
+    )
+    const afterClose = Effect.runSync(
+      doAction(afterOpen, {
+        action: EAction.close({ dir: "E" }),
+        entity: entityByKey(afterOpen, actor.key) ?? actor
+      })
+    )
+    const openedDoor = entityByKey(afterOpen, door.key)
+    const closedDoor = entityByKey(afterClose, door.key)
+
+    expect(openedDoor?._tag === "door" ? openedDoor.open : false).toBe(
+      true
+    )
+    expect(closedDoor?._tag === "door" ? closedDoor.open : true).toBe(
+      false
+    )
+  })
+
+  it("does not close an open door occupied by a creature", () => {
+    const actor = player(0, 0, 0)
+    const door = doorAt("door-1", 1, 0, true)
+    const blocker = makeHippie("hippie-on-door", 1, 0, 0)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [blocker.key, blocker],
+        ["floor-0", floorAt("floor-0", 0, 0)],
+        ["floor-1", floorAt("floor-1", 1, 0)],
+        [door.key, door]
+      ])
+    })
+
+    const afterClose = Effect.runSync(
+      doAction(gs, {
+        action: EAction.close({ dir: "E" }),
+        entity: actor
+      })
+    )
+    const maybeDoor = entityByKey(afterClose, door.key)
+
+    expect(maybeDoor?._tag === "door" ? maybeDoor.open : false).toBe(
+      true
+    )
   })
 
   it("blocks movement into tent wall and post terrain", () => {

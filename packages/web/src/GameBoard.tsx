@@ -18,14 +18,16 @@ type Color =
   | "magenta"
   | "cyan"
   | "white"
-const hcolor = (color: Color = "white") => (char: string, key: string) => (
-  <span style={{ color }} key={key}>
+const cssColor = (color: Color = "white", bright?: boolean): string =>
+  color === "yellow" && bright !== true ? "#aa5500" : color
+
+const hcolor = ({ bright, char, color }: Tile, key: string) => (
+  <span style={{ color: cssColor(color, bright) }} key={key}>
     {`${char === " " ? " " : char}`}
   </span>
 )
 
-const tileToText = ({ char, color }: Tile, key: string) =>
-  hcolor(color)(char, key)
+const tileToText = (tile: Tile, key: string) => hcolor(tile, key)
 export default function({ tiles }: Props) {
   // const content = tiles.map((row) => row.map(tileToText).join("")).join(
   //   "\n"

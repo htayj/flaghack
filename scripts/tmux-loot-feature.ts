@@ -397,6 +397,11 @@ const run = async () => {
     )
   }
 
+  const artifactDir = await mkdtemp(
+    path.join(tmpdir(), "flag-hack-tmux-loot-")
+  )
+  const capturePath = path.join(artifactDir, "cli-pane.txt")
+  const saveFilePath = path.join(artifactDir, "save.json")
   const server = spawn(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["exec", "tsx", "packages/server/src/server.ts"],
@@ -405,6 +410,7 @@ const run = async () => {
       env: {
         ...process.env,
         FLAGHACK_PORT: String(PORT),
+        FLAGHACK_SAVE_PATH: saveFilePath,
         FORCE_COLOR: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
@@ -412,10 +418,6 @@ const run = async () => {
   )
   const tail = tailProcess(server)
   const session = `flag-hack-loot-${process.pid}-${Date.now()}`
-  const artifactDir = await mkdtemp(
-    path.join(tmpdir(), "flag-hack-tmux-loot-")
-  )
-  const capturePath = path.join(artifactDir, "cli-pane.txt")
   let sessionCreated = false
   let cliPane: string | undefined
 

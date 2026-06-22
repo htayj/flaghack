@@ -93,4 +93,18 @@ describe("GameApi item-list success contracts", () => {
     expect(confirmBlock).toMatch(/\/setup\/confirm/)
     expect(confirmBlock).toMatch(/confirm\s*:\s*Schema\.Boolean/)
   })
+
+  it("adds separate save, restore, and quit endpoints outside SAction", () => {
+    const source = readGameApiSource()
+    const saveBlock = endpointBlock(source, "saveGame", "post")
+    const restoreBlock = endpointBlock(source, "restoreGame", "post")
+    const quitBlock = endpointBlock(source, "quitGame", "post")
+
+    expect(saveBlock).toMatch(/\/save/)
+    expect(restoreBlock).toMatch(/\/restore/)
+    expect(quitBlock).toMatch(/\/quit/)
+    expect(saveBlock).not.toMatch(/SAction/)
+    expect(restoreBlock).not.toMatch(/SAction/)
+    expect(quitBlock).not.toMatch(/SAction/)
+  })
 })

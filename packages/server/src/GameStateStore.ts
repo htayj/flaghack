@@ -22,6 +22,10 @@ export class GameStateStore
           })
         )
 
+        const peek = SynchronizedRef.get(stateRef)
+
+        const reset = SynchronizedRef.set(stateRef, Option.none())
+
         const set = (state: TGameState) =>
           SynchronizedRef.set(stateRef, Option.some(state))
 
@@ -49,7 +53,7 @@ export class GameStateStore
             })
           )
 
-        return { get, modifyEffect, set } as const
+        return { get, modifyEffect, peek, reset, set } as const
       })
   })
 {}

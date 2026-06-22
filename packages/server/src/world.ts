@@ -42,6 +42,7 @@ import {
 import { collideP, shift } from "./position.js"
 import type { TPos } from "./position.js"
 import {
+  door,
   effigy,
   floor,
   sign,
@@ -108,6 +109,7 @@ const itemTags = new globalThis.Set<Entity["_tag"]>([
 ])
 const terrainTags = new globalThis.Set<Entity["_tag"]>([
   "wall",
+  "door",
   "tent-wall",
   "tent-post",
   "floor",
@@ -122,7 +124,10 @@ export const isCreature = (e: Entity): e is Creature =>
   creatureTags.has(e._tag)
 export const isTerrain = (e: Entity): boolean => terrainTags.has(e._tag)
 export const isImpassable = (e: Entity) =>
-  e._tag === "wall" || e._tag === "tent-wall" || e._tag === "tent-post"
+  e._tag === "wall"
+  || e._tag === "tent-wall"
+  || e._tag === "tent-post"
+  || (e._tag === "door" && !e.open)
 export const isPassableTerrain = (e: Entity) =>
   isTerrain(e) && !isImpassable(e)
 export const isPlayer = (e: Entity): e is Player => e._tag === "player"
@@ -270,14 +275,106 @@ const getSpatialInfo = (
   return [width, height, minX, minY, maxX, maxY, xs, ys]
 }
 const tunnelingDist = (e: Entity) => (e._tag === "wall" ? 1 : 0.001)
-const replaceTilesWithTunnels = (
+type PassageCoordinate = TPos
+
+const samePassageCoordinate = (
+  left: PassageCoordinate,
+  right: PassageCoordinate
+): boolean =>
+  left.x === right.x && left.y === right.y && left.z === right.z
+
+const passageCoordinateKey = ({ x, y, z }: PassageCoordinate): string =>
+  `${x},${y},${z}`
+
+const isPassageTerrain = (entity: Entity): boolean =>
+  entity._tag === "floor" || entity._tag === "tunnel"
+  || entity._tag === "door"
+
+const hasPassageAt = (
+  coordinate: PassageCoordinate,
+  world: ReadonlyArray<Entity>,
+  passageCoordinates: ReadonlySet<string>
+): boolean =>
+  passageCoordinates.has(passageCoordinateKey(coordinate))
+  || world.some((entity) =>
+    entity.in === "world"
+    && samePassageCoordinate(entity.at, coordinate)
+    && isPassageTerrain(entity)
+  )
+
+const doorVariantForPassage = (
+  coordinate: PassageCoordinate,
+  world: ReadonlyArray<Entity>,
+  passageCoordinates: ReadonlySet<string>
+): typeof DirectionalVariantSchema.Type => {
+  const horizontal = hasPassageAt(
+    { x: coordinate.x - 1, y: coordinate.y, z: coordinate.z },
+    world,
+    passageCoordinates
+  ) || hasPassageAt(
+    { x: coordinate.x + 1, y: coordinate.y, z: coordinate.z },
+    world,
+    passageCoordinates
+  )
+  const vertical = hasPassageAt(
+    { x: coordinate.x, y: coordinate.y - 1, z: coordinate.z },
+    world,
+    passageCoordinates
+  ) || hasPassageAt(
+    { x: coordinate.x, y: coordinate.y + 1, z: coordinate.z },
+    world,
+    passageCoordinates
+  )
+
+  if (horizontal) return "vertical"
+  if (vertical) return "horizontal"
+  return "none"
+}
+
+const passageDoorIndex = (coordinates: ReadonlyArray<PassageCoordinate>) =>
+  Math.floor(coordinates.length / 2)
+
+const makePassagesWithDoor = (
+  coordinates: ReadonlyArray<PassageCoordinate>,
+  world: ReadonlyArray<Entity>,
+  fallbackDoorVariant?: typeof DirectionalVariantSchema.Type
+): Effect.Effect<Array<Entity>, never, KeyGenerator> => {
+  const passageCoordinateKeys = new globalThis.Set(
+    coordinates.map(passageCoordinateKey)
+  )
+  const doorIndex = passageDoorIndex(coordinates)
+
+  return Effect.forEach(
+    coordinates,
+    (coordinate, index): Effect.Effect<Entity, never, KeyGenerator> =>
+      index === doorIndex
+        ? door(
+          coordinate.x,
+          coordinate.y,
+          coordinate.z,
+          false,
+          fallbackDoorVariant
+            ?? doorVariantForPassage(
+              coordinate,
+              world,
+              passageCoordinateKeys
+            )
+        )
+        : tunnel(coordinate.x, coordinate.y, coordinate.z),
+    { concurrency: 1 }
+  )
+}
+
+const replaceTilesWithPassages = (
   a: Array<Entity>,
   b: Array<Entity>,
-  tunnels: Array<Entity>
+  passages: Array<Entity>
 ): Array<Entity> =>
   a.concat(b).filter((e) =>
-    !tunnels.some((t) => t.at.x === e.at.x && t.at.y === e.at.y)
-  ).concat(tunnels)
+    !passages.some((t) =>
+      t.at.x === e.at.x && t.at.y === e.at.y && t.at.z === e.at.z
+    )
+  ).concat(passages)
 const _linkLeaves = (
   a: Array<Entity>,
   b: Array<Entity>
@@ -315,18 +412,23 @@ const _linkLeaves = (
         "y intersection"
       )
 
-      const tunnels = yield* Effect.forEach(
-        minXA < minXB
-          ? range(maxXA + 1, minXB - 1)
-          : range(maxXB + 1, minXA - 1),
-        (x) => tunnel(x, linkLineY, z),
-        { concurrency: 1 }
+      const passageCoordinates = (minXA < minXB
+        ? range(maxXA + 1, minXB - 1)
+        : range(maxXB + 1, minXA - 1)).map((x) => ({
+          x,
+          y: linkLineY,
+          z
+        }))
+      const passages = yield* makePassagesWithDoor(
+        passageCoordinates,
+        a.concat(b),
+        "vertical"
       )
       // console.log(
       //   "linking along: ",
-      //   JSON.stringify(tunnels.map((t) => t.at))
+      //   JSON.stringify(passages.map((t) => t.at))
       // )
-      return replaceTilesWithTunnels(a, b, tunnels)
+      return replaceTilesWithPassages(a, b, passages)
     }
     const xIntersectValues = Set(xsB).intersect(Set(xsA)).filter((x) =>
       floorsA.some((f) => f.at.x === x && maxYA === f.at.y)
@@ -348,18 +450,23 @@ const _linkLeaves = (
         "x intersection"
       )
 
-      const tunnels = yield* Effect.forEach(
-        minYA < minYB
-          ? range(maxYA + 1, minYB - 1)
-          : range(maxYB + 1, minYA - 1),
-        (y) => tunnel(linkLineX, y, z),
-        { concurrency: 1 }
+      const passageCoordinates = (minYA < minYB
+        ? range(maxYA + 1, minYB - 1)
+        : range(maxYB + 1, minYA - 1)).map((y) => ({
+          x: linkLineX,
+          y,
+          z
+        }))
+      const passages = yield* makePassagesWithDoor(
+        passageCoordinates,
+        a.concat(b),
+        "horizontal"
       )
       // console.log(
       //   "linking along: ",
-      //   JSON.stringify(tunnels.map((t) => t.at))
+      //   JSON.stringify(passages.map((t) => t.at))
       // )
-      return replaceTilesWithTunnels(a, b, tunnels)
+      return replaceTilesWithPassages(a, b, passages)
     }
     const ia = yield* randomIntInclusive(
       0,
@@ -384,13 +491,12 @@ const _linkLeaves = (
     ).filter(
       (e) => e?._tag === "wall"
     )
-    const tunnels = yield* Effect.forEach(
-      tunnelSources,
-      ({ at: { x, y, z } }) => tunnel(x, y, z),
-      { concurrency: 1 }
+    const passages = yield* makePassagesWithDoor(
+      tunnelSources.map(({ at }) => at),
+      a.concat(b)
     )
-    // console.log("tunnels", tunnels)
-    return replaceTilesWithTunnels(a, b, tunnels)
+    // console.log("passages", passages)
+    return replaceTilesWithPassages(a, b, passages)
   })
 
 const wallAt = (x: number, y: number) => (w: Array<Entity>) =>

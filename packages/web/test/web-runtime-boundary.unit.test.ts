@@ -140,12 +140,24 @@ const classifyRuntimeLaunch = (source: string): string => {
     return "comma getPickupItemsFor"
   }
 
+  if (/^doPlayerAction\(\s*action\s*\)\.pipe\b/.test(normalized)) {
+    return "player action doPlayerAction"
+  }
+
   if (/^doPlayerAction\(\s*action\.value\s*\)\.pipe\b/.test(normalized)) {
     return "movement doPlayerAction"
   }
 
   if (/^doPlayerAction\(\s*EAction\.pickupMulti\(/.test(normalized)) {
     return "pickup doPlayerAction"
+  }
+
+  if (/^saveGame\.pipe\b/.test(normalized)) {
+    return "save saveGame"
+  }
+
+  if (/^quitGame\.pipe\b/.test(normalized)) {
+    return "quit quitGame"
   }
 
   return `unexpected: ${normalized}`
@@ -209,12 +221,14 @@ describe("web Effect runtime boundary", () => {
       )
     )
 
-    expect(launchClassifications).toHaveLength(4)
+    expect(launchClassifications).toHaveLength(6)
     expect([...launchClassifications].sort()).toEqual([
       "comma getPickupItemsFor",
       "initial getWorld",
-      "movement doPlayerAction",
-      "pickup doPlayerAction"
+      "pickup doPlayerAction",
+      "player action doPlayerAction",
+      "quit quitGame",
+      "save saveGame"
     ])
   })
 })

@@ -16,6 +16,7 @@ import {
   ItemCollection,
   Player,
   Pos,
+  RoleSetupState,
   SAction,
   World
 } from "@flaghack/domain/schemas"
@@ -154,6 +155,41 @@ describe("domain source schemas", () => {
         ...player,
         name: "You"
       })
+    )
+  })
+
+  it("allows confirmed player role metadata and balanced attributes", () => {
+    expectRight(
+      S.decodeUnknownEither(Player)({
+        _tag: "player" as const,
+        key: "player-1",
+        in: "world",
+        at: { x: 0, y: 0, z: 0 },
+        role: "virgin",
+        attributes: {
+          charisma: 10,
+          constitution: 10,
+          dexterity: 10,
+          intelligence: 10,
+          strength: 10,
+          wisdom: 10
+        }
+      })
+    )
+  })
+
+  it("validates setup phases for role selection and confirmation", () => {
+    expectRight(
+      S.decodeUnknownEither(RoleSetupState)({ phase: "selectRole" })
+    )
+    expectRight(
+      S.decodeUnknownEither(RoleSetupState)({
+        phase: "confirm",
+        selectedRoleId: "virgin"
+      })
+    )
+    expectRight(
+      S.decodeUnknownEither(RoleSetupState)({ phase: "complete" })
     )
   })
 

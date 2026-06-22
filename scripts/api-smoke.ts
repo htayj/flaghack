@@ -140,6 +140,14 @@ const measureClientEffect = <A, E, R>(
     effect
   )
 
+const makeApiPing = () =>
+  Effect.gen(function*() {
+    const client = yield* HttpApiClient.make(GameApi, {
+      baseUrl: BASE_URL
+    })
+    yield* client.game.getWorld()
+  }).pipe(Effect.provide(NodeHttpClient.layerUndici))
+
 const makeClientSmoke = (recordPerf: boolean) =>
   Effect.gen(function*() {
     const client = yield* HttpApiClient.make(GameApi, {
@@ -172,11 +180,40 @@ const makeClientSmoke = (recordPerf: boolean) =>
         itemCount: HashMap.size(value)
       })
     )
-    const clientState = yield* run(
-      "getClientState",
+    const initialClientState = yield* run(
+      "getClientState.initial",
       client.game.getClientState(),
       (value) => ({
         itemCount: HashMap.size(value.inventory),
+        roleCount: value.roles.length,
+        setupPhase: value.setup.phase,
+        worldSize: HashMap.size(value.world)
+      })
+    )
+    yield* run(
+      "selectRole.virgin",
+      client.game.selectRole({ payload: { roleId: "virgin" } })
+    )
+    const selectedClientState = yield* run(
+      "getClientState.selectedRole",
+      client.game.getClientState(),
+      (value) => ({
+        roleCount: value.roles.length,
+        setupPhase: value.setup.phase,
+        worldSize: HashMap.size(value.world)
+      })
+    )
+    yield* run(
+      "confirmSetup.y",
+      client.game.confirmSetup({ payload: { confirm: true } })
+    )
+    const clientState = yield* run(
+      "getClientState.complete",
+      client.game.getClientState(),
+      (value) => ({
+        itemCount: HashMap.size(value.inventory),
+        roleCount: value.roles.length,
+        setupPhase: value.setup.phase,
         worldSize: HashMap.size(value.world)
       })
     )
@@ -217,11 +254,13 @@ const makeClientSmoke = (recordPerf: boolean) =>
 
     return {
       clientState,
+      initialClientState,
       inventory,
       logsAfter,
       logsBefore,
       lootContainers,
       lootItems,
+      selectedClientState,
       world
     } as const
   }).pipe(Effect.provide(NodeHttpClient.layerUndici))
@@ -238,7 +277,7 @@ const waitForApiReady = async (child: ChildProcessWithoutNullStreams) => {
     }
 
     try {
-      await Effect.runPromise(makeClientSmoke(false))
+      await Effect.runPromise(makeApiPing())
       return
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
@@ -291,6 +330,21 @@ const run = async () => {
 
     if (worldSize <= 0) {
       throw new Error("getWorld returned an empty world")
+    }
+    if (result.initialClientState.setup.phase !== "selectRole") {
+      throw new Error(
+        `fresh client state did not start at role selection: ${result.initialClientState.setup.phase}`
+      )
+    }
+    if (result.selectedClientState.setup.phase !== "confirm") {
+      throw new Error(
+        `role selection did not advance to confirmation: ${result.selectedClientState.setup.phase}`
+      )
+    }
+    if (result.clientState.setup.phase !== "complete") {
+      throw new Error(
+        `setup confirmation did not complete setup: ${result.clientState.setup.phase}`
+      )
     }
     if (clientStateWorldSize <= 0 || clientStateWorldSize >= worldSize) {
       throw new Error(

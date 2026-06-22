@@ -1,5 +1,6 @@
 import { HttpApiClient } from "@effect/platform"
 import { GameApi } from "@flaghack/domain/GameApi"
+import type { RoleId } from "@flaghack/domain/roles"
 import type { Action, Key } from "@flaghack/domain/schemas"
 import { Effect } from "effect"
 import { resolveCliApiBaseUrl } from "./config.js"
@@ -14,9 +15,20 @@ export class GameClient
         baseUrl: resolveCliApiBaseUrl(process.env)
       })
 
+      const ensureDefaultSetup = client.game.selectRole({
+        payload: { roleId: "virgin" }
+      }).pipe(
+        Effect.zipRight(
+          client.game.confirmSetup({ payload: { confirm: true } })
+        )
+      )
       const getLogs = client.game.getLogs()
-      const getInventory = client.game.getInventory()
-      const getWorld = client.game.getWorld()
+      const getInventory = ensureDefaultSetup.pipe(
+        Effect.zipRight(client.game.getInventory())
+      )
+      const getWorld = ensureDefaultSetup.pipe(
+        Effect.zipRight(client.game.getWorld())
+      )
       function getPickupItemsFor(key: Key) {
         return client.game.getPickupItemsFor({ urlParams: { key } })
       }
@@ -29,7 +41,15 @@ export class GameClient
         })
       }
       function doPlayerAction(action: Action) {
-        return client.game.doAction({ payload: { action } })
+        return ensureDefaultSetup.pipe(
+          Effect.zipRight(client.game.doAction({ payload: { action } }))
+        )
+      }
+      function selectRole(roleId: RoleId) {
+        return client.game.selectRole({ payload: { roleId } })
+      }
+      function confirmSetup(confirm: boolean) {
+        return client.game.confirmSetup({ payload: { confirm } })
       }
 
       return {
@@ -39,7 +59,9 @@ export class GameClient
         getPickupItemsFor,
         getLootContainersFor,
         getLootItemsFor,
-        doPlayerAction
+        doPlayerAction,
+        selectRole,
+        confirmSetup
       } as const
     })
   })

@@ -1,5 +1,6 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
 import { Schema } from "effect"
+import { RoleId } from "./roles.js"
 import {
   ClientState,
   ContainerCollection,
@@ -26,6 +27,16 @@ export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
     HttpApiEndpoint.get("getClientState", "/client-state").addSuccess(
       ClientState
+    )
+  )
+  .add(
+    HttpApiEndpoint.post("selectRole", "/setup/role").setPayload(
+      Schema.Struct({ roleId: RoleId })
+    )
+  )
+  .add(
+    HttpApiEndpoint.post("confirmSetup", "/setup/confirm").setPayload(
+      Schema.Struct({ confirm: Schema.Boolean })
     )
   )
   .add(

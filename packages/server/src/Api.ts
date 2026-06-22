@@ -14,6 +14,10 @@ const GameApiLive = HttpApiBuilder.group(
         .handle("getWorld", () => game.getWorld)
         .handle("getInventory", () => game.getInventory)
         .handle("getClientState", () => game.getClientState)
+        .handle("selectRole", ({ payload: { roleId } }) =>
+          game.selectRole(roleId))
+        .handle("confirmSetup", ({ payload: { confirm } }) =>
+          game.confirmSetup(confirm))
         .handle("getPickupItemsFor", ({ urlParams: { key } }) =>
           game.getPickupItemsFor(key))
         .handle("getLootContainersFor", ({ urlParams: { key } }) =>

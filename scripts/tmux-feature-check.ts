@@ -155,6 +155,21 @@ const numberFromEnv = (name: string, defaultValue: number): number => {
   return parsed
 }
 
+const booleanFromEnv = (name: string, defaultValue: boolean): boolean => {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === "") return defaultValue
+
+  const normalized = raw.trim().toLowerCase()
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+    return true
+  }
+  if (["0", "false", "no", "n", "off"].includes(normalized)) {
+    return false
+  }
+
+  throw new Error(`${name} must be a boolean-like value`)
+}
+
 const waitForApiReady = async (serverPane: string) => {
   const startedAt = Date.now()
   let lastError = "server did not respond"
@@ -190,6 +205,49 @@ const waitForPaneOutput = async (pane: string) => {
   }
 
   throw new Error("timed out waiting for CLI pane output")
+}
+
+const captureShowsDefaultCliReady = (capture: string): boolean =>
+  capture.includes("Flag Hack Charmbracelet UI")
+  || capture.includes("Player:")
+
+const captureShowsRoleSelection = (capture: string): boolean =>
+  capture.includes("v - virgin") || capture.includes("Choose a role")
+
+const captureShowsSetupConfirmation = (capture: string): boolean =>
+  capture.includes("Is this ok? [yn]")
+
+const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
+  const startedAt = Date.now()
+  let sentRole = false
+  let sentConfirm = false
+
+  while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
+    if (paneDead(pane)) {
+      throw new Error("CLI tmux pane exited before setup completed")
+    }
+
+    const capture = stripAnsi(capturePane(pane))
+    if (captureShowsDefaultCliReady(capture)) return
+
+    if (!sentRole && captureShowsRoleSelection(capture)) {
+      tmux(["send-keys", "-t", pane, "v"])
+      sentRole = true
+      await delay(POLL_INTERVAL_MS)
+      continue
+    }
+
+    if (!sentConfirm && captureShowsSetupConfirmation(capture)) {
+      tmux(["send-keys", "-t", pane, "y"])
+      sentConfirm = true
+      await delay(POLL_INTERVAL_MS)
+      continue
+    }
+
+    await delay(POLL_INTERVAL_MS)
+  }
+
+  throw new Error("timed out waiting for default CLI setup to complete")
 }
 
 const sendKeys = async (
@@ -248,6 +306,7 @@ const run = async () => {
   )
   const initialWaitMs = numberFromEnv("FLAGHACK_TMUX_INITIAL_WAIT_MS", 0)
   const finalWaitMs = numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
+  const autoSetup = booleanFromEnv("FLAGHACK_TMUX_AUTO_SETUP", true)
   const label =
     process.env.FLAGHACK_TMUX_LABEL?.replace(/[^a-zA-Z0-9_.-]+/gu, "-")
     || "feature"
@@ -302,6 +361,9 @@ const run = async () => {
     ]).trim()
 
     await waitForPaneOutput(cliPane)
+    if (autoSetup && cliCommand === DEFAULT_CLI_COMMAND) {
+      await ensureDefaultCliPastSetup(cliPane)
+    }
     if (initialWaitMs > 0) {
       await delay(initialWaitMs)
     }

@@ -1,3 +1,4 @@
+import type { RoleId } from "@flaghack/domain/roles"
 import {
   type Action,
   EAction,
@@ -43,6 +44,14 @@ import {
 } from "./offscreen.js"
 import { makePerfTraceId, measureEffect } from "./perf.js"
 import type { TPos } from "./position.js"
+import {
+  availableRoles,
+  confirmSetupForGameState,
+  initialSetupState,
+  selectRoleForGameState,
+  setupIsComplete,
+  setupStateFor
+} from "./setup.js"
 import {
   CampgroundGenLevel,
   campgroundReservedTravelCorridorCoordinates,
@@ -113,6 +122,7 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
     )
 
     return GameState.make({
+      setup: initialSetupState,
       world: testLevelReady
     })
   }
@@ -270,6 +280,10 @@ export const actPlayerAction = (
       turnMeasureOptions(action, traceId, "state.modifyEffect"),
       eWithGameState((gs) =>
         Effect.gen(function*() {
+          if (!setupIsComplete(gs)) {
+            return gs
+          }
+
           const activeRegion = yield* activeRegionForGameState(gs)
           const planningWorld = activeRegion?.actorWorld ?? gs.world
           const movementWorld = activeRegion?.collisionWorld
@@ -411,11 +425,23 @@ export const getClientState = pipe(
     clientWorldForState(gs).pipe(
       Effect.map((world) => ({
         inventory: inventoryForWorld("player")(gs.world),
+        roles: [...availableRoles],
+        setup: setupStateFor(gs),
         world
       }))
     )
   )
 )
+
+export const selectRoleForSetup = (roleId: RoleId) =>
+  eWithGameState((gs) =>
+    Effect.succeed(selectRoleForGameState(gs, roleId))
+  )
+
+export const confirmSetup = (confirm: boolean) =>
+  eWithGameState((gs) =>
+    Effect.succeed(confirmSetupForGameState(gs, confirm))
+  )
 
 export const getInventory = (key: TKey) =>
   pipe(

@@ -172,6 +172,150 @@ func TestRunTravelRefreshesBeforeReturningCancelledBatch(t *testing.T) {
 	}
 }
 
+func TestGetClientStateDecodesSetupRolesAndPlayerAttributes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/client-state" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"setup":{"phase":"confirm","selectedRoleId":"virgin"},"roles":[{"id":"virgin","letter":"v","name":"virgin","attributes":{"strength":10,"dexterity":10,"constitution":10,"intelligence":10,"wisdom":10,"charisma":10},"startingInventory":[],"equipment":[]}],"world":[["player",{"key":"player","_tag":"player","in":"world","at":{"x":1,"y":0,"z":0},"role":"virgin","attributes":{"strength":10,"dexterity":10,"constitution":10,"intelligence":10,"wisdom":10,"charisma":10}}]],"inventory":[]}`))
+	}))
+	defer server.Close()
+
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	got, err := client.getClientState(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.setup.Phase != "confirm" || got.setup.SelectedRoleID != "virgin" {
+		t.Fatalf("setup = %#v, want virgin confirmation", got.setup)
+	}
+	if len(got.roles) != 1 || got.roles[0].Letter != "v" || got.roles[0].Name != "virgin" {
+		t.Fatalf("roles = %#v, want v - virgin", got.roles)
+	}
+	if len(got.world) != 1 || got.world[0].Attributes == nil || got.world[0].Attributes.Strength != 10 || got.world[0].Role != "virgin" {
+		t.Fatalf("player role attributes = %#v", got.world)
+	}
+}
+
+func TestSetupViewAndKeysSelectConfirmOrReturnToRoleSelection(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "selectRole"}
+	m.roles = []role{{ID: "virgin", Letter: "v", Name: "virgin"}}
+
+	if view := m.View(); !strings.Contains(view, "v - virgin") || strings.Contains(view, "Flag Hack Charmbracelet UI") {
+		t.Fatalf("setup role view should show only the role picker, got %q", view)
+	}
+
+	next, cmd := m.handleKey(charmRuneKey('v'))
+	if cmd == nil {
+		t.Fatal("role letter should post setup role selection")
+	}
+	m = next.(model)
+	if m.setup.Phase != "confirm" || m.setup.SelectedRoleID != "virgin" || !m.setupPending {
+		t.Fatalf("setup after v = %#v pending=%v, want pending virgin confirmation", m.setup, m.setupPending)
+	}
+	if view := m.View(); !strings.Contains(view, "v - virgin") || !strings.Contains(view, "Working") || strings.Contains(view, "Is this ok? [yn]") {
+		t.Fatalf("pending setup confirmation view should show role and working state only: %q", view)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('n'))
+	if cmd != nil {
+		t.Fatalf("n while role selection request is pending returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+
+	next, _ = m.Update(setupDoneMsg{requestID: m.setupRequestID, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles}})
+	m = next.(model)
+	if m.setupPending {
+		t.Fatal("role selection response should clear setup pending")
+	}
+	if view := m.View(); !strings.Contains(view, "v - virgin") || !strings.Contains(view, "Is this ok? [yn]") || strings.Contains(view, "Working") {
+		t.Fatalf("acknowledged setup confirmation view should show actionable y/n prompt: %q", view)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('n'))
+	if cmd == nil {
+		t.Fatal("n should post setup rejection after role selection is acknowledged")
+	}
+	m = next.(model)
+	if m.setup.Phase != "selectRole" || m.setup.SelectedRoleID != "" || !m.setupPending {
+		t.Fatalf("setup after n = %#v pending=%v, want pending role selection", m.setup, m.setupPending)
+	}
+}
+
+func TestLoadingSetupScreenIgnoresNormalPlayKeys(t *testing.T) {
+	m := newModel()
+
+	if view := m.View(); !strings.Contains(view, "Loading game") || strings.Contains(view, "Flag Hack Charmbracelet UI") {
+		t.Fatalf("initial empty model should render loading setup screen only: %q", view)
+	}
+	next, cmd := m.handleKey(charmRuneKey(','))
+	if cmd != nil {
+		t.Fatalf("loading setup key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup != nil || len(m.messages) != 0 {
+		t.Fatalf("loading setup key should not open popups or messages, popup=%#v messages=%#v", m.popup, m.messages)
+	}
+}
+
+func TestLoadingErrorStillIgnoresNormalPlayKeys(t *testing.T) {
+	m := newModel()
+	m.addMessage("initial load failed: boom")
+
+	if view := m.View(); !strings.Contains(view, "Loading game") || !strings.Contains(view, "initial load failed") || strings.Contains(view, "Flag Hack Charmbracelet UI") {
+		t.Fatalf("initial load failure should still render loading setup screen with errors: %q", view)
+	}
+	next, cmd := m.handleKey(charmRuneKey(','))
+	if cmd != nil {
+		t.Fatalf("loading error key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.popup != nil {
+		t.Fatalf("loading error key should not open popups, popup=%#v", m.popup)
+	}
+}
+
+func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "selectRole"}
+	m.roles = []role{{ID: "virgin", Letter: "v", Name: "virgin"}}
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}, Name: "you"},
+	}
+
+	next, cmd := m.handleKey(charmRuneKey('l'))
+	if cmd != nil {
+		t.Fatalf("movement during setup returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	player, ok := findPlayer(m.world)
+	if !ok || player.At != (pos{X: 0, Y: 0, Z: 0}) {
+		t.Fatalf("movement during setup moved player to %#v", player)
+	}
+
+	m.setupRequestID = 7
+	m.setupPending = true
+	next, _ = m.Update(setupDoneMsg{requestID: 7, snapshot: snapshot{setup: setupState{Phase: "complete", SelectedRoleID: "virgin"}, roles: m.roles, world: m.world, inventory: []entity{}}})
+	m = next.(model)
+	if !m.setup.complete() {
+		t.Fatalf("setup completion response did not enter normal play: %#v", m.setup)
+	}
+	if view := m.View(); !strings.Contains(view, "Flag Hack Charmbracelet UI") {
+		t.Fatalf("complete setup should render normal play view: %q", view)
+	}
+
+	next, _ = m.Update(setupDoneMsg{requestID: 6, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles, world: []entity{{Key: "stale-player", Tag: "player", In: "world", At: pos{X: 9, Y: 9, Z: 0}}}, inventory: []entity{}}})
+	m = next.(model)
+	if m.setup.Phase != "complete" {
+		t.Fatalf("stale setup response regressed completed setup to %#v", m.setup)
+	}
+}
+
 func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	encoded, err := json.Marshal(actionPayload{Action: action{Tag: "move", Dir: "E"}})
 	if err != nil {
@@ -666,6 +810,7 @@ func TestViewRendersLootInterfaceInInventorySlot(t *testing.T) {
 
 func TestStartingPickupInvalidatesPendingLootLoads(t *testing.T) {
 	m := newModel()
+	m.setup = setupState{Phase: "complete"}
 
 	next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: true})
 	if cmd == nil {
@@ -949,6 +1094,7 @@ func TestResolveDebugMessages(t *testing.T) {
 
 func TestHandleKeySuppressesDebugMessagesByDefault(t *testing.T) {
 	m := newModelWithOptions(clientOptions{})
+	m.setup = setupState{Phase: "complete"}
 	next, cmd := m.handleKey(charmRuneKey('?'))
 	if cmd != nil {
 		t.Fatalf("unknown key returned command %#v, want nil", cmd)
@@ -961,6 +1107,7 @@ func TestHandleKeySuppressesDebugMessagesByDefault(t *testing.T) {
 
 func TestHandleKeyShowsDebugMessagesWhenEnabled(t *testing.T) {
 	m := newModelWithOptions(clientOptions{debugMessages: true})
+	m.setup = setupState{Phase: "complete"}
 	next, cmd := m.handleKey(charmRuneKey('?'))
 	if cmd != nil {
 		t.Fatalf("unknown key returned command %#v, want nil", cmd)

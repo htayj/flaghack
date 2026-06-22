@@ -1,4 +1,6 @@
 import { Data, Schema as S } from "effect"
+import { Role, RoleId } from "./roles.js"
+import { AllAttributes } from "./stats.js"
 
 const Coordinate = S.Int
 
@@ -130,7 +132,12 @@ export const ContainerCollection = S.HashMap({
 // ===========================
 // >> Humans
 export const Human = CreatureBase
-export const Player = S.TaggedStruct("player", CreatureBaseFields)
+const PlayerFields = {
+  ...CreatureBaseFields,
+  role: RoleId.pipe(S.optional),
+  attributes: AllAttributes.pipe(S.optional)
+} as const
+export const Player = S.TaggedStruct("player", PlayerFields)
 export const Ranger = S.TaggedStruct("ranger", CreatureBaseFields)
 export const AnyHuman = S.Union(Player, Ranger)
 
@@ -267,11 +274,19 @@ export const conforms = <A, I>(
 ): (u: unknown) => u is A => S.is(schema)
 
 export const World = S.HashMap({ key: Key, value: Entity })
+export const RoleSetupState = S.Struct({
+  phase: S.Literal("selectRole", "confirm", "complete"),
+  selectedRoleId: RoleId.pipe(S.optional)
+})
+export const RoleCollection = S.Array(Role)
 export const ClientState = S.Struct({
   inventory: ItemCollection,
+  roles: RoleCollection,
+  setup: RoleSetupState,
   world: World
 })
 export const GameState = S.Struct({
   lazyOffscreenCursor: S.Number.pipe(S.optional),
+  setup: RoleSetupState.pipe(S.optional),
   world: World
 })

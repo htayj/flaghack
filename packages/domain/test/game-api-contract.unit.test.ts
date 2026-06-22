@@ -4,12 +4,16 @@ import { readFileSync } from "node:fs"
 const readGameApiSource = (): string =>
   readFileSync(new URL("../src/GameApi.ts", import.meta.url), "utf8")
 
-const endpointBlock = (source: string, endpointName: string): string => {
+const endpointBlock = (
+  source: string,
+  endpointName: string,
+  method: "get" | "post" = "get"
+): string => {
   const compactStart = source.indexOf(
-    `HttpApiEndpoint.get("${endpointName}"`
+    `HttpApiEndpoint.${method}("${endpointName}"`
   )
   const multilineStart = source.indexOf(
-    `HttpApiEndpoint.get(\n      "${endpointName}"`
+    `HttpApiEndpoint.${method}(\n      "${endpointName}"`
   )
   const endpointStart = compactStart >= 0 ? compactStart : multilineStart
 
@@ -70,5 +74,23 @@ describe("GameApi item-list success contracts", () => {
     expect(containersBlock).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
     expect(itemsBlock).toMatch(/\.addSuccess\(\s*ItemCollection\s*\)/)
     expect(itemsBlock).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
+  })
+
+  it("adds setup role selection and confirmation endpoints", () => {
+    const selectBlock = endpointBlock(
+      readGameApiSource(),
+      "selectRole",
+      "post"
+    )
+    const confirmBlock = endpointBlock(
+      readGameApiSource(),
+      "confirmSetup",
+      "post"
+    )
+
+    expect(selectBlock).toMatch(/\/setup\/role/)
+    expect(selectBlock).toMatch(/roleId\s*:\s*RoleId/)
+    expect(confirmBlock).toMatch(/\/setup\/confirm/)
+    expect(confirmBlock).toMatch(/confirm\s*:\s*Schema\.Boolean/)
   })
 })

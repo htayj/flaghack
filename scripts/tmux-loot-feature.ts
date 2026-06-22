@@ -205,6 +205,14 @@ const apiEffect = <A>(
   }).pipe(Effect.provide(NodeHttpClient.layerUndici))
 
 const getWorld = () => apiEffect((client) => client.game.getWorld())
+const selectVirginRole = () =>
+  apiEffect((client) =>
+    client.game.selectRole({ payload: { roleId: "virgin" } })
+  )
+const confirmSetup = () =>
+  apiEffect((client) =>
+    client.game.confirmSetup({ payload: { confirm: true } })
+  )
 const doMove = (dir: Direction) =>
   apiEffect((client) =>
     client.game.doAction({ payload: { action: { _tag: "move", dir } } })
@@ -413,6 +421,8 @@ const run = async () => {
 
   try {
     await waitForApiReady(server)
+    await Effect.runPromise(selectVirginRole())
+    await Effect.runPromise(confirmSetup())
     const initialWorld = Array.from(
       HashMap.values(await Effect.runPromise(getWorld()))
     ) as ReadonlyArray<Entity>

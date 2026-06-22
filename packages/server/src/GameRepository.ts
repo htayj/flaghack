@@ -3,13 +3,15 @@ import { Effect, HashMap } from "effect"
 import type { TKey } from "./entity.js"
 import {
   actPlayerAction as apiDoPlayerAction,
+  confirmSetup as apiConfirmSetup,
   DefaultGameStateStoreLive,
   eGetWorld as apiGetWorld,
   getClientState as apiGetClientState,
   getInventory as apiGetInventory,
   getLootContainersFor as apiGetLootContainersFor,
   getLootItemsFor as apiGetLootItemsFor,
-  getPickupItemsFor as apiGetPickupItemsFor
+  getPickupItemsFor as apiGetPickupItemsFor,
+  selectRoleForSetup as apiSelectRoleForSetup
 } from "./gameloop.js"
 import { GameStateStore } from "./GameStateStore.js"
 import { getLogs as apiGetLogs } from "./log.js"
@@ -52,6 +54,7 @@ export class GameRepository
           {
             counts: (state) => ({
               itemCount: HashMap.size(state.inventory),
+              roleCount: state.roles.length,
               worldSize: HashMap.size(state.world)
             }),
             operation: "backend.api",
@@ -59,6 +62,26 @@ export class GameRepository
           },
           withStore(apiGetClientState)
         ),
+        selectRole(roleId: Parameters<typeof apiSelectRoleForSetup>[0]) {
+          return measureEffect(
+            {
+              operation: "backend.api",
+              phase: "selectRole",
+              traceId: roleId
+            },
+            withStore(apiSelectRoleForSetup(roleId))
+          )
+        },
+        confirmSetup(confirm: boolean) {
+          return measureEffect(
+            {
+              counts: { confirm },
+              operation: "backend.api",
+              phase: "confirmSetup"
+            },
+            withStore(apiConfirmSetup(confirm))
+          )
+        },
         getPickupItemsFor(k: TKey) {
           return measureEffect(
             {

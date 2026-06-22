@@ -33,13 +33,42 @@ type pos struct {
 	Z int `json:"z"`
 }
 
+type attributes struct {
+	Strength     int `json:"strength"`
+	Dexterity    int `json:"dexterity"`
+	Constitution int `json:"constitution"`
+	Intelligence int `json:"intelligence"`
+	Wisdom       int `json:"wisdom"`
+	Charisma     int `json:"charisma"`
+}
+
 type entity struct {
-	Key     string `json:"key"`
-	At      pos    `json:"at"`
-	In      string `json:"in"`
-	Tag     string `json:"_tag"`
-	Variant string `json:"variant,omitempty"`
-	Name    string `json:"name,omitempty"`
+	Key        string      `json:"key"`
+	At         pos         `json:"at"`
+	In         string      `json:"in"`
+	Tag        string      `json:"_tag"`
+	Variant    string      `json:"variant,omitempty"`
+	Name       string      `json:"name,omitempty"`
+	Role       string      `json:"role,omitempty"`
+	Attributes *attributes `json:"attributes,omitempty"`
+}
+
+type role struct {
+	ID                string     `json:"id"`
+	Letter            string     `json:"letter"`
+	Name              string     `json:"name"`
+	Attributes        attributes `json:"attributes"`
+	StartingInventory []string   `json:"startingInventory"`
+	Equipment         []string   `json:"equipment"`
+}
+
+type setupState struct {
+	Phase          string `json:"phase"`
+	SelectedRoleID string `json:"selectedRoleId,omitempty"`
+}
+
+func (s setupState) complete() bool {
+	return s.Phase == "" || s.Phase == "complete"
 }
 
 type action struct {
@@ -80,6 +109,14 @@ type actionPayload struct {
 	Action action `json:"action"`
 }
 
+type rolePayload struct {
+	RoleID string `json:"roleId"`
+}
+
+type setupConfirmPayload struct {
+	Confirm bool `json:"confirm"`
+}
+
 type apiClient struct {
 	baseURL string
 	http    *http.Client
@@ -89,11 +126,15 @@ type apiClient struct {
 type snapshot struct {
 	world     []entity
 	inventory []entity
+	roles     []role
+	setup     setupState
 }
 
 type clientStateResponse struct {
 	World     [][]json.RawMessage `json:"world"`
 	Inventory [][]json.RawMessage `json:"inventory"`
+	Roles     []role              `json:"roles"`
+	Setup     setupState          `json:"setup"`
 }
 
 type tile struct {
@@ -192,6 +233,15 @@ type actionDoneMsg struct {
 	responseReceived time.Time
 }
 
+type setupDoneMsg struct {
+	snapshot         snapshot
+	err              error
+	caseName         string
+	perfTraceID      string
+	requestID        int
+	responseReceived time.Time
+}
+
 type autoDoneMsg struct {
 	id               int
 	cancel           <-chan struct{}
@@ -208,6 +258,8 @@ type model struct {
 	client                 apiClient
 	world                  []entity
 	inventory              []entity
+	roles                  []role
+	setup                  setupState
 	messages               []string
 	debugMessages          bool
 	pendingMovementPrefix  string
@@ -218,6 +270,8 @@ type model struct {
 	pickupRequestID        int
 	lootRequestID          int
 	mutationSerial         int
+	setupRequestID         int
+	setupPending           bool
 	autoCancel             chan struct{}
 	autoID                 int
 	width                  int
@@ -232,6 +286,7 @@ var (
 	sidebarStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(20)
 	statusStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(118)
 	popupStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(34)
+	setupStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(1, 2).Width(34)
 	selectedStyle = lipgloss.NewStyle().Reverse(true)
 )
 
@@ -327,8 +382,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addMessage("initial load failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.world = msg.snapshot.world
-		m.inventory = msg.snapshot.inventory
+		m.applySnapshot(msg.snapshot)
 		m.perf.markResponseReceived("loadState", "initial", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case pickupLoadedMsg:
@@ -379,13 +433,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addMessage("action failed: " + msg.err.Error())
 			return m, nil
 		}
-		if msg.snapshot.world != nil {
-			m.world = msg.snapshot.world
-		}
-		if msg.snapshot.inventory != nil {
-			m.inventory = msg.snapshot.inventory
-		}
+		m.applySnapshot(msg.snapshot)
 		m.perf.markResponseReceived("actionAndRefresh", msg.caseName, msg.perfTraceID, msg.responseReceived)
+		return m, nil
+	case setupDoneMsg:
+		if msg.requestID != m.setupRequestID {
+			return m, nil
+		}
+		m.setupPending = false
+		if msg.err != nil {
+			m.addMessage("setup failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.applySnapshot(msg.snapshot)
+		m.perf.markResponseReceived("setup", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case autoDoneMsg:
 		isCurrentAutoMove := m.autoCancel != nil && m.autoCancel == msg.cancel && m.autoID == msg.id
@@ -398,12 +459,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addMessage(msg.result.label + " failed: " + msg.err.Error())
 			return m, nil
 		}
-		if msg.snapshot.world != nil {
-			m.world = msg.snapshot.world
-		}
-		if msg.snapshot.inventory != nil {
-			m.inventory = msg.snapshot.inventory
-		}
+		m.applySnapshot(msg.snapshot)
 		m.addMessage(formatAutoResult(msg.result))
 		m.perf.markResponseReceived("autoMove", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
@@ -418,6 +474,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	input := normalizeBubbleTeaInput(msg)
 	if input == "C-c" {
 		return m, tea.Quit
+	}
+	if !m.readyForNormalPlay() {
+		return m.handleSetupKey(input)
 	}
 	if m.cancelActiveAutoMove() {
 		return m, nil
@@ -519,6 +578,46 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, actionAndRefreshCmd(m.client, act)
 	}
 	return m, nil
+}
+
+func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
+	if m.setupPending {
+		return m, nil
+	}
+
+	normalizedInput := strings.ToLower(input)
+	switch m.setup.Phase {
+	case "selectRole":
+		selected, ok := roleForLetter(m.roles, normalizedInput)
+		if !ok {
+			return m, nil
+		}
+		m.setup = setupState{Phase: "confirm", SelectedRoleID: selected.ID}
+		m.setupPending = true
+		m.setupRequestID++
+		return m, selectRoleCmd(m.client, selected.ID, m.setupRequestID)
+	case "confirm":
+		switch normalizedInput {
+		case "n":
+			selectedRoleID := m.setup.SelectedRoleID
+			m.setup = setupState{Phase: "selectRole"}
+			m.setupPending = true
+			m.setupRequestID++
+			return m, confirmSetupCmd(m.client, selectedRoleID, false, m.setupRequestID)
+		case "y":
+			selectedRoleID := m.setup.SelectedRoleID
+			if selectedRoleID == "" {
+				return m, nil
+			}
+			m.setupPending = true
+			m.setupRequestID++
+			return m, confirmSetupCmd(m.client, selectedRoleID, true, m.setupRequestID)
+		default:
+			return m, nil
+		}
+	default:
+		return m, nil
+	}
 }
 
 func (m model) handleExtendedCommandKey(input string) (tea.Model, tea.Cmd) {
@@ -752,8 +851,49 @@ func (m *model) cancelActiveAutoMove() bool {
 	return true
 }
 
+func (m *model) applySnapshot(snap snapshot) {
+	if snap.world != nil {
+		m.world = snap.world
+	}
+	if snap.inventory != nil {
+		m.inventory = snap.inventory
+	}
+	if snap.roles != nil {
+		m.roles = snap.roles
+	}
+	nextSetup := normalizeSetup(snap.setup)
+	if !(m.setup.Phase == "complete" && !nextSetup.complete()) {
+		m.setup = nextSetup
+	}
+}
+
+func normalizeSetup(setup setupState) setupState {
+	if strings.TrimSpace(setup.Phase) == "" {
+		return setupState{Phase: "complete"}
+	}
+	return setup
+}
+
+func (m model) loadingInitialState() bool {
+	return m.setup.Phase == "" && len(m.world) == 0 && len(m.roles) == 0 && len(m.inventory) == 0 && m.popup == nil
+}
+
+func (m model) readyForNormalPlay() bool {
+	return m.setup.complete() && !m.loadingInitialState() && !m.setupPending
+}
+
+func (m model) needsSetupScreen() bool {
+	return !m.readyForNormalPlay() || m.loadingInitialState()
+}
+
 func (m model) View() string {
 	view := m.perf.measureString("frontend.view", "total", "", "", map[string]int{"worldSize": len(m.world), "inventorySize": len(m.inventory)}, func() string {
+		if m.needsSetupScreen() {
+			return m.perf.measureString("frontend.component", "setup", m.setup.Phase, "", map[string]int{"roleCount": len(m.roles)}, func() string {
+				return renderSetupScreen(m.setup, m.roles, m.width, m.height, m.setupPending, m.messages)
+			})
+		}
+
 		cursorTarget := m.travelTarget
 		if m.lookTarget != nil {
 			cursorTarget = m.lookTarget
@@ -877,9 +1017,13 @@ func renderLookPanel(world []entity, target pos) string {
 func renderStatus(world []entity) string {
 	name := "player"
 	dungeonLevel := "?"
+	attributeLine := "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--"
 	if player, ok := findPlayer(world); ok {
 		if candidate := strings.TrimSpace(player.Name); candidate != "" {
 			name = candidate
+		}
+		if player.Attributes != nil {
+			attributeLine = formatAttributeStatus(*player.Attributes) + "  HP:--/--  Pw:--/--"
 		}
 		if player.At.Z == 0 {
 			dungeonLevel = "burn"
@@ -889,10 +1033,22 @@ func renderStatus(world []entity) string {
 	}
 	lines := []string{
 		"Player: " + name,
-		"St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+		attributeLine,
 		"AC:--  Dlvl:" + dungeonLevel,
 	}
 	return statusStyle.Render(strings.Join(lines, "\n"))
+}
+
+func formatAttributeStatus(a attributes) string {
+	return fmt.Sprintf(
+		"St:%d Dx:%d Co:%d In:%d Wi:%d Ch:%d",
+		a.Strength,
+		a.Dexterity,
+		a.Constitution,
+		a.Intelligence,
+		a.Wisdom,
+		a.Charisma,
+	)
 }
 
 func renderPopup(popup popupState) string {
@@ -910,6 +1066,90 @@ func renderPopup(popup popupState) string {
 		}
 	}
 	return popupStyle.Render(strings.Join(lines, "\n"))
+}
+
+func renderSetupScreen(setup setupState, roles []role, width int, height int, pending bool, messages []string) string {
+	if width <= 0 {
+		width = 120
+	}
+	if height <= 0 {
+		height = 30
+	}
+	content := renderSetupBox(setup, roles, pending)
+	if len(messages) > 0 {
+		content = lipgloss.JoinVertical(lipgloss.Left, content, renderMessages(messages))
+	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func renderSetupBox(setup setupState, roles []role, pending bool) string {
+	if setup.Phase == "" {
+		return setupStyle.Render("Loading game...")
+	}
+	if setup.Phase == "confirm" {
+		selected, ok := roleForID(roles, setup.SelectedRoleID)
+		roleLine := setup.SelectedRoleID
+		if ok {
+			roleLine = fmt.Sprintf("%s - %s", selected.Letter, selected.Name)
+		}
+		lines := []string{
+			"You are a " + roleNameForSetup(selected, ok),
+			"",
+			roleLine,
+		}
+		if pending {
+			lines = append(lines, "", mutedStyle.Render("Working..."))
+		} else {
+			lines = append(lines, "", "Is this ok? [yn]")
+		}
+		return setupStyle.Render(strings.Join(lines, "\n"))
+	}
+
+	lines := []string{"Choose a role", ""}
+	if len(roles) == 0 {
+		lines = append(lines, mutedStyle.Render("(no roles available)"))
+	} else {
+		for _, entry := range sortedRoles(roles) {
+			lines = append(lines, fmt.Sprintf("%s - %s", entry.Letter, entry.Name))
+		}
+	}
+	if pending {
+		lines = append(lines, "", mutedStyle.Render("Working..."))
+	}
+	return setupStyle.Render(strings.Join(lines, "\n"))
+}
+
+func roleNameForSetup(selected role, ok bool) string {
+	if !ok || strings.TrimSpace(selected.Name) == "" {
+		return "?"
+	}
+	return selected.Name
+}
+
+func sortedRoles(roles []role) []role {
+	sorted := append([]role(nil), roles...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Letter < sorted[j].Letter
+	})
+	return sorted
+}
+
+func roleForLetter(roles []role, letter string) (role, bool) {
+	for _, candidate := range roles {
+		if strings.EqualFold(candidate.Letter, letter) {
+			return candidate, true
+		}
+	}
+	return role{}, false
+}
+
+func roleForID(roles []role, id string) (role, bool) {
+	for _, candidate := range roles {
+		if candidate.ID == id {
+			return candidate, true
+		}
+	}
+	return role{}, false
 }
 
 func renderSidebarPopup(popup popupState) string {
@@ -947,6 +1187,22 @@ func loadStateCmd(client apiClient) tea.Cmd {
 	return func() tea.Msg {
 		snap, err := client.loadState(context.Background())
 		return stateLoadedMsg{snapshot: snap, err: err, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func selectRoleCmd(client apiClient, roleID string, requestID int) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.setup.role")
+	return func() tea.Msg {
+		snap, err := client.selectRoleAndRefresh(context.Background(), roleID)
+		return setupDoneMsg{snapshot: snap, err: err, caseName: "role", perfTraceID: traceID, requestID: requestID, responseReceived: time.Now()}
+	}
+}
+
+func confirmSetupCmd(client apiClient, roleID string, confirm bool, requestID int) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.setup.confirm")
+	return func() tea.Msg {
+		snap, err := client.confirmSetupAndRefresh(context.Background(), roleID, confirm)
+		return setupDoneMsg{snapshot: snap, err: err, caseName: "confirm", perfTraceID: traceID, requestID: requestID, responseReceived: time.Now()}
 	}
 }
 
@@ -991,6 +1247,29 @@ func (c apiClient) loadState(ctx context.Context) (snapshot, error) {
 func (c apiClient) actionAndRefresh(ctx context.Context, act action) (snapshot, error) {
 	return measurePerfCall(c.perf, "frontend.api", "actionAndRefresh", act.Tag, "", nil, func() (snapshot, error) {
 		if err := c.doAction(ctx, act); err != nil {
+			return snapshot{}, err
+		}
+		return c.getClientState(ctx)
+	})
+}
+
+func (c apiClient) selectRoleAndRefresh(ctx context.Context, roleID string) (snapshot, error) {
+	return measurePerfCall(c.perf, "frontend.api", "selectRoleAndRefresh", roleID, "", nil, func() (snapshot, error) {
+		if err := c.selectRole(ctx, roleID); err != nil {
+			return snapshot{}, err
+		}
+		return c.getClientState(ctx)
+	})
+}
+
+func (c apiClient) confirmSetupAndRefresh(ctx context.Context, roleID string, confirm bool) (snapshot, error) {
+	return measurePerfCall(c.perf, "frontend.api", "confirmSetupAndRefresh", fmt.Sprintf("%t", confirm), "", nil, func() (snapshot, error) {
+		if confirm && roleID != "" {
+			if err := c.selectRole(ctx, roleID); err != nil {
+				return snapshot{}, err
+			}
+		}
+		if err := c.confirmSetup(ctx, confirm); err != nil {
 			return snapshot{}, err
 		}
 		return c.getClientState(ctx)
@@ -1173,7 +1452,7 @@ func (c apiClient) getClientState(ctx context.Context) (snapshot, error) {
 		if err != nil {
 			return snapshot{}, err
 		}
-		return snapshot{world: world, inventory: inventory}, nil
+		return snapshot{world: world, inventory: inventory, roles: raw.Roles, setup: normalizeSetup(raw.Setup)}, nil
 	})
 }
 
@@ -1220,12 +1499,24 @@ func decodeEntityPairs(raw [][]json.RawMessage) ([]entity, error) {
 }
 
 func (c apiClient) doAction(ctx context.Context, act action) error {
-	_, err := measurePerfCall(c.perf, "frontend.http", "POST", "/act", "", nil, func() (struct{}, error) {
-		body, err := json.Marshal(actionPayload{Action: act})
+	return c.postJSON(ctx, "/act", actionPayload{Action: act})
+}
+
+func (c apiClient) selectRole(ctx context.Context, roleID string) error {
+	return c.postJSON(ctx, "/setup/role", rolePayload{RoleID: roleID})
+}
+
+func (c apiClient) confirmSetup(ctx context.Context, confirm bool) error {
+	return c.postJSON(ctx, "/setup/confirm", setupConfirmPayload{Confirm: confirm})
+}
+
+func (c apiClient) postJSON(ctx context.Context, path string, payload any) error {
+	_, err := measurePerfCall(c.perf, "frontend.http", "POST", path, "", nil, func() (struct{}, error) {
+		body, err := json.Marshal(payload)
 		if err != nil {
 			return struct{}{}, err
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/act", bytes.NewReader(body))
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 		if err != nil {
 			return struct{}{}, err
 		}
@@ -1237,7 +1528,7 @@ func (c apiClient) doAction(ctx context.Context, act action) error {
 		defer response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-			return struct{}{}, fmt.Errorf("POST /act failed: %s %s", response.Status, strings.TrimSpace(string(body)))
+			return struct{}{}, fmt.Errorf("POST %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
 		}
 		return struct{}{}, nil
 	})

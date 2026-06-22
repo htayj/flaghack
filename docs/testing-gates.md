@@ -138,6 +138,7 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 - `FLAGHACK_TMUX_KEYS`: JSON array of tmux `send-keys` tokens, for example `'["g", "l"]'`.
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.
+- `FLAGHACK_TMUX_AUTO_SETUP`: optional boolean for the default Charm CLI; defaults to `true` so generic feature gates automatically pass the role-selection prompt. Set to `false` when the feature being verified is the setup prompt itself.
 - `FLAGHACK_TMUX_KEY_WAIT_MS` and `FLAGHACK_TMUX_FINAL_WAIT_MS`: optional timing controls.
 
 Use this for task-graph feature verification when the requested behavior must be exercised in the real terminal UI. Extend `scripts/tmux-feature-check.ts` or add a focused script when a feature needs richer assertions than output matching.

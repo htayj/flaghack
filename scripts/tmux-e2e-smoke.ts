@@ -154,8 +154,21 @@ const waitForPaneOutput = async (pane: string) => {
   throw new Error("timed out waiting for CLI pane output")
 }
 
-const waitForDefaultCliReady = async (pane: string): Promise<void> => {
+const captureShowsDefaultCliReady = (capture: string): boolean =>
+  capture.includes("Flag Hack Charmbracelet UI")
+  || capture.includes("Player:")
+
+const captureShowsRoleSelection = (capture: string): boolean =>
+  capture.includes("v - virgin") || capture.includes("Choose a role")
+
+const captureShowsSetupConfirmation = (capture: string): boolean =>
+  capture.includes("Is this ok? [yn]")
+
+const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
   const startedAt = Date.now()
+  let sentRole = false
+  let sentConfirm = false
+
   while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
     if (paneDead(pane)) {
       throw new Error(
@@ -164,15 +177,25 @@ const waitForDefaultCliReady = async (pane: string): Promise<void> => {
     }
 
     const capture = stripAnsi(capturePane(pane))
-    if (
-      capture.includes("Flag Hack Charmbracelet UI")
-      || capture.includes("Player:")
-    ) {
-      return
+    if (captureShowsDefaultCliReady(capture)) return
+
+    if (!sentRole && captureShowsRoleSelection(capture)) {
+      tmux(["send-keys", "-t", pane, "v"])
+      sentRole = true
+      await delay(POLL_INTERVAL_MS)
+      continue
     }
+
+    if (!sentConfirm && captureShowsSetupConfirmation(capture)) {
+      tmux(["send-keys", "-t", pane, "y"])
+      sentConfirm = true
+      await delay(POLL_INTERVAL_MS)
+      continue
+    }
+
     await delay(POLL_INTERVAL_MS)
   }
-  throw new Error("timed out waiting for default CLI UI to render")
+  throw new Error("timed out waiting for default CLI setup to complete")
 }
 
 const perfFilePath = () => process.env.FLAGHACK_PERF_FILE?.trim()
@@ -263,7 +286,7 @@ const run = async () => {
 
     await waitForPaneOutput(cliPane)
     if (cliCommand === DEFAULT_CLI_COMMAND) {
-      await waitForDefaultCliReady(cliPane)
+      await ensureDefaultCliPastSetup(cliPane)
     }
     await waitForPerfRecord((record) =>
       record.source === "charm"

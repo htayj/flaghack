@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { GameState } from "@flaghack/domain/schemas"
-import { Effect, HashMap } from "effect"
+import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { allAiPlan } from "../src/ai/ai.js"
+import { allAiPlan, planOneAi } from "../src/ai/ai.js"
 import type { Entity } from "../src/world.js"
 
 const aiSourcePath = fileURLToPath(
@@ -56,6 +56,79 @@ describe("server ai planning", () => {
     expect(plannedKeys).not.toContain(player.key)
     expect(plannedKeys).not.toContain(item.key)
     expect(plannedKeys).not.toContain(terrain.key)
+  })
+
+  it("plans one AI action only for non-player creatures", () => {
+    const gs = GameState.make({ world: HashMap.empty<string, Entity>() })
+    const player = {
+      key: "player",
+      at: { x: 1, y: 1, z: 0 },
+      in: "world",
+      _tag: "player",
+      name: "you"
+    } satisfies Entity
+    const hippie = {
+      key: "hippie-1",
+      at: { x: 50, y: 3, z: 0 },
+      in: "world",
+      _tag: "hippie",
+      name: "Ian"
+    } satisfies Entity
+    const terrain = {
+      key: "floor-1",
+      at: { x: 50, y: 3, z: 0 },
+      in: "world",
+      _tag: "floor"
+    } satisfies Entity
+
+    const planned = planOneAi(gs, hippie)
+
+    expect(Option.isNone(planOneAi(gs, player))).toBe(true)
+    expect(Option.isNone(planOneAi(gs, terrain))).toBe(true)
+    expect(Option.isSome(planned)).toBe(true)
+    if (Option.isSome(planned)) {
+      expect(planned.value.entity.key).toBe(hippie.key)
+    }
+  })
+
+  it("plans only non-player creatures from a supplied active planning world", () => {
+    const player = {
+      key: "player",
+      at: { x: 1, y: 1, z: 0 },
+      in: "world",
+      _tag: "player",
+      name: "you"
+    } satisfies Entity
+    const nearHippie = {
+      key: "hippie-near",
+      at: { x: 50, y: 3, z: 0 },
+      in: "world",
+      _tag: "hippie",
+      name: "Near"
+    } satisfies Entity
+    const farHippie = {
+      key: "hippie-far",
+      at: { x: 70, y: 50, z: 0 },
+      in: "world",
+      _tag: "hippie",
+      name: "Far"
+    } satisfies Entity
+    const fullWorld = HashMap.fromIterable<string, Entity>([
+      [player.key, player],
+      [nearHippie.key, nearHippie],
+      [farHippie.key, farHippie]
+    ])
+    const activeWorld = HashMap.fromIterable<string, Entity>([
+      [player.key, player],
+      [nearHippie.key, nearHippie]
+    ])
+    const gs = GameState.make({ world: fullWorld })
+
+    const planned = Effect.runSync(allAiPlan(gs, activeWorld))
+    const plannedKeys = planned.map(({ entity }) => entity.key)
+
+    expect(plannedKeys).toEqual([nearHippie.key])
+    expect(plannedKeys).not.toContain(farHippie.key)
   })
 
   it("uses synchronous effects for pure AI planning", () => {

@@ -14,6 +14,7 @@ build
 
 # Local tool artifacts can appear in the repository root during desktop sessions.
 /.serena/
+/chatgpt.txt
 
 # Local OpenLinkHub artifacts can appear in the repository root during desktop sessions.
 /config.json

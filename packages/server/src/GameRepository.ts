@@ -5,6 +5,7 @@ import {
   actPlayerAction as apiDoPlayerAction,
   DefaultGameStateStoreLive,
   eGetWorld as apiGetWorld,
+  getClientState as apiGetClientState,
   getInventory as apiGetInventory,
   getLootContainersFor as apiGetLootContainersFor,
   getLootItemsFor as apiGetLootItemsFor,
@@ -46,6 +47,17 @@ export class GameRepository
             phase: "getInventory"
           },
           withStore(apiGetInventory("player"))
+        ),
+        getClientState: measureEffect(
+          {
+            counts: (state) => ({
+              itemCount: HashMap.size(state.inventory),
+              worldSize: HashMap.size(state.world)
+            }),
+            operation: "backend.api",
+            phase: "getClientState"
+          },
+          withStore(apiGetClientState)
         ),
         getPickupItemsFor(k: TKey) {
           return measureEffect(

@@ -579,8 +579,8 @@ const _BSPGenLevel = (
     return yield* _linkLeaves(doneA, doneB)
   })
 
-const CAMPGROUND_WIDTH = 360
-const CAMPGROUND_HEIGHT = 160
+export const CAMPGROUND_WIDTH = 360
+export const CAMPGROUND_HEIGHT = 160
 const CAMPGROUND_HIPPIE_COUNT = 64
 const CAMPGROUND_NAMED_HUMAN_COUNT = 16
 const CAMPGROUND_RESERVED_CORRIDOR_START_X = 96

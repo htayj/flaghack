@@ -68,9 +68,9 @@ describe("CLI readonly UI contracts", () => {
   it("renders the playing app directly without static mode state", () => {
     const source = readSource(join(srcDirectory, "BApp.tsx"))
 
-    expect(source).toMatch(
-      /return\s+<BPlaying\s+username=["']test["']\s+onQuit=\{onQuit\}\s*\/>/
-    )
+    expect(source).toMatch(/<BPlaying[\s\S]*username=["']test["']/)
+    expect(source).toContain("debugMessages={debugMessages}")
+    expect(source).toContain("onQuit={onQuit}")
     expect(source).not.toMatch(/\buseState\b/)
     expect(source).not.toMatch(/\bmode\s*===\s*["']playing["']/)
     expect(source).not.toContain("BModeError")

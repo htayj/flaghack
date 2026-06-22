@@ -2,7 +2,9 @@ import { describe, expect, it } from "@effect/vitest"
 import {
   AnyCreature,
   AnyTerrain,
+  type ClientState,
   conforms,
+  EAction,
   GameState
 } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option } from "effect"
@@ -17,9 +19,30 @@ type CampgroundGenLevelFn = typeof CampgroundGenLevel
 type WorldModule = Record<string, unknown> & {
   CampgroundGenLevel: CampgroundGenLevelFn
 }
+type ClientStateValue = typeof ClientState.Type
 
 const readGameloopSource = (): string =>
   readFileSync(new URL("../src/gameloop.ts", import.meta.url), "utf8")
+
+const floorAt = (key: string, x: number, y: number): Entity => ({
+  _tag: "floor",
+  at: { x, y, z: 0 },
+  in: "world",
+  key
+})
+
+const hippieAt = (key: string, x: number, y: number): Entity => ({
+  _tag: "hippie",
+  at: { x, y, z: 0 },
+  in: "world",
+  key,
+  name: key
+})
+
+const entityByKey = (
+  world: HashMap.HashMap<string, Entity>,
+  key: string
+) => Array.from(HashMap.values(world)).find((entity) => entity.key === key)
 
 const importGameloop = async () => await import("../src/gameloop.js")
 
@@ -212,6 +235,227 @@ describe("initial world", () => {
     expect(gameloopSource).toContain("DefaultGameStateStoreLive")
     expect(gameloopSource).toContain("store.modifyEffect")
   })
+
+  it("does not mutate game state from background fibers", () => {
+    const gameloopSource = readGameloopSource()
+
+    expect(gameloopSource).not.toContain("Effect.runFork")
+    expect(gameloopSource).not.toContain("Effect.fork")
+    expect(gameloopSource).not.toContain("Effect.promise")
+  })
+})
+
+describe("campground active turn region", () => {
+  it("processes the player and nearby campground NPCs while lazily stepping budgeted offscreen NPCs", async () => {
+    const actor = player(90, 13, 0)
+    const nearHippie = hippieAt("hippie-near", 50, 3)
+    const farHippie = hippieAt("hippie-far", 70, 50)
+    const world = await runWithWorld(
+      [
+        floorAt("extent-0", 0, 0),
+        floorAt("extent-max", 359, 159),
+        floorAt("player-floor", 90, 13),
+        floorAt("player-target", 91, 13),
+        floorAt("near-floor", 50, 3),
+        floorAt("near-target", 50, 4),
+        floorAt("far-floor", 70, 50),
+        floorAt("far-target", 70, 49),
+        actor,
+        nearHippie,
+        farHippie
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          yield* module.actPlayerAction(EAction.move({ dir: "E" }))
+          return yield* module.eGetWorld
+        })
+    )
+
+    expect(entityByKey(world, actor.key)?.at).toEqual({
+      x: 91,
+      y: 13,
+      z: 0
+    })
+    expect(entityByKey(world, nearHippie.key)?.at).toEqual({
+      x: 50,
+      y: 4,
+      z: 0
+    })
+    expect(entityByKey(world, farHippie.key)?.at).toEqual({
+      x: 70,
+      y: 49,
+      z: 0
+    })
+  })
+
+  it("does not lazily move an offscreen NPC into the active collision bounds", async () => {
+    const actor = player(90, 13, 0)
+    const boundaryHippie = hippieAt("hippie-boundary", 70, 29)
+    const world = await runWithWorld(
+      [
+        floorAt("extent-0", 0, 0),
+        floorAt("extent-max", 359, 159),
+        floorAt("player-floor", 90, 13),
+        floorAt("player-target", 91, 13),
+        floorAt("boundary-floor", 70, 29),
+        floorAt("boundary-target", 70, 28),
+        actor,
+        boundaryHippie
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          yield* module.actPlayerAction(EAction.move({ dir: "E" }))
+          return yield* module.eGetWorld
+        })
+    )
+
+    expect(entityByKey(world, actor.key)?.at).toEqual({
+      x: 91,
+      y: 13,
+      z: 0
+    })
+    expect(entityByKey(world, boundaryHippie.key)?.at).toEqual(
+      boundaryHippie.at
+    )
+  })
+
+  it("rotates the lazy offscreen budget across candidates over multiple turns", async () => {
+    const actor = player(90, 13, 0)
+    const hippies = Array.from(
+      { length: 6 },
+      (_, index) => hippieAt(`hippie-${index}`, 70, 50 + index)
+    )
+    const world = await runWithWorld(
+      [
+        floorAt("extent-0", 0, 0),
+        floorAt("extent-max", 359, 159),
+        floorAt("player-floor", 90, 13),
+        ...hippies.flatMap((hippie) => [
+          floorAt(`${hippie.key}-floor`, hippie.at.x, hippie.at.y),
+          floorAt(`${hippie.key}-target`, hippie.at.x, hippie.at.y - 1),
+          hippie
+        ]),
+        actor
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          yield* module.actPlayerAction(EAction.noop())
+          yield* module.actPlayerAction(EAction.noop())
+          return yield* module.eGetWorld
+        })
+    )
+
+    expect(entityByKey(world, "hippie-4")?.at).toEqual({
+      x: 70,
+      y: 53,
+      z: 0
+    })
+    expect(entityByKey(world, "hippie-5")?.at).toEqual({
+      x: 70,
+      y: 54,
+      z: 0
+    })
+  })
+
+  it("returns a bounded client state while preserving the full world", async () => {
+    const fullWorld = await runWithWorld(
+      [
+        floorAt("extent-0", 0, 0),
+        floorAt("extent-max", 359, 159),
+        floorAt("visible-floor", 90, 13),
+        floorAt("far-floor", 250, 120),
+        player(90, 13, 0),
+        makeBeer("inventory-beer", 90, 13, 0, "player")
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          const getClientState = (module as typeof module & {
+            readonly getClientState: Effect.Effect<
+              ClientStateValue,
+              never,
+              GameStateStore
+            >
+          }).getClientState
+          const state = yield* getClientState
+          const world = yield* module.eGetWorld
+          return { state, world }
+        })
+    )
+
+    expect(HashMap.size(fullWorld.world)).toBe(6)
+    expect(HashMap.size(fullWorld.state.world)).toBeLessThan(
+      HashMap.size(fullWorld.world)
+    )
+    expect(entityByKey(fullWorld.state.world, "visible-floor"))
+      .toBeDefined()
+    expect(entityByKey(fullWorld.state.world, "far-floor")).toBeUndefined()
+    expect(HashMap.size(fullWorld.state.inventory)).toBe(1)
+  })
+
+  it("keeps lazy offscreen processing scoped to the active campground level", async () => {
+    const actor = player(90, 13, 0)
+    const otherLevelHippie = {
+      ...hippieAt("hippie-other-level", 70, 50),
+      at: { x: 70, y: 50, z: 1 }
+    } satisfies Entity
+    const world = await runWithWorld(
+      [
+        floorAt("extent-0", 0, 0),
+        floorAt("extent-max", 359, 159),
+        floorAt("player-floor", 90, 13),
+        {
+          ...floorAt("other-level-floor", 70, 50),
+          at: { x: 70, y: 50, z: 1 }
+        },
+        {
+          ...floorAt("other-level-target", 70, 49),
+          at: { x: 70, y: 49, z: 1 }
+        },
+        actor,
+        otherLevelHippie
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          yield* module.actPlayerAction(EAction.noop())
+          return yield* module.eGetWorld
+        })
+    )
+
+    expect(entityByKey(world, otherLevelHippie.key)?.at).toEqual(
+      otherLevelHippie.at
+    )
+  })
+
+  it("keeps non-campground worlds processing all NPCs", async () => {
+    const actor = player(90, 13, 0)
+    const farHippie = hippieAt("hippie-far", 70, 50)
+    const world = await runWithWorld(
+      [
+        floorAt("player-floor", 90, 13),
+        floorAt("player-target", 91, 13),
+        floorAt("far-floor", 70, 50),
+        floorAt("far-target", 70, 49),
+        actor,
+        farHippie
+      ],
+      (module) =>
+        Effect.gen(function*() {
+          yield* module.actPlayerAction(EAction.move({ dir: "E" }))
+          return yield* module.eGetWorld
+        })
+    )
+
+    expect(entityByKey(world, actor.key)?.at).toEqual({
+      x: 91,
+      y: 13,
+      z: 0
+    })
+    expect(entityByKey(world, farHippie.key)?.at).toEqual({
+      x: 70,
+      y: 49,
+      z: 0
+    })
+  })
 })
 
 describe("getPickupItemsFor", () => {
@@ -244,13 +488,13 @@ describe("getPickupItemsFor", () => {
 
   it("filters inventory and pickup results through the item guard", () => {
     const gameloopSource = readGameloopSource()
-    const inventoryBody = exportedConstBody(gameloopSource, "getInventory")
     const pickupBody = exportedConstBody(
       gameloopSource,
       "getPickupItemsFor"
     )
 
-    expect(inventoryBody).toContain("filter(isItem)")
+    expect(gameloopSource).toContain("const inventoryForWorld")
+    expect(gameloopSource).toContain("filter(isItem)")
     expect(pickupBody).toContain("HashMap.filter(isItem)")
   })
 })

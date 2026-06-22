@@ -96,10 +96,13 @@ export type {
 
 type Props = {
   username: string
+  debugMessages?: boolean | undefined
   onQuit?: (() => void) | undefined
 }
 
-export default function BPlaying({ onQuit }: Props) {
+export default function BPlaying(
+  { debugMessages = false, onQuit }: Props
+) {
   const [messages, setMessages] = useState<List<string>>(List())
   const gameref = useRef<BoxElement>(null)
   const pickupRef = useRef<BoxElement>(null)
@@ -173,8 +176,12 @@ export default function BPlaying({ onQuit }: Props) {
   }, [])
 
   const theDrawMatrix = drawWorld(world, travelTarget)
-  const log = (input: string) =>
-    setMessages(prependMessage(`[debug] ${input}`))
+  const addDebugMessage = (message: string) => {
+    if (debugMessages) {
+      setMessages(prependMessage(message))
+    }
+  }
+  const log = (input: string) => addDebugMessage(`[debug] ${input}`)
 
   useEffect(() => {
     const gameBox = gameref.current
@@ -432,7 +439,7 @@ export default function BPlaying({ onQuit }: Props) {
         lootRequestId.current += 1
       }
 
-      setMessages(prependMessage(`doing ${normalizedInput}`))
+      addDebugMessage(`doing ${normalizedInput}`)
 
       if (pendingExtendedCommand.current !== undefined) {
         handleExtendedCommandKey(normalizedInput)
@@ -594,7 +601,13 @@ export default function BPlaying({ onQuit }: Props) {
         gameBox?.removeListener(`key ${key}`, handleGameKey)
       }
     }
-  }, [onQuit, refreshWorldAndInventory, travelTarget, world])
+  }, [
+    debugMessages,
+    onQuit,
+    refreshWorldAndInventory,
+    travelTarget,
+    world
+  ])
 
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
     pickupRequestId.current += 1

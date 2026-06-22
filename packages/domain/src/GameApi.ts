@@ -1,6 +1,7 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
 import { Schema } from "effect"
 import {
+  ClientState,
   ContainerCollection,
   ItemCollection,
   Key,
@@ -20,6 +21,11 @@ export class GameApiGroup extends HttpApiGroup.make("game")
   .add(
     HttpApiEndpoint.get("getInventory", "/inventory").addSuccess(
       ItemCollection
+    )
+  )
+  .add(
+    HttpApiEndpoint.get("getClientState", "/client-state").addSuccess(
+      ClientState
     )
   )
   .add(

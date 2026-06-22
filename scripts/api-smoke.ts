@@ -172,6 +172,14 @@ const makeClientSmoke = (recordPerf: boolean) =>
         itemCount: HashMap.size(value)
       })
     )
+    const clientState = yield* run(
+      "getClientState",
+      client.game.getClientState(),
+      (value) => ({
+        itemCount: HashMap.size(value.inventory),
+        worldSize: HashMap.size(value.world)
+      })
+    )
     const lootContainers = yield* run(
       "getLootContainersFor",
       client.game.getLootContainersFor({
@@ -208,6 +216,7 @@ const makeClientSmoke = (recordPerf: boolean) =>
     )
 
     return {
+      clientState,
       inventory,
       logsAfter,
       logsBefore,
@@ -276,11 +285,17 @@ const run = async () => {
     const result = await Effect.runPromise(makeClientSmoke(true))
     const worldSize = HashMap.size(result.world)
     const inventorySize = HashMap.size(result.inventory)
+    const clientStateWorldSize = HashMap.size(result.clientState.world)
     const lootContainerSize = HashMap.size(result.lootContainers)
     const lootItemSize = HashMap.size(result.lootItems)
 
     if (worldSize <= 0) {
       throw new Error("getWorld returned an empty world")
+    }
+    if (clientStateWorldSize <= 0 || clientStateWorldSize >= worldSize) {
+      throw new Error(
+        `getClientState returned an invalid viewport world size: ${clientStateWorldSize} of ${worldSize}`
+      )
     }
     if (
       !Array.isArray(result.logsBefore) || !Array.isArray(result.logsAfter)
@@ -289,7 +304,7 @@ const run = async () => {
     }
 
     console.log(
-      `API smoke passed: world=${worldSize}, inventory=${inventorySize}, lootContainers=${lootContainerSize}, lootItems=${lootItemSize}, logs=${result.logsAfter.length}`
+      `API smoke passed: world=${worldSize}, clientStateWorld=${clientStateWorldSize}, inventory=${inventorySize}, lootContainers=${lootContainerSize}, lootItems=${lootItemSize}, logs=${result.logsAfter.length}`
     )
   } catch (error) {
     console.error("API smoke failed.")

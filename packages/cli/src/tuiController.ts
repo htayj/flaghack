@@ -90,6 +90,7 @@ export class AlternateTuiController {
 
   constructor(
     private readonly options: {
+      readonly debugMessages?: boolean | undefined
       readonly onQuit?: (() => void) | undefined
     } = {}
   ) {}
@@ -134,7 +135,7 @@ export class AlternateTuiController {
       return
     }
 
-    this.addMessage(`doing ${normalizedInput}`)
+    this.addDebugMessage(`doing ${normalizedInput}`)
 
     if (this.pendingExtendedCommand !== undefined) {
       this.handleExtendedCommandKey(normalizedInput)
@@ -217,6 +218,12 @@ export class AlternateTuiController {
       MAX_VISIBLE_MESSAGES
     )
     this.emit()
+  }
+
+  private addDebugMessage(message: string): void {
+    if (this.options.debugMessages === true) {
+      this.addMessage(message)
+    }
   }
 
   private beginAutoMove(): number {

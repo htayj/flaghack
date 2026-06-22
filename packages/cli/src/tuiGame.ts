@@ -925,11 +925,11 @@ export const findTravelDirections = (
 
 const zindex = (entity: Entity): number => {
   switch (entity._tag) {
+    case "tent":
+      return -1
     case "floor":
     case "tunnel":
       return 0
-    case "tent":
-      return 1
     case "wall":
     case "sign":
     case "effigy":

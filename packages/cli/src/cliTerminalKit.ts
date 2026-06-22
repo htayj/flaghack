@@ -1,6 +1,7 @@
 import type { Entity as EntitySchema } from "@flaghack/domain/schemas"
 import { HashMap } from "effect"
 import { createRequire } from "node:module"
+import { resolveCliDebugMessages } from "./config.js"
 import {
   AlternateTuiController,
   type AlternateTuiSnapshot
@@ -153,7 +154,13 @@ const exit = () => {
   process.exit(0)
 }
 
-const controller = new AlternateTuiController({ onQuit: exit })
+const controller = new AlternateTuiController({
+  debugMessages: resolveCliDebugMessages(
+    process.argv.slice(2),
+    process.env
+  ),
+  onQuit: exit
+})
 
 const keyListener: KeyListener = (name) => {
   if (name === "CTRL_C") {

@@ -1,5 +1,10 @@
-import { type Action, EAction, GameState } from "@flaghack/domain/schemas"
-import { Effect, HashMap, Logger, LogLevel, pipe } from "effect"
+import {
+  type Action,
+  EAction,
+  GameState,
+  type ItemCollection
+} from "@flaghack/domain/schemas"
+import { Cache, Effect, HashMap, Logger, LogLevel, pipe } from "effect"
 import {
   andThen,
   log,
@@ -13,6 +18,14 @@ import { match as omatch } from "effect/Option"
 // import { Map, Record } from "immutable"
 // import type { Verb } from "./actions.js"
 import { doAction } from "./actions.js"
+import {
+  type ActiveRegionBounds,
+  type CampgroundActiveRegion,
+  campgroundActiveRegionForWorld,
+  campgroundStaticMetadata,
+  filterWorldToBounds,
+  syncEntityIntoBoundedWorld
+} from "./activeRegion.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
 import { player } from "./creatures.js"
@@ -24,6 +37,10 @@ import {
 } from "./gamestate.js"
 import { GameStateStore } from "./GameStateStore.js"
 import { logger } from "./log.js"
+import {
+  applyLazyOffscreenStep,
+  DEFAULT_LAZY_OFFSCREEN_OPTIONS
+} from "./offscreen.js"
 import { makePerfTraceId, measureEffect } from "./perf.js"
 import type { TPos } from "./position.js"
 import {
@@ -36,6 +53,7 @@ import {
 } from "./world.js"
 
 type TGameState = typeof GameState.Type
+type TItemCollection = typeof ItemCollection.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
 
@@ -131,22 +149,42 @@ const eWithGameState = (
     withLogSpan("with.gs")
   )
 
+type ExecutePlansContext = {
+  readonly movementWorld?: World | undefined
+  readonly movementBounds?: ActiveRegionBounds | undefined
+}
+
+type ExecutePlansAccumulator = {
+  readonly state: TGameState
+  readonly movementWorld: World | undefined
+}
+
 const executePlans = (
   gs: TGameState,
-  traceId?: string
+  traceId?: string,
+  context: ExecutePlansContext = {}
 ) =>
 (acts: Array<PlannedAction>) => {
   let actionIndex = 0
-  return reduce(acts, gs, (acc, curr) => {
+  const initialAccumulator: ExecutePlansAccumulator = {
+    movementWorld: context.movementWorld,
+    state: gs
+  }
+  return reduce(acts, initialAccumulator, (acc, curr) => {
     const currentActionIndex = actionIndex
     actionIndex += 1
-    const effect = doAction(acc, curr)
-    return traceId === undefined
+    const effect = doAction(acc.state, curr, {
+      movementWorld: acc.movementWorld
+    })
+    const measuredEffect = traceId === undefined
       ? effect
       : measureEffect(
         {
           counts: (nextGs) => ({
             actionIndex: currentActionIndex,
+            movementWorldSize: acc.movementWorld === undefined
+              ? HashMap.size(acc.state.world)
+              : HashMap.size(acc.movementWorld),
             nextWorldSize: HashMap.size(nextGs.world)
           }),
           operation: "backend.turn",
@@ -155,7 +193,20 @@ const executePlans = (
         },
         effect
       )
-  })
+
+    return Effect.map(measuredEffect, (nextState) => ({
+      movementWorld: acc.movementWorld === undefined
+          || context.movementBounds === undefined
+        ? acc.movementWorld
+        : syncEntityIntoBoundedWorld(
+          acc.movementWorld,
+          context.movementBounds,
+          curr.entity.key,
+          nextState.world
+        ),
+      state: nextState
+    }))
+  }).pipe(Effect.map((acc) => acc.state))
 }
 
 const turnMeasureOptions = (
@@ -186,6 +237,28 @@ const appendPlayerAction = (
     }
   )
 
+const campgroundStaticMetadataCache = Effect.runSync(
+  Cache.make({
+    capacity: 8,
+    lookup: (_z: number) => Effect.succeed(campgroundStaticMetadata()),
+    timeToLive: "1 hour"
+  })
+)
+
+const activeRegionForGameState = (
+  gs: TGameState
+): Effect.Effect<CampgroundActiveRegion | undefined> =>
+  omatch(getPlayer(gs), {
+    onNone: () =>
+      Effect.succeed(undefined as CampgroundActiveRegion | undefined),
+    onSome: (player) =>
+      campgroundStaticMetadataCache.get(player.at.z).pipe(
+        Effect.map((metadata) =>
+          campgroundActiveRegionForWorld(gs.world, player, metadata)
+        )
+      )
+  })
+
 // advances the game loop
 export const actPlayerAction = (
   action: Action
@@ -196,81 +269,118 @@ export const actPlayerAction = (
     measureEffect(
       turnMeasureOptions(action, traceId, "state.modifyEffect"),
       eWithGameState((gs) =>
-        pipe(
-          // figure out what the AI wants to do
-          measureEffect(
-            {
-              counts: (plannedActions) => ({
-                actionTag: action._tag,
-                plannedActionCount: plannedActions.length,
-                worldSize: HashMap.size(gs.world)
-              }),
-              operation: "backend.turn",
-              phase: "allAiPlan",
-              traceId
-            },
-            allAiPlan(gs)
-          ),
-          tap(() => log("planned ai actions")),
-          // also append the player's plans
-          andThen((plannedActions) =>
+        Effect.gen(function*() {
+          const activeRegion = yield* activeRegionForGameState(gs)
+          const planningWorld = activeRegion?.actorWorld ?? gs.world
+          const movementWorld = activeRegion?.collisionWorld
+
+          return yield* pipe(
+            // figure out what the AI wants to do
             measureEffect(
               {
-                counts: (withPlayerAction) => ({
+                counts: (plannedActions) => ({
                   actionTag: action._tag,
-                  plannedActionCount: withPlayerAction.length
-                }),
-                operation: "backend.turn",
-                phase: "appendPlayerAction",
-                traceId
-              },
-              Effect.sync(() =>
-                appendPlayerAction(gs, action)(plannedActions)
-              )
-            )
-          ),
-          tap(() => log("added player action ", action)),
-          andThen((plannedActions) =>
-            measureEffect(
-              {
-                counts: (filteredActions) => ({
-                  actionTag: action._tag,
+                  fullWorldSize: HashMap.size(gs.world),
                   plannedActionCount: plannedActions.length,
-                  runnableActionCount: filteredActions.length
+                  planningWorldSize: HashMap.size(planningWorld)
                 }),
                 operation: "backend.turn",
-                phase: "filterNoops",
+                phase: "allAiPlan",
                 traceId
               },
-              Effect.sync(() =>
-                plannedActions.filter((pa) =>
-                  !EAction.$is("noop")(pa.action)
+              allAiPlan(gs, planningWorld)
+            ),
+            tap(() => log("planned ai actions")),
+            // also append the player's plans
+            andThen((plannedActions) =>
+              measureEffect(
+                {
+                  counts: (withPlayerAction) => ({
+                    actionTag: action._tag,
+                    plannedActionCount: withPlayerAction.length
+                  }),
+                  operation: "backend.turn",
+                  phase: "appendPlayerAction",
+                  traceId
+                },
+                Effect.sync(() =>
+                  appendPlayerAction(gs, action)(plannedActions)
                 )
               )
-            )
-          ), // todo: change the filter to Option.reduceCompact once everything is options
-          tap((actions) =>
-            log("filtered noops for a result of : ", actions)
-          ),
-          // execute the plans
-          andThen((plannedActions) =>
-            measureEffect(
-              {
-                counts: (nextGs) => ({
-                  actionTag: action._tag,
-                  executedActionCount: plannedActions.length,
-                  nextWorldSize: HashMap.size(nextGs.world)
-                }),
-                operation: "backend.turn",
-                phase: "executePlans",
-                traceId
-              },
-              executePlans(gs, traceId)(plannedActions)
-            )
-          ),
-          tap(() => log("finished action")),
-          withLogSpan(`playeract.${action._tag}`)
-        )
+            ),
+            tap(() => log("added player action ", action)),
+            andThen((plannedActions) =>
+              measureEffect(
+                {
+                  counts: (filteredActions) => ({
+                    actionTag: action._tag,
+                    plannedActionCount: plannedActions.length,
+                    runnableActionCount: filteredActions.length
+                  }),
+                  operation: "backend.turn",
+                  phase: "filterNoops",
+                  traceId
+                },
+                Effect.sync(() =>
+                  plannedActions.filter((pa) =>
+                    !EAction.$is("noop")(pa.action)
+                  )
+                )
+              )
+            ), // todo: change the filter to Option.reduceCompact once everything is options
+            tap((actions) =>
+              log("filtered noops for a result of : ", actions)
+            ),
+            // execute the plans
+            andThen((plannedActions) =>
+              measureEffect(
+                {
+                  counts: (nextGs) => ({
+                    actionTag: action._tag,
+                    collisionWorldSize: movementWorld === undefined
+                      ? HashMap.size(gs.world)
+                      : HashMap.size(movementWorld),
+                    executedActionCount: plannedActions.length,
+                    nextWorldSize: HashMap.size(nextGs.world)
+                  }),
+                  operation: "backend.turn",
+                  phase: "executePlans",
+                  traceId
+                },
+                executePlans(gs, traceId, {
+                  movementBounds: activeRegion?.collisionBounds,
+                  movementWorld
+                })(plannedActions)
+              )
+            ),
+            andThen((nextGs) =>
+              activeRegionForGameState(nextGs).pipe(
+                Effect.flatMap((nextActiveRegion) =>
+                  nextActiveRegion === undefined
+                    ? Effect.succeed(nextGs)
+                    : measureEffect(
+                      {
+                        counts: (result) => ({
+                          actionTag: action._tag,
+                          ...result.stats
+                        }),
+                        operation: "backend.turn",
+                        phase: "lazyOffscreen",
+                        traceId
+                      },
+                      applyLazyOffscreenStep(
+                        nextGs,
+                        nextActiveRegion,
+                        DEFAULT_LAZY_OFFSCREEN_OPTIONS
+                      )
+                    ).pipe(Effect.map((result) => result.state))
+                )
+              )
+            ),
+            tap(() => log("finished action")),
+            withLogSpan(`playeract.${action._tag}`)
+          )
+        })
       )
     )
   )
@@ -280,10 +390,37 @@ export const eGetWorld = pipe(
   eGetGameState,
   andThen((gs) => gs.world)
 )
+
+const clientWorldForState = (
+  gs: TGameState
+): Effect.Effect<World, never, never> =>
+  activeRegionForGameState(gs).pipe(
+    Effect.map((activeRegion) =>
+      activeRegion === undefined
+        ? gs.world
+        : filterWorldToBounds(gs.world, activeRegion.viewport)
+    )
+  )
+
+const inventoryForWorld = (key: TKey) => (w: World): TItemCollection =>
+  w.pipe(filter(isItem), filter((e) => e.in === key))
+
+export const getClientState = pipe(
+  eGetGameState,
+  andThen((gs) =>
+    clientWorldForState(gs).pipe(
+      Effect.map((world) => ({
+        inventory: inventoryForWorld("player")(gs.world),
+        world
+      }))
+    )
+  )
+)
+
 export const getInventory = (key: TKey) =>
   pipe(
     eGetWorld,
-    andThen((w) => w.pipe(filter(isItem), filter((e) => e.in === key)))
+    andThen((w) => inventoryForWorld(key)(w))
   )
 
 export const getPickupItemsFor = (key: TKey) =>

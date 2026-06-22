@@ -600,20 +600,20 @@ describe("CLI campground camera", () => {
     expect(tiles[10]?.[40]?.char).toBe("@")
   })
 
-  it("draws tent roofs over floors and walls over roofs regardless of insertion order", () => {
-    const roofOverFloorWorlds = [
+  it("draws floor inside tents and walls over tent terrain regardless of insertion order", () => {
+    const floorUnderTentWorlds = [
       worldFromEntities([floorAt(1, 2), tentAt(1, 2)]),
       worldFromEntities([tentAt(1, 2), floorAt(1, 2)])
     ]
-    const wallOverRoofWorlds = [
+    const wallOverTentWorlds = [
       worldFromEntities([tentAt(1, 2), wallAt(1, 2, "vertical")]),
       worldFromEntities([wallAt(1, 2, "vertical"), tentAt(1, 2)])
     ]
 
-    for (const world of roofOverFloorWorlds) {
-      expect(drawWorld(world)[2]?.[1]?.char).toBe("^")
+    for (const world of floorUnderTentWorlds) {
+      expect(drawWorld(world)[2]?.[1]?.char).toBe("·")
     }
-    for (const world of wallOverRoofWorlds) {
+    for (const world of wallOverTentWorlds) {
       expect(drawWorld(world)[2]?.[1]?.char).toBe("│")
     }
   })

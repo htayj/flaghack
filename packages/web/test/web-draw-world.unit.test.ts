@@ -65,9 +65,9 @@ const flagTile = {
   bright: true
 }
 
-const tentTile = {
-  char: "^",
-  color: "yellow",
+const floorTile = {
+  char: "·",
+  color: "black",
   bright: true
 }
 
@@ -112,8 +112,8 @@ describe("web drawWorld layering", () => {
     }
   })
 
-  it("draws tent roofs over floors and walls over roofs regardless of insertion order", () => {
-    const roofOverFloorWorlds = [
+  it("draws floor inside tents and walls over tent terrain regardless of insertion order", () => {
+    const floorUnderTentWorlds = [
       HashMap.fromIterable<string, Entity>([
         [floor.key, floor],
         [tent.key, tent]
@@ -123,7 +123,7 @@ describe("web drawWorld layering", () => {
         [floor.key, floor]
       ])
     ]
-    const wallOverRoofWorlds = [
+    const wallOverTentWorlds = [
       HashMap.fromIterable<string, Entity>([
         [tent.key, tent],
         [wall.key, wall]
@@ -134,10 +134,10 @@ describe("web drawWorld layering", () => {
       ])
     ]
 
-    for (const world of roofOverFloorWorlds) {
-      expect(drawWorld(world)[2]?.[1]).toEqual(tentTile)
+    for (const world of floorUnderTentWorlds) {
+      expect(drawWorld(world)[2]?.[1]).toEqual(floorTile)
     }
-    for (const world of wallOverRoofWorlds) {
+    for (const world of wallOverTentWorlds) {
       expect(drawWorld(world)[2]?.[1]).toEqual(wallTile)
     }
   })

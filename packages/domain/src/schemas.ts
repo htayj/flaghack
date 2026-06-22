@@ -260,4 +260,11 @@ export const conforms = <A, I>(
 ): (u: unknown) => u is A => S.is(schema)
 
 export const World = S.HashMap({ key: Key, value: Entity })
-export const GameState = S.Struct({ world: World })
+export const ClientState = S.Struct({
+  inventory: ItemCollection,
+  world: World
+})
+export const GameState = S.Struct({
+  lazyOffscreenCursor: S.Number.pipe(S.optional),
+  world: World
+})

@@ -91,6 +91,11 @@ type snapshot struct {
 	inventory []entity
 }
 
+type clientStateResponse struct {
+	World     [][]json.RawMessage `json:"world"`
+	Inventory [][]json.RawMessage `json:"inventory"`
+}
+
 type tile struct {
 	char   string
 	color  lipgloss.Color
@@ -204,6 +209,7 @@ type model struct {
 	world                  []entity
 	inventory              []entity
 	messages               []string
+	debugMessages          bool
 	pendingMovementPrefix  string
 	pendingExtendedCommand *string
 	travelTarget           *pos
@@ -238,6 +244,14 @@ func main() {
 }
 
 func newModel() model {
+	return newModelWithOptions(resolveClientOptions(os.Args[1:], os.Environ()))
+}
+
+type clientOptions struct {
+	debugMessages bool
+}
+
+func newModelWithOptions(options clientOptions) model {
 	perf := newPerfRecorderFromEnv("charm")
 	return model{
 		client: apiClient{
@@ -245,9 +259,14 @@ func newModel() model {
 			http:    &http.Client{Timeout: 10 * time.Second},
 			perf:    perf,
 		},
-		messages: []string{},
-		perf:     perf,
+		debugMessages: options.debugMessages,
+		messages:      []string{},
+		perf:          perf,
 	}
+}
+
+func resolveClientOptions(args []string, environ []string) clientOptions {
+	return clientOptions{debugMessages: resolveDebugMessages(args, environ)}
 }
 
 func resolveBaseURL(environ []string) string {
@@ -258,6 +277,39 @@ func resolveBaseURL(environ []string) string {
 		}
 	}
 	return defaultBaseURL
+}
+
+func resolveDebugMessages(args []string, environ []string) bool {
+	debugMessages := false
+	for _, item := range environ {
+		key, value, ok := strings.Cut(item, "=")
+		if ok && key == "FLAGHACK_DEBUG_MESSAGES" && truthyFlagValue(value) {
+			debugMessages = true
+		}
+	}
+	for _, arg := range args {
+		switch strings.TrimSpace(arg) {
+		case "--debug-messages", "--debug":
+			debugMessages = true
+		case "--no-debug-messages":
+			debugMessages = false
+		default:
+			name, value, ok := strings.Cut(arg, "=")
+			if ok && (name == "--debug-messages" || name == "--debug") {
+				debugMessages = truthyFlagValue(value)
+			}
+		}
+	}
+	return debugMessages
+}
+
+func truthyFlagValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -378,7 +430,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lootRequestID++
 	}
 
-	m.addMessage("doing " + input)
+	m.addDebugMessage("doing " + input)
 
 	if m.pendingExtendedCommand != nil {
 		return m.handleExtendedCommandKey(input)
@@ -683,6 +735,12 @@ func (m *model) addMessage(message string) {
 	}
 }
 
+func (m *model) addDebugMessage(message string) {
+	if m.debugMessages {
+		m.addMessage(message)
+	}
+}
+
 func (m *model) cancelActiveAutoMove() bool {
 	if m.autoCancel == nil {
 		return false
@@ -926,15 +984,7 @@ func actionAndRefreshCmd(client apiClient, act action) tea.Cmd {
 
 func (c apiClient) loadState(ctx context.Context) (snapshot, error) {
 	return measurePerfCall(c.perf, "frontend.api", "loadState", "", "", nil, func() (snapshot, error) {
-		world, err := c.getCollection(ctx, "/world")
-		if err != nil {
-			return snapshot{}, err
-		}
-		inventory, err := c.getCollection(ctx, "/inventory")
-		if err != nil {
-			inventory = []entity{}
-		}
-		return snapshot{world: world, inventory: inventory}, nil
+		return c.getClientState(ctx)
 	})
 }
 
@@ -943,14 +993,7 @@ func (c apiClient) actionAndRefresh(ctx context.Context, act action) (snapshot, 
 		if err := c.doAction(ctx, act); err != nil {
 			return snapshot{}, err
 		}
-		if act.Tag == "move" {
-			world, err := c.getCollection(ctx, "/world")
-			if err != nil {
-				return snapshot{}, err
-			}
-			return snapshot{world: world}, nil
-		}
-		return c.loadState(ctx)
+		return c.getClientState(ctx)
 	})
 }
 
@@ -1048,31 +1091,31 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 			steps++
 			expected = addPos(expected, movementDeltas[direction])
 			if cancelled(cancel) {
-				refreshedWorld, err := c.getCollection(ctx, "/world")
+				refreshed, err := c.getClientState(ctx)
 				if err != nil {
 					return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
 				}
-				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: refreshedWorld}, nil
+				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, refreshed, nil
 			}
 		}
 
-		refreshedWorld, err := c.getCollection(ctx, "/world")
+		refreshed, err := c.getClientState(ctx)
 		if err != nil {
 			return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
 		}
-		world = refreshedWorld
+		world = refreshed.world
 		if cancelled(cancel) {
-			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: world}, nil
+			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, refreshed, nil
 		}
 		after, ok := findPlayer(world)
 		if !ok {
-			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, snapshot{}, nil
+			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, refreshed, nil
 		}
 		if samePos(after.At, target) {
-			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, snapshot{world: world}, nil
+			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, refreshed, nil
 		}
 		if samePos(before, after.At) || !samePos(expected, after.At) {
-			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, snapshot{world: world}, nil
+			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, refreshed, nil
 		}
 	}
 	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, snapshot{world: world}, nil
@@ -1116,38 +1159,64 @@ func (c apiClient) getLootItemsFor(ctx context.Context, key string, containerKey
 	return c.getCollection(ctx, path)
 }
 
+func (c apiClient) getClientState(ctx context.Context) (snapshot, error) {
+	return measurePerfCall(c.perf, "frontend.http", "GET", "/client-state", "", nil, func() (snapshot, error) {
+		var raw clientStateResponse
+		if err := c.getJSON(ctx, "/client-state", &raw); err != nil {
+			return snapshot{}, err
+		}
+		world, err := decodeEntityPairs(raw.World)
+		if err != nil {
+			return snapshot{}, err
+		}
+		inventory, err := decodeEntityPairs(raw.Inventory)
+		if err != nil {
+			return snapshot{}, err
+		}
+		return snapshot{world: world, inventory: inventory}, nil
+	})
+}
+
 func (c apiClient) getCollection(ctx context.Context, path string) ([]entity, error) {
 	return measurePerfCall(c.perf, "frontend.http", "GET", path, "", nil, func() ([]entity, error) {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-		if err != nil {
-			return nil, err
-		}
-		response, err := c.http.Do(request)
-		if err != nil {
-			return nil, err
-		}
-		defer response.Body.Close()
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-			return nil, fmt.Errorf("GET %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
-		}
 		var raw [][]json.RawMessage
-		if err := json.NewDecoder(response.Body).Decode(&raw); err != nil {
+		if err := c.getJSON(ctx, path, &raw); err != nil {
 			return nil, err
 		}
-		items := make([]entity, 0, len(raw))
-		for _, pair := range raw {
-			if len(pair) < 2 {
-				continue
-			}
-			var item entity
-			if err := json.Unmarshal(pair[1], &item); err != nil {
-				return nil, err
-			}
-			items = append(items, item)
-		}
-		return items, nil
+		return decodeEntityPairs(raw)
 	})
+}
+
+func (c apiClient) getJSON(ctx context.Context, path string, target any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		return fmt.Errorf("GET %s failed: %s %s", path, response.Status, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(response.Body).Decode(target)
+}
+
+func decodeEntityPairs(raw [][]json.RawMessage) ([]entity, error) {
+	items := make([]entity, 0, len(raw))
+	for _, pair := range raw {
+		if len(pair) < 2 {
+			continue
+		}
+		var item entity
+		if err := json.Unmarshal(pair[1], &item); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (c apiClient) doAction(ctx context.Context, act action) error {
@@ -1617,10 +1686,10 @@ func wallChar(variant string) string {
 
 func zIndex(item entity) int {
 	switch item.Tag {
+	case "tent":
+		return -1
 	case "floor", "tunnel":
 		return 0
-	case "tent":
-		return 1
 	case "wall", "sign", "effigy", "temple":
 		return 2
 	default:

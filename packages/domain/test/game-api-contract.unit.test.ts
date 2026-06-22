@@ -40,6 +40,13 @@ describe("GameApi item-list success contracts", () => {
     expect(block).not.toMatch(/\.addSuccess\(\s*World\s*\)/)
   })
 
+  it("adds a bounded client-state endpoint without changing full getWorld", () => {
+    const block = endpointBlock(readGameApiSource(), "getClientState")
+
+    expect(block).toMatch(/\/client-state/)
+    expect(block).toMatch(/\.addSuccess\(\s*ClientState\s*\)/)
+  })
+
   it("narrows getPickupItemsFor success to ItemCollection", () => {
     const block = endpointBlock(readGameApiSource(), "getPickupItemsFor")
 

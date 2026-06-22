@@ -13,14 +13,21 @@ import {
   isContainer,
   isDrinkItem,
   isFoodItem,
-  isItem
+  isItem,
+  type World
 } from "./world.js"
 
+export type ActionExecutionContext = {
+  readonly movementWorld?: World | undefined
+}
+
 const moveEntity =
-  (gs: GameState) =>
+  (gs: GameState, context: ActionExecutionContext = {}) =>
   <T extends Entity>(entity: TOption<T>) =>
   (vec: TPos): GameState =>
-    updateEntity(gs)(entity)((c) => actPosition(gs.world)(c, vec))
+    updateEntity(gs)(entity)((c) =>
+      actPosition(context.movementWorld ?? gs.world)(c, vec)
+    )
 
 const itemIsAtActor = (actor: Entity) => (item: Entity): boolean =>
   isItem(item)
@@ -158,11 +165,12 @@ const consumeHeldItems =
 
 export const doAction = (
   gs: GameState,
-  { action, entity }: PlannedAction
-) => Effect.succeed(act(gs)(some(entity))(action))
+  { action, entity }: PlannedAction,
+  context: ActionExecutionContext = {}
+) => Effect.succeed(act(gs, context)(some(entity))(action))
 
 const act =
-  (gs: GameState) =>
+  (gs: GameState, context: ActionExecutionContext = {}) =>
   (crea: TOption<Entity>) =>
   (action: Action): GameState => {
     switch (action._tag) {
@@ -171,14 +179,23 @@ const act =
         return gs
       case "move":
         return Match.value(action.dir).pipe(
-          Match.when("N", () => moveEntity(gs)(crea)(UV.Up)),
-          Match.when("E", () => moveEntity(gs)(crea)(UV.Right)),
-          Match.when("S", () => moveEntity(gs)(crea)(UV.Down)),
-          Match.when("W", () => moveEntity(gs)(crea)(UV.Left)),
-          Match.when("NE", () => moveEntity(gs)(crea)(UV.UpRight)),
-          Match.when("NW", () => moveEntity(gs)(crea)(UV.UpLeft)),
-          Match.when("SE", () => moveEntity(gs)(crea)(UV.DownRight)),
-          Match.when("SW", () => moveEntity(gs)(crea)(UV.DownLeft)),
+          Match.when("N", () => moveEntity(gs, context)(crea)(UV.Up)),
+          Match.when("E", () => moveEntity(gs, context)(crea)(UV.Right)),
+          Match.when("S", () => moveEntity(gs, context)(crea)(UV.Down)),
+          Match.when("W", () => moveEntity(gs, context)(crea)(UV.Left)),
+          Match.when(
+            "NE",
+            () => moveEntity(gs, context)(crea)(UV.UpRight)
+          ),
+          Match.when("NW", () => moveEntity(gs, context)(crea)(UV.UpLeft)),
+          Match.when(
+            "SE",
+            () => moveEntity(gs, context)(crea)(UV.DownRight)
+          ),
+          Match.when(
+            "SW",
+            () => moveEntity(gs, context)(crea)(UV.DownLeft)
+          ),
           Match.exhaustive
         )
       case "pickupMulti":

@@ -125,6 +125,35 @@ describe("server actions", () => {
     expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
   })
 
+  it("can use a bounded movement world for collision while preserving full state", () => {
+    const actor = player(0, 0, 0)
+    const farItem = makeGroundFlag("flag-far", { x: 100, y: 100, z: 0 })
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [farItem.key, farItem]
+      ])
+    })
+    const movementWorld = HashMap.fromIterable<string, Entity>([
+      [actor.key, actor],
+      ["floor-1", floorAt("floor-1", 1, 0)]
+    ])
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.move({ dir: "E" }),
+        entity: actor
+      }, { movementWorld })
+    )
+
+    expect(entityByKey(next, actor.key)?.at).toEqual({
+      x: 1,
+      y: 0,
+      z: 0
+    })
+    expect(entityByKey(next, farItem.key)).toEqual(farItem)
+  })
+
   it("allows movement onto passable campground marker terrain", () => {
     for (const tag of ["tent", "sign", "effigy", "temple"] as const) {
       const actor = player(0, 0, 0)

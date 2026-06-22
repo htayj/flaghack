@@ -1,7 +1,8 @@
-import { Command } from "@effect/cli"
+import { Command, Options } from "@effect/cli"
 import type { World as WorldSchema } from "@flaghack/domain/schemas"
 import { Console, Effect, HashMap } from "effect"
 import { startblessed } from "./cliBlessed.js"
+import { resolveCliDebugMessages } from "./config.js"
 import { GameClient } from "./GameClient.js"
 
 const moveSouth = Command.make("move-south").pipe(
@@ -34,9 +35,26 @@ const inventory = Command.make("i").pipe(
     })
   )
 )
-const playBlessed = Command.make("playB").pipe(
+const debugMessagesOption = Options.boolean("debug-messages", {
+  ifPresent: true
+}).pipe(
+  Options.withDescription(
+    "Show debug input trace messages in the in-game message box"
+  )
+)
+
+const playBlessed = Command.make("playB", {
+  debugMessages: debugMessagesOption
+}).pipe(
   Command.withDescription("play the game"),
-  Command.withHandler(() => Effect.sync(() => startblessed()))
+  Command.withHandler(({ debugMessages }) =>
+    Effect.sync(() =>
+      startblessed({
+        debugMessages: debugMessages
+          || resolveCliDebugMessages([], process.env)
+      })
+    )
+  )
 )
 const command = Command.make("flag-hack").pipe(
   Command.withSubcommands([moveSouth, inventory, playBlessed])

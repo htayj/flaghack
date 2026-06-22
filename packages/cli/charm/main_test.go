@@ -35,18 +35,22 @@ func TestParseMovementCommand(t *testing.T) {
 	}
 }
 
-func TestActionAndRefreshSkipsInventoryFetchForMovement(t *testing.T) {
+func TestActionAndRefreshUsesClientStateForMovement(t *testing.T) {
 	var inventoryRequests int
 	var worldRequests int
+	var clientStateRequests int
 	var actRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/act":
 			actRequests++
 			w.WriteHeader(http.StatusOK)
+		case "/client-state":
+			clientStateRequests++
+			_, _ = w.Write([]byte(`{"world":[["player",{"key":"player","_tag":"player","in":"world","at":{"x":1,"y":0,"z":0}}]],"inventory":[]}`))
 		case "/world":
 			worldRequests++
-			_, _ = w.Write([]byte(`[["player",{"key":"player","_tag":"player","in":"world","at":{"x":1,"y":0,"z":0}}]]`))
+			_, _ = w.Write([]byte(`["unexpected"]`))
 		case "/inventory":
 			inventoryRequests++
 			_, _ = w.Write([]byte(`[]`))
@@ -62,11 +66,11 @@ func TestActionAndRefreshSkipsInventoryFetchForMovement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if actRequests != 1 || worldRequests != 1 || inventoryRequests != 0 {
-		t.Fatalf("requests act/world/inventory = %d/%d/%d, want 1/1/0", actRequests, worldRequests, inventoryRequests)
+	if actRequests != 1 || clientStateRequests != 1 || worldRequests != 0 || inventoryRequests != 0 {
+		t.Fatalf("requests act/client-state/world/inventory = %d/%d/%d/%d, want 1/1/0/0", actRequests, clientStateRequests, worldRequests, inventoryRequests)
 	}
-	if got.inventory != nil {
-		t.Fatalf("movement refresh inventory = %#v, want nil to preserve existing inventory", got.inventory)
+	if got.inventory == nil || len(got.inventory) != 0 {
+		t.Fatalf("movement refresh inventory = %#v, want empty client-state inventory", got.inventory)
 	}
 	if len(got.world) != 1 || got.world[0].Key != "player" {
 		t.Fatalf("movement world snapshot = %#v", got.world)
@@ -76,7 +80,7 @@ func TestActionAndRefreshSkipsInventoryFetchForMovement(t *testing.T) {
 func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testing.T) {
 	playerX := 0
 	actRequests := 0
-	worldRequests := 0
+	clientStateRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/act":
@@ -85,9 +89,9 @@ func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testin
 				playerX++
 			}
 			w.WriteHeader(http.StatusOK)
-		case "/world":
-			worldRequests++
-			_, _ = fmt.Fprintf(w, `[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]]`, playerX)
+		case "/client-state":
+			clientStateRequests++
+			_, _ = fmt.Fprintf(w, `{"world":[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]],"inventory":[["water-1",{"key":"water-1","_tag":"water","in":"player","at":{"x":0,"y":0,"z":0}}]]}`, playerX)
 		default:
 			http.NotFound(w, r)
 		}
@@ -109,19 +113,22 @@ func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testin
 	if result.kind != "blocked" || result.steps != 2 {
 		t.Fatalf("travel result = %#v, want blocked after 2 steps", result)
 	}
-	if actRequests != 2 || worldRequests != 1 {
-		t.Fatalf("requests act/world = %d/%d, want 2/1", actRequests, worldRequests)
+	if actRequests != 2 || clientStateRequests != 1 {
+		t.Fatalf("requests act/client-state = %d/%d, want 2/1", actRequests, clientStateRequests)
 	}
 	player, ok := findPlayer(snap.world)
 	if !ok || player.At != (pos{X: 1, Y: 0, Z: 0}) {
 		t.Fatalf("final player = %#v, %v; want x=1", player, ok)
+	}
+	if len(snap.inventory) != 1 || snap.inventory[0].Key != "water-1" {
+		t.Fatalf("final inventory = %#v, want client-state inventory", snap.inventory)
 	}
 }
 
 func TestRunTravelRefreshesBeforeReturningCancelledBatch(t *testing.T) {
 	playerX := 0
 	actRequests := 0
-	worldRequests := 0
+	clientStateRequests := 0
 	cancel := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -132,9 +139,9 @@ func TestRunTravelRefreshesBeforeReturningCancelledBatch(t *testing.T) {
 				close(cancel)
 			}
 			w.WriteHeader(http.StatusOK)
-		case "/world":
-			worldRequests++
-			_, _ = fmt.Fprintf(w, `[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]]`, playerX)
+		case "/client-state":
+			clientStateRequests++
+			_, _ = fmt.Fprintf(w, `{"world":[["floor-0",{"key":"floor-0","_tag":"floor","in":"world","at":{"x":0,"y":0,"z":0}}],["floor-1",{"key":"floor-1","_tag":"floor","in":"world","at":{"x":1,"y":0,"z":0}}],["floor-2",{"key":"floor-2","_tag":"floor","in":"world","at":{"x":2,"y":0,"z":0}}],["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0},"name":"you"}]],"inventory":[]}`, playerX)
 		default:
 			http.NotFound(w, r)
 		}
@@ -156,8 +163,8 @@ func TestRunTravelRefreshesBeforeReturningCancelledBatch(t *testing.T) {
 	if result.kind != "cancelled" || result.steps != 1 {
 		t.Fatalf("travel result = %#v, want cancelled after 1 step", result)
 	}
-	if actRequests != 1 || worldRequests != 1 {
-		t.Fatalf("requests act/world = %d/%d, want 1/1", actRequests, worldRequests)
+	if actRequests != 1 || clientStateRequests != 1 {
+		t.Fatalf("requests act/client-state = %d/%d, want 1/1", actRequests, clientStateRequests)
 	}
 	player, ok := findPlayer(snap.world)
 	if !ok || player.At != (pos{X: 1, Y: 0, Z: 0}) {
@@ -245,22 +252,22 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 	}
 }
 
-func TestDrawWorldLayersTentRoofsWallsItemsAndCreatures(t *testing.T) {
+func TestDrawWorldLayersFloorInsideTentsWallsItemsAndCreatures(t *testing.T) {
 	floor := entity{Key: "floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	tent := entity{Key: "tent", Tag: "tent", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	wall := entity{Key: "wall", Tag: "wall", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Variant: "vertical"}
 	beer := entity{Key: "beer", Tag: "beer", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
 	player := entity{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 2, Z: 0}, Name: "you"}
 
-	roofOverFloorWorlds := [][]entity{{floor, tent}, {tent, floor}}
-	for _, world := range roofOverFloorWorlds {
-		if got := drawWorld(world, nil)[2][1].char; got != "^" {
-			t.Fatalf("floor/tent tile = %q, want ^", got)
+	floorUnderTentWorlds := [][]entity{{floor, tent}, {tent, floor}}
+	for _, world := range floorUnderTentWorlds {
+		if got := drawWorld(world, nil)[2][1].char; got != "·" {
+			t.Fatalf("floor/tent tile = %q, want ·", got)
 		}
 	}
 
-	wallOverRoofWorlds := [][]entity{{tent, wall}, {wall, tent}}
-	for _, world := range wallOverRoofWorlds {
+	wallOverTentWorlds := [][]entity{{tent, wall}, {wall, tent}}
+	for _, world := range wallOverTentWorlds {
 		if got := drawWorld(world, nil)[2][1].char; got != "│" {
 			t.Fatalf("tent/wall tile = %q, want │", got)
 		}
@@ -895,6 +902,48 @@ func TestResolveBaseURL(t *testing.T) {
 	}
 	if got := resolveBaseURL([]string{"FLAGHACK_API_URL= http://example.test/api/ "}); got != "http://example.test/api" {
 		t.Fatalf("override base URL = %q", got)
+	}
+}
+
+func TestResolveDebugMessages(t *testing.T) {
+	if resolveDebugMessages([]string{}, []string{}) {
+		t.Fatal("debug messages should be disabled by default")
+	}
+	if !resolveDebugMessages([]string{"--debug-messages"}, []string{}) {
+		t.Fatal("--debug-messages should enable debug messages")
+	}
+	if !resolveDebugMessages([]string{"--debug=true"}, []string{}) {
+		t.Fatal("--debug=true should enable debug messages")
+	}
+	if !resolveDebugMessages([]string{}, []string{"FLAGHACK_DEBUG_MESSAGES=1"}) {
+		t.Fatal("FLAGHACK_DEBUG_MESSAGES=1 should enable debug messages")
+	}
+	if resolveDebugMessages([]string{"--no-debug-messages"}, []string{"FLAGHACK_DEBUG_MESSAGES=1"}) {
+		t.Fatal("--no-debug-messages should override the debug env flag")
+	}
+}
+
+func TestHandleKeySuppressesDebugMessagesByDefault(t *testing.T) {
+	m := newModelWithOptions(clientOptions{})
+	next, cmd := m.handleKey(charmRuneKey('?'))
+	if cmd != nil {
+		t.Fatalf("unknown key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if len(m.messages) != 0 {
+		t.Fatalf("messages = %#v, want no debug input messages by default", m.messages)
+	}
+}
+
+func TestHandleKeyShowsDebugMessagesWhenEnabled(t *testing.T) {
+	m := newModelWithOptions(clientOptions{debugMessages: true})
+	next, cmd := m.handleKey(charmRuneKey('?'))
+	if cmd != nil {
+		t.Fatalf("unknown key returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if len(m.messages) != 1 || m.messages[0] != "doing ?" {
+		t.Fatalf("messages = %#v, want doing debug message", m.messages)
 	}
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { AlternateTuiController } from "../src/tuiController.js"
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const sourcePath = (fileName: string) => join(testDir, "../src", fileName)
@@ -28,6 +29,22 @@ describe("alternate TUI frontend static guards", () => {
       expect(source).not.toMatch(blessedImports)
       expect(source).toContain("./tuiGame.js")
     }
+  })
+
+  it("keeps debug input trace messages disabled by default", () => {
+    const controller = new AlternateTuiController()
+
+    controller.handleInput("?")
+
+    expect(controller.snapshot().messages).toEqual([])
+  })
+
+  it("allows alternate clients to opt into debug input trace messages", () => {
+    const controller = new AlternateTuiController({ debugMessages: true })
+
+    controller.handleInput("?")
+
+    expect(controller.snapshot().messages).toEqual(["doing ?"])
   })
 
   it("normalizes Ink control, enter, escape, and backspace inputs", () => {

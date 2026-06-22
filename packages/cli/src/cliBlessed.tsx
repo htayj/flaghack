@@ -4,6 +4,7 @@ import blessed from "blessed"
 import React from "react"
 import { render } from "react-blessed"
 import BApp from "./BApp.js"
+import { resolveCliDebugMessages } from "./config.js"
 
 type ShutdownSignal = "SIGINT" | "SIGTERM"
 
@@ -28,7 +29,13 @@ const createShutdown = (screen: blessed.Widgets.Screen) => {
   return { shutdown, signalHandlers }
 }
 
-export const startblessed = () => {
+export type StartBlessedOptions = {
+  readonly debugMessages?: boolean | undefined
+}
+
+export const startblessed = (options: StartBlessedOptions = {}) => {
+  const debugMessages = options.debugMessages
+    ?? resolveCliDebugMessages(process.argv.slice(2), process.env)
   const screen = blessed.screen({
     // autoPadding: false,
     autoPadding: true,
@@ -50,7 +57,13 @@ export const startblessed = () => {
   process.once("SIGINT", signalHandlers.SIGINT)
   process.once("SIGTERM", signalHandlers.SIGTERM)
 
-  return render(<BApp onQuit={() => shutdown("SIGINT")} />, screen)
+  return render(
+    <BApp
+      debugMessages={debugMessages}
+      onQuit={() => shutdown("SIGINT")}
+    />,
+    screen
+  )
 }
 // export type CliType = typeof cli
 // render(<App opts={cli} />)

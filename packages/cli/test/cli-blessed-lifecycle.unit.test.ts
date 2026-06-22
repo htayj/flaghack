@@ -11,7 +11,7 @@ const cliBlessedSourcePath = join(
 const topLevelScreenAllocation =
   /^const\s+screen\s*=\s*blessed\.screen\s*\(/m
 const startblessedCreatesScreen =
-  /export\s+const\s+startblessed\s*=\s*\(\)\s*=>\s*{[\s\S]*?blessed\.screen\s*\(/
+  /export\s+const\s+startblessed\s*=\s*\([^)]*\)\s*=>\s*{[\s\S]*?blessed\.screen\s*\(/
 const directProcessExitCall = /process\.exit\s*\(/
 const shutdownHelperDestroysScreen =
   /const\s+shutdown\s*=\s*\(\s*signal[\s\S]*?screen\.destroy\s*\(\s*\)/

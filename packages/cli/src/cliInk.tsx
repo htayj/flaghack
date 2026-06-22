@@ -2,6 +2,7 @@ import type { Entity as EntitySchema } from "@flaghack/domain/schemas"
 import { HashMap } from "effect"
 import { Box, render, Text, useApp, useInput } from "ink"
 import React, { useEffect, useMemo, useState } from "react"
+import { resolveCliDebugMessages } from "./config.js"
 import {
   AlternateTuiController,
   type AlternateTuiSnapshot
@@ -111,7 +112,14 @@ const Controls = () => (
 const App = () => {
   const { exit } = useApp()
   const controller = useMemo(
-    () => new AlternateTuiController({ onQuit: () => exit() }),
+    () =>
+      new AlternateTuiController({
+        debugMessages: resolveCliDebugMessages(
+          process.argv.slice(2),
+          process.env
+        ),
+        onQuit: () => exit()
+      }),
     [exit]
   )
   const [snapshot, setSnapshot] = useState<AlternateTuiSnapshot>(() =>

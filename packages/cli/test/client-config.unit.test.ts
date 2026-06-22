@@ -4,7 +4,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   DEFAULT_CLI_API_BASE_URL,
-  resolveCliApiBaseUrl
+  resolveCliApiBaseUrl,
+  resolveCliDebugMessages
 } from "../src/config.js"
 
 const testDir = dirname(fileURLToPath(import.meta.url))
@@ -27,6 +28,20 @@ describe("CLI API client config", () => {
     expect(resolveCliApiBaseUrl({ FLAGHACK_API_URL: "   " })).toBe(
       DEFAULT_CLI_API_BASE_URL
     )
+  })
+
+  it("keeps debug message logging disabled unless requested", () => {
+    expect(resolveCliDebugMessages([], {})).toBe(false)
+    expect(resolveCliDebugMessages(["--debug-messages"], {})).toBe(true)
+    expect(resolveCliDebugMessages(["--debug=true"], {})).toBe(true)
+    expect(
+      resolveCliDebugMessages([], { FLAGHACK_DEBUG_MESSAGES: "yes" })
+    ).toBe(true)
+    expect(
+      resolveCliDebugMessages(["--no-debug-messages"], {
+        FLAGHACK_DEBUG_MESSAGES: "1"
+      })
+    ).toBe(false)
   })
 
   it("wires GameClient through runtime config instead of a hard-coded base URL", () => {

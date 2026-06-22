@@ -1,5 +1,5 @@
 import { type Action, EAction } from "@flaghack/domain/schemas"
-import { Match, pipe } from "effect"
+import { Match, Option, pipe } from "effect"
 import type { Effect } from "effect/Effect"
 import {
   all,
@@ -12,8 +12,8 @@ import {
 import type { HashMap } from "effect/HashMap"
 import { filter, map, values } from "effect/HashMap"
 import type { Creature } from "../creatures.js"
-import { type GameState, worldFrom } from "../gamestate.js"
-import type { Entity } from "../world.js"
+import type { GameState } from "../gamestate.js"
+import type { Entity, World } from "../world.js"
 
 // class ErrPlayerAi extends Data.TaggedError("ErrPlayerAi") {}
 
@@ -69,16 +69,26 @@ const ai = (gs: GameState) =>
     Match.orElse(noAi(gs))
   )
 
+export const planOneAi = (
+  gs: GameState,
+  entity: Entity
+): Option.Option<PlannedAction> =>
+  isNonPlayerCreature(entity)
+    ? Option.some({ entity, action: ai(gs)(entity) })
+    : Option.none()
+
 const eAi = (gs: GameState) => (e: NonPlayerCreature) =>
   succeed({ entity: e, action: ai(gs)(e) })
 const planAllAi =
   (gs: GameState) => (w: HashMap<string, NonPlayerCreature>) =>
     w.pipe(map((e) => eAi(gs)(e)), values)
-export const allAiPlan = (gs: GameState): Effect<Array<PlannedAction>> =>
+export const allAiPlan = (
+  gs: GameState,
+  planningWorld: World = gs.world
+): Effect<Array<PlannedAction>> =>
   pipe(
-    succeed(gs),
+    succeed(planningWorld),
     tap(() => log("planning ai for world")),
-    andThen(worldFrom),
     andThen(nonPlayerCreaturesFrom),
     tap(() => log("narrowed to non-player creatures")),
     andThen(planAllAi(gs)),

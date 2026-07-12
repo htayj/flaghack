@@ -1,9 +1,9 @@
 # @flaghack/domain
 
-`@flaghack/domain` owns the shared Flag Hack API contract and data
-shapes used by the server, CLI, and web packages. It defines the
-wire-level Effect schemas and presentation helpers; it does not own the
-full game engine or in-process runtime behavior.
+`@flaghack/domain` owns the shared Flag Hack API contract and data shapes
+used by the server and mirrored by the Go Charm client. It defines the
+wire-level Effect schemas; it does not own the full game engine or
+in-process runtime behavior.
 
 ## Current responsibilities
 
@@ -16,8 +16,6 @@ full game engine or in-process runtime behavior.
 - `src/schemas.ts` defines shared `World`, `Action`, `GameState`, item,
   creature, terrain, door/open-close, position, inventory, and combined
   `ClientState` contracts. Every creature carries the standard attributes.
-- `src/display.ts` provides the display tile mapping from shared entity
-  shapes to character/color metadata for terminal and browser renderers.
 - `src/stats.ts` holds shared stat, state, property, status-effect schemas,
   standard creature attributes, 3d6 attribute rolling, and d20-under checks.
 - `src/creatureCapabilities.ts` defines centralized creature tags and cheap

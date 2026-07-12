@@ -92,7 +92,7 @@ pnpm verify:gates
 pnpm test:unit
 ```
 
-Runs Vitest in non-watch workspace mode across `packages/*/vitest.config.ts`, including web smoke tests.
+Runs Vitest in non-watch workspace mode across the domain and server test projects.
 
 ### Charmbracelet CLI gate
 
@@ -126,7 +126,7 @@ Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, w
 pnpm test:e2e:tmux:bot
 ```
 
-Requires `tmux`. The runner creates a unique session, starts the server in one pane with an isolated temporary save file, waits for API readiness, starts the default Charmbracelet CLI in another pane, automatically completes fresh role setup, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
+Requires `tmux`. The runner creates a unique session, starts the server in one pane with an isolated temporary save file, waits for API readiness, starts the default Charmbracelet CLI in another pane, automatically completes fresh role setup, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise a custom Charm launch command.
 
 ### Feature-specific tmux gate
 
@@ -137,7 +137,7 @@ FLAGHACK_TMUX_KEYS='["j"]' pnpm test:feature:tmux:bot
 The feature gate also starts a disposable server and CLI in a unique tmux session, but the sent keys and assertions are configurable:
 
 - `FLAGHACK_TEST_PORT`: optional disposable server port; bot scripts set this to `3100`.
-- `FLAGHACK_TMUX_CLI_COMMAND`: optional launch command; defaults to `pnpm run cli`. The tmux runner exports `FLAGHACK_API_URL=<test base URL>` before the selected command so custom compound legacy/experimental commands target the disposable server.
+- `FLAGHACK_TMUX_CLI_COMMAND`: optional launch command; defaults to `pnpm run cli`. The tmux runner exports `FLAGHACK_API_URL=<test base URL>` before the selected command so custom compound commands target the disposable server.
 - `FLAGHACK_TMUX_KEYS`: JSON array of tmux `send-keys` tokens, for example `'["g", "l"]'`.
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.

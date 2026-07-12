@@ -1,5 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
-import { getTile } from "@flaghack/domain/display"
+import { describe, it } from "@effect/vitest"
 import { AnyItem } from "@flaghack/domain/schemas"
 import { Either, Schema as S } from "effect"
 
@@ -33,23 +32,5 @@ describe("tool items", () => {
       expectRight(S.decodeUnknownEither(AnyItem)(tool))
       expectRight(S.validateEither(AnyItem)(tool))
     }
-  })
-
-  it("renders hammer and nails with distinct tool tiles", () => {
-    const hammer = expectRight(
-      S.decodeUnknownEither(AnyItem)(sampleHammer)
-    )
-    const nails = expectRight(S.decodeUnknownEither(AnyItem)(sampleNails))
-
-    expect(getTile(hammer)).toEqual({
-      color: "white",
-      bright: true,
-      char: "T"
-    })
-    expect(getTile(nails)).toEqual({
-      color: "cyan",
-      bright: true,
-      char: ":"
-    })
   })
 })

@@ -46,8 +46,7 @@ separate. Keep the local mutation intent-header contract in
 
 Read the root `AGENTS.md` before changing package behavior, and use
 `docs/testing-gates.md` to choose focused server validation. Server work
-should preserve the shared `GameApi` contract consumed by the CLI and web
-clients.
+should preserve the shared `GameApi` contract consumed by the Charm client.
 
 ## Audit and generated-file policy
 

@@ -1,9 +1,8 @@
 # @flaghack/cli
 
-`@flaghack/cli` owns the Flag Hack terminal clients. The default player
-UI is the Go Charmbracelet Bubble Tea/Lip Gloss frontend, and the package
-also keeps the Node HTTP client runtime plus legacy/experimental terminal
-renderers that talk to the server through the shared domain contract.
+`@flaghack/cli` owns the Flag Hack Go Charmbracelet terminal client. It is
+the project's only player interface and talks to the server directly over
+HTTP and revisioned server-sent events.
 
 ## Current responsibilities
 
@@ -11,16 +10,14 @@ renderers that talk to the server through the shared domain contract.
   UI. Root `pnpm run cli` and package-local `pnpm run dev` / `pnpm run
   play` launch this frontend. It owns a native SSE subscription/parser for
   revisioned combined state and falls back to endpoint refreshes when the
-  stream is unavailable.
-- `src/Cli.ts` defines the legacy `flag-hack` command tree, including
-  debug movement, inventory, and the old blessed play command.
-- `src/GameClient.ts` implements the Node HTTP client runtime using
-  `HttpApiClient` against `GameApi` and the CLI base URL configuration.
-- `src/cliBlessed.tsx`, `src/BApp.tsx`, and `src/components/` provide
-  the legacy blessed and react-blessed terminal UI, still available via
-  root `pnpm run cli:blessed` / `pnpm run cli:tsx`.
-- `src/cliInk.tsx` and `src/cliTerminalKit.ts` are retained comparison
-  experiments; they are not the default CLI.
+  stream is unavailable. The client carries the mutating-command intent
+  header required by the shared API contract.
+- `charm/main_test.go` covers the HTTP/SSE boundary, update loop, input
+  handling, lifecycle behavior, and rendered views. The remaining Go tests
+  and benchmarks cover item selection and performance instrumentation.
+- Root `pnpm run cli`, `pnpm run cli:charm`, and `pnpm run
+  cli:charmbracelet` all launch this interface. Package-local `pnpm run
+  dev` and `pnpm run play` do the same.
 
 ## Player controls
 
@@ -43,9 +40,9 @@ current role. During play:
 ## Validation and workflow notes
 
 Read the root `AGENTS.md` before changing package behavior, and use
-`docs/testing-gates.md` to choose focused CLI validation. Keep CLI code on
-the client side of the shared `GameApi` contract; server runtime behavior
-belongs in `@flaghack/server`.
+`docs/testing-gates.md` to choose focused CLI validation. Keep the Go
+client aligned with the shared `GameApi` transport and lifecycle contract;
+server runtime behavior belongs in `@flaghack/server`.
 
 ## Audit and generated-file policy
 

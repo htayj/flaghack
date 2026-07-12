@@ -1,5 +1,9 @@
 # Functional programming / immutability cleanup audit
 
+> Historical snapshot: the web, blessed, Ink, and terminal-kit interfaces
+> were removed on 2026-07-12. Their paths remain below as audit evidence
+> from the 2026-05-29 repository state.
+
 Date: 2026-05-29\
 Branch audited: `master`\
 Scope: repo-wide TypeScript/React/server code, beyond Effect-specific idioms.

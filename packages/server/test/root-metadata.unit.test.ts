@@ -33,10 +33,6 @@ const tmuxFeatureCheckPath = join(
 
 const packageManifests = [
   {
-    name: "@flaghack/cli",
-    path: join(repositoryRoot, "packages/cli/package.json")
-  },
-  {
     name: "@flaghack/domain",
     path: join(repositoryRoot, "packages/domain/package.json")
   },
@@ -268,7 +264,7 @@ describe("root package metadata", () => {
     expect(rootPackageJson.scripts?.verify).toBe("pnpm verify:gates")
   })
 
-  it("uses Charmbracelet as the default CLI while retaining explicit legacy and experiment launch scripts", () => {
+  it("exposes only the Charmbracelet player UI", () => {
     const rootPackageJson = readRootPackageJson()
 
     expect(rootPackageJson.scripts?.cli).toBe("pnpm run cli:charm")
@@ -278,21 +274,18 @@ describe("root package metadata", () => {
     expect(rootPackageJson.scripts?.["cli:charmbracelet"]).toBe(
       "pnpm run cli:charm"
     )
-    expect(rootPackageJson.scripts?.["cli:blessed"]).toBe(
-      "tsx packages/cli/src/bin.ts playB"
-    )
-    expect(rootPackageJson.scripts?.["cli:tsx"]).toBe(
-      "pnpm run cli:blessed"
-    )
-    expect(rootPackageJson.scripts?.["cli:ink"]).toBe(
-      "tsx packages/cli/src/cliInk.tsx"
-    )
-    expect(rootPackageJson.scripts?.["cli:terminal-kit"]).toBe(
-      "tsx packages/cli/src/cliTerminalKit.ts"
-    )
-    expect(rootPackageJson.scripts?.["cli:termkit"]).toBe(
-      "pnpm run cli:terminal-kit"
-    )
+    for (
+      const removedScript of [
+        "cli:blessed",
+        "cli:tsx",
+        "cli:ink",
+        "cli:terminal-kit",
+        "cli:termkit",
+        "cli:old"
+      ]
+    ) {
+      expect(rootPackageJson.scripts).not.toHaveProperty(removedScript)
+    }
     expect(rootPackageJson.scripts?.["bot:serve"]).toBe(
       "FLAGHACK_PORT=3100 pnpm run serve"
     )
@@ -446,13 +439,16 @@ describe("root package metadata", () => {
 })
 
 describe("root TypeScript build metadata", () => {
-  it("includes the web package in build references", () => {
+  it("excludes removed UI packages from build references", () => {
     const rootTsconfigBuildJson = readRootTsconfigBuildJson()
     const referencePaths = (rootTsconfigBuildJson.references ?? []).map(
       (reference) => reference.path
     )
 
-    expect(referencePaths).toContain("packages/web")
+    expect(referencePaths).not.toContain("packages/web")
+    expect(referencePaths).not.toContain(
+      "packages/cli/tsconfig.build.json"
+    )
   })
 })
 

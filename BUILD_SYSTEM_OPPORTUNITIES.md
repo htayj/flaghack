@@ -1,5 +1,9 @@
 # Build system / generated files audit
 
+> Historical snapshot: the web, blessed, Ink, and terminal-kit interfaces
+> were removed on 2026-07-12. Their paths remain below as audit evidence
+> from the 2026-05-29 repository state.
+
 Date: 2026-05-29\
 Branch audited: `master`\
 Scope: pnpm workspace/build lifecycle, Effect build-utils/codegen, TypeScript project references, package publish artifacts, Vite/Vitest, lint/format/CI/docs, and agent guardrails.

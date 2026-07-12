@@ -10,8 +10,6 @@ const repositoryRoot = join(
 const rootTsConfigPath = join(repositoryRoot, "tsconfig.base.json")
 
 const packageTsConfigPaths = [
-  "packages/cli/tsconfig.src.json",
-  "packages/cli/tsconfig.test.json",
   "packages/server/tsconfig.src.json",
   "packages/server/tsconfig.test.json"
 ] as const
@@ -92,7 +90,7 @@ describe("root TypeScript config policy", () => {
     expect(missingIndexAliases).toEqual([])
   })
 
-  it("uses the domain source project from CLI and server source/test configs", () => {
+  it("uses the domain source project from server source/test configs", () => {
     const domainReferencesByConfig = Object.fromEntries(
       packageTsConfigPaths.map((configPath) => [
         configPath,
@@ -101,8 +99,6 @@ describe("root TypeScript config policy", () => {
     )
 
     expect(domainReferencesByConfig).toEqual({
-      "packages/cli/tsconfig.src.json": [expectedDomainSourceReference],
-      "packages/cli/tsconfig.test.json": [expectedDomainSourceReference],
       "packages/server/tsconfig.src.json": [expectedDomainSourceReference],
       "packages/server/tsconfig.test.json": [expectedDomainSourceReference]
     })

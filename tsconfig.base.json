@@ -22,7 +22,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "noEmitOnError": true,
-    "jsx": "react",
     "noErrorTruncation": false,
     "allowJs": false,
     "checkJs": false,
@@ -38,12 +37,8 @@
     "removeComments": false,
     "plugins": [{ "name": "@effect/language-service" }],
     "paths": {
-      "@flaghack/cli/*": ["./packages/cli/src/*.js"],
-      "@flaghack/cli/test/*": ["./packages/cli/test/*.js"],
       "@flaghack/domain/*": ["./packages/domain/src/*.js"],
       "@flaghack/domain/test/*": ["./packages/domain/test/*.js"],
-      "@flaghack/web/*": ["./packages/web/src/*.js"],
-      "@flaghack/web/test/*": ["./packages/web/test/*.js"],
       "@flaghack/server/*": ["./packages/server/src/*.js"],
       "@flaghack/server/test/*": ["./packages/server/test/*.js"]
     }

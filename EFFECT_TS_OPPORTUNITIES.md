@@ -1,5 +1,9 @@
 # Effect-TS opportunities audit
 
+> Historical snapshot: the web, blessed, Ink, and terminal-kit interfaces
+> were removed on 2026-07-12. Their paths remain below as audit evidence
+> from the 2026-05-29 repository state.
+
 Date: 2026-05-29\
 Branch audited: `master`\
 Scope: `packages/domain`, `packages/server`, `packages/cli`, `packages/web`, root build/lint/test/package configuration.

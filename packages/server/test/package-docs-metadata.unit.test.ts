@@ -14,15 +14,14 @@ const packageDocs = [
     manifestPath: "packages/domain/package.json",
     readmePath: "packages/domain/README.md",
     description:
-      "Flag Hack shared schemas, API contract, game state types, and display helpers.",
+      "Flag Hack shared schemas, API contract, and game state types.",
     expectedHeading: "# @flaghack/domain",
     requiredPhrases: [
       "GameApi",
       "src/schemas.ts",
       "World",
       "Action",
-      "GameState",
-      "display tile mapping"
+      "GameState"
     ]
   },
   {
@@ -44,30 +43,13 @@ const packageDocs = [
     name: "@flaghack/cli",
     manifestPath: "packages/cli/package.json",
     readmePath: "packages/cli/README.md",
-    description:
-      "Flag Hack Charmbracelet terminal client and Node HTTP client runtime.",
+    description: "Flag Hack Charmbracelet terminal client.",
     expectedHeading: "# @flaghack/cli",
     requiredPhrases: [
       "charm/",
       "Charmbracelet",
-      "src/Cli.ts",
-      "src/GameClient.ts",
-      "Node HTTP client runtime"
-    ]
-  },
-  {
-    name: "@flaghack/web",
-    manifestPath: "packages/web/package.json",
-    readmePath: "packages/web/README.md",
-    description:
-      "Flag Hack React/Vite browser client and browser HTTP runtime.",
-    expectedHeading: "# @flaghack/web",
-    requiredPhrases: [
-      "src/GameClient.ts",
-      "React/Vite",
-      "browser HTTP runtime",
-      "DOM renderer",
-      "shared domain contract"
+      "Bubble Tea",
+      "HTTP/SSE"
     ]
   }
 ] as const

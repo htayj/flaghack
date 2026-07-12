@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "Flag Hack shared schemas, API contract, game state types, and display helpers.",
+  "description": "Flag Hack shared schemas, API contract, and game state types.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",

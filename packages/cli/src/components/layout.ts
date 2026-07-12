@@ -1,8 +1,0 @@
-import { BOARD_HEIGHT, BOARD_WIDTH } from "../tuiGame.js"
-
-export const MESSAGE_LOG_HEIGHT = 12
-export const PLAY_AREA_HEIGHT = BOARD_HEIGHT + 2
-export const PLAY_AREA_WIDTH = BOARD_WIDTH + 2
-export const STATUS_BOX_HEIGHT = 5
-export const STATUS_BOX_TOP = MESSAGE_LOG_HEIGHT + PLAY_AREA_HEIGHT
-export const STATUS_BOX_WIDTH = PLAY_AREA_WIDTH

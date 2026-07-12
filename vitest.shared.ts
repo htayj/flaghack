@@ -31,14 +31,10 @@ export const packageAlias = (
 })
 
 const aliases = {
-  ...packageAlias("cli", "cli"),
-  ...packageAlias("cli", "@flaghack/cli"),
   ...packageAlias("domain", "domain"),
   ...packageAlias("domain", "@flaghack/domain"),
   ...packageAlias("server", "server"),
-  ...packageAlias("server", "@flaghack/server"),
-  ...packageAlias("web", "web"),
-  ...packageAlias("web", "@flaghack/web")
+  ...packageAlias("server", "@flaghack/server")
 }
 
 // This is a workaround, see https://github.com/vitest-dev/vitest/issues/4744

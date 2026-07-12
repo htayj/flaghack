@@ -2,88 +2,23 @@
   "name": "@flaghack/cli",
   "version": "0.0.0",
   "type": "module",
+  "private": true,
   "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=21"
   },
-  "description": "Flag Hack Charmbracelet terminal client and Node HTTP client runtime.",
+  "description": "Flag Hack Charmbracelet terminal client.",
   "repository": {
     "type": "git",
     "url": "https://github.com/htayj/flaghack",
     "directory": "packages/cli"
   },
-  "publishConfig": {
-    "access": "public",
-    "directory": "dist"
-  },
   "scripts": {
-    "codegen": "build-utils prepare-v2",
-    "build": "pnpm build-esm && pnpm build-annotate && pnpm build-cjs && build-utils pack-v2",
-    "build-esm": "tsc -b tsconfig.build.json",
-    "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
-    "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
-    "check": "tsc -b tsconfig.json",
+    "build": "cd charm && go build ./...",
+    "check": "cd charm && go test ./...",
     "dev": "cd charm && go run .",
-    "dev:blessed": "node dev.js",
-    "test": "vitest",
+    "test": "cd charm && go test ./...",
     "test:charm": "cd charm && go test ./...",
-    "play": "cd charm && go run .",
-    "play:blessed": "vite build && node dist/bin.js playB",
-    "coverage": "vitest --coverage"
-  },
-  "dependencies": {
-    "@effect/cli": "0.64.2",
-    "@effect/platform": "0.85.2",
-    "@effect/platform-node": "0.86.4",
-    "@flaghack/domain": "workspace:*",
-    "blessed": "0.1.81",
-    "blessed-contrib": "4.11.0",
-    "effect": "3.16.8",
-    "immutable": "^4.0.0-rc.12",
-    "ink": "5.2.1",
-    "react": "18.2.0",
-    "react-blessed": "npm:@htayj/react-blessed@^0.7.3",
-    "react-devtools": "7.0.1",
-    "terminal-kit": "3.1.2"
-  },
-  "devDependencies": {
-    "@types/blessed": "0.1.25",
-    "@types/react": "^19.1.2",
-    "@types/react-blessed": "0.7.8",
-    "@vitejs/plugin-react": "^4.5.2",
-    "chokidar": "^4.0.3",
-    "vite": "^6.3.5"
-  },
-  "effect": {
-    "generateExports": {
-      "include": [
-        "**/*.ts"
-      ],
-      "exclude": [
-        "**/*.d.ts",
-        "**/*.test.ts",
-        "**/*.bench.ts",
-        "**/*~",
-        "**/#*#",
-        "schemas/**",
-        "test*.ts",
-        "**/test*.ts"
-      ]
-    },
-    "generateIndex": {
-      "include": [
-        "**/*.ts"
-      ],
-      "exclude": [
-        "**/*.d.ts",
-        "**/*.test.ts",
-        "**/*.bench.ts",
-        "**/*~",
-        "**/#*#",
-        "schemas/**",
-        "test*.ts",
-        "**/test*.ts"
-      ]
-    }
+    "play": "cd charm && go run ."
   }
 }

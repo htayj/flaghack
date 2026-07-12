@@ -8,6 +8,7 @@ import { player } from "../src/creatures.js"
 import { GamePersistence } from "../src/GamePersistence.js"
 import { GameRepository } from "../src/GameRepository.js"
 import { GameStateStore } from "../src/GameStateStore.js"
+import { GameUpdateHub } from "../src/GameUpdateHub.js"
 import { makeFloor } from "../src/terrain.js"
 import type { Entity } from "../src/world.js"
 
@@ -53,13 +54,14 @@ const provideTestRepository = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    GameRepository | GameStateStore | GamePersistence
+    GameRepository | GameStateStore | GamePersistence | GameUpdateHub
   >,
   saveFilePath: string,
   initialState = stateWithPlayer()
 ) =>
   effect.pipe(
     Effect.provide(GameRepository.DefaultWithoutDependencies),
+    Effect.provide(GameUpdateHub.Default),
     Effect.provide(GameStateStore.Default(Effect.succeed(initialState))),
     Effect.provide(GamePersistence.Default(saveFilePath))
   )
@@ -133,7 +135,7 @@ describe("GameRepository save lifecycle", () => {
     })
   })
 
-  it("autosaves the current game after player actions", async () => {
+  it("does not autosave the current game after ordinary player actions", async () => {
     await withTempSavePath(async (saveFilePath) => {
       const program = Effect.gen(function*() {
         const repository = yield* GameRepository
@@ -146,7 +148,86 @@ describe("GameRepository save lifecycle", () => {
         provideTestRepository(program, saveFilePath)
       )
 
+      expect(saveExists).toBe(false)
+    })
+  })
+
+  it("does not autosave completed setup no-op guards before actions", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      const program = Effect.gen(function*() {
+        const repository = yield* GameRepository
+
+        yield* repository.selectRole("virgin")
+        yield* repository.confirmSetup(true)
+        yield* repository.doPlayerAction(EAction.noop())
+        return yield* Effect.promise(() => exists(saveFilePath))
+      })
+
+      const saveExists = await Effect.runPromise(
+        provideTestRepository(program, saveFilePath)
+      )
+
+      expect(saveExists).toBe(false)
+    })
+  })
+
+  it("preserves an existing save when player actions implicitly restore state", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      const program = Effect.gen(function*() {
+        const persistence = yield* GamePersistence
+        const repository = yield* GameRepository
+
+        yield* persistence.save(stateWithPlayer())
+        yield* repository.doPlayerAction(EAction.noop())
+        return yield* Effect.promise(() => exists(saveFilePath))
+      })
+
+      const saveExists = await Effect.runPromise(
+        provideTestRepository(program, saveFilePath)
+      )
+
       expect(saveExists).toBe(true)
+    })
+  })
+
+  it("preserves an existing save when completed setup no-op guards implicitly restore state", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      const program = Effect.gen(function*() {
+        const persistence = yield* GamePersistence
+        const repository = yield* GameRepository
+
+        yield* persistence.save(stateWithPlayer())
+        yield* repository.selectRole("virgin")
+        yield* repository.confirmSetup(true)
+        return yield* Effect.promise(() => exists(saveFilePath))
+      })
+
+      const saveExists = await Effect.runPromise(
+        provideTestRepository(program, saveFilePath)
+      )
+
+      expect(saveExists).toBe(true)
+    })
+  })
+
+  it("completed setup no-op guards delete stale saves when state has no player", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      const program = Effect.gen(function*() {
+        const persistence = yield* GamePersistence
+        const repository = yield* GameRepository
+        const store = yield* GameStateStore
+
+        yield* store.set(stateWithoutPlayer())
+        yield* persistence.save(stateWithPlayer())
+        yield* repository.selectRole("virgin")
+        return yield* Effect.promise(() => exists(saveFilePath))
+      })
+
+      const saveExists = await Effect.runPromise(
+        provideTestRepository(program, saveFilePath)
+      )
+
+      expect(saveExists).toBe(false)
     })
   })
 

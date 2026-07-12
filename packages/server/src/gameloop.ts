@@ -5,7 +5,15 @@ import {
   GameState,
   type ItemCollection
 } from "@flaghack/domain/schemas"
-import { Cache, Effect, HashMap, Logger, LogLevel, pipe } from "effect"
+import {
+  Cache,
+  Effect,
+  HashMap,
+  Logger,
+  LogLevel,
+  pipe,
+  Random
+} from "effect"
 import {
   andThen,
   log,
@@ -29,7 +37,7 @@ import {
 } from "./activeRegion.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
-import { player } from "./creatures.js"
+import { rolledPlayer } from "./creatures.js"
 import type { TKey } from "./entity.js"
 import {
   getEntitiesAtEntity,
@@ -66,6 +74,18 @@ type TGameState = typeof GameState.Type
 type TItemCollection = typeof ItemCollection.Type
 const layer = Logger.replace(Logger.defaultLogger, logger)
 export type Log = (a: string) => void
+
+const INITIAL_CAMPGROUND_SEED = 777
+const INITIAL_PLAYER_ATTRIBUTE_SEED = 777_000
+
+const rolledInitialPlayer = (
+  x: number,
+  y: number,
+  z: number
+) =>
+  rolledPlayer(x, y, z).pipe(
+    Effect.withRandom(Random.make(INITIAL_PLAYER_ATTRIBUTE_SEED + z))
+  )
 
 const campgroundReservedTravelStart =
   campgroundReservedTravelCorridorCoordinates()[0]
@@ -110,14 +130,15 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
       return yield* makeDoorFixtureGameState()
     }
 
-    const testLevel: World = yield* CampgroundGenLevel(777, 0).pipe(
-      Effect.orDie
-    )
+    const testLevel: World = yield* CampgroundGenLevel(
+      INITIAL_CAMPGROUND_SEED,
+      0
+    ).pipe(Effect.orDie)
     const testLevelPlayerLocation = yield* selectRequiredSpawnFloor(
       testLevel
     )
 
-    const testPlayer = player(
+    const testPlayer = yield* rolledInitialPlayer(
       testLevelPlayerLocation.x,
       testLevelPlayerLocation.y,
       testLevelPlayerLocation.z
@@ -138,8 +159,8 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
 )
 
 const makeDoorFixtureGameState = (): Effect.Effect<TGameState> =>
-  Effect.sync(() => {
-    const testPlayer = player(0, 0, 0)
+  Effect.gen(function*() {
+    const testPlayer = yield* rolledInitialPlayer(0, 0, 0)
     const entities: Array<Entity> = [
       testPlayer,
       makeFloor("door-fixture-floor-0", 0, 0, 0),

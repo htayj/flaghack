@@ -129,8 +129,16 @@ describe("role setup", () => {
     expect(entityByKey(world, actor.key)?.at).toEqual(actor.at)
   })
 
-  it("selects a role, returns to selection on no, and confirms virgin stats with empty inventory on yes", async () => {
-    const actor = player(0, 0, 0)
+  it("selects a role, returns to selection on no, and preserves rolled attributes with empty inventory on yes", async () => {
+    const playerAttributes = {
+      charisma: 8,
+      constitution: 14,
+      dexterity: 12,
+      intelligence: 11,
+      strength: 15,
+      wisdom: 9
+    }
+    const actor = player(0, 0, 0, playerAttributes)
     const water = makeWaterBottle("starting-water", 0, 0, 0, actor.key)
     const state = stateFromEntities(
       [floorAt("floor-0", 0, 0), actor, water],
@@ -162,14 +170,7 @@ describe("role setup", () => {
     expect(updatedPlayer).toMatchObject({
       _tag: "player",
       role: "virgin",
-      attributes: {
-        charisma: 10,
-        constitution: 10,
-        dexterity: 10,
-        intelligence: 10,
-        strength: 10,
-        wisdom: 10
-      }
+      attributes: playerAttributes
     })
     expect(
       Array.from(HashMap.values(result.world)).filter((entity) =>

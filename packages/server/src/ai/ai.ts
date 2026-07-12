@@ -1,3 +1,4 @@
+import { isCreatureTag } from "@flaghack/domain/creatureCapabilities"
 import { type Action, EAction } from "@flaghack/domain/schemas"
 import { Match, Option, pipe } from "effect"
 import type { Effect } from "effect/Effect"
@@ -21,18 +22,8 @@ export type PlannedAction = { entity: Entity; action: Action }
 
 type NonPlayerCreature = Exclude<Creature, { readonly _tag: "player" }>
 
-const creatureTags = new Set<Entity["_tag"]>([
-  "player",
-  "ranger",
-  "hippie",
-  "wook",
-  "acidcop",
-  "lesser_egregore",
-  "greater_egregore",
-  "collective_egregore"
-])
 const isNonPlayerCreature = (e: Entity): e is NonPlayerCreature =>
-  e._tag !== "player" && creatureTags.has(e._tag)
+  e._tag !== "player" && isCreatureTag(e._tag)
 const nonPlayerCreaturesFrom = (w: HashMap<string, Entity>) =>
   w.pipe(filter(isNonPlayerCreature))
 

@@ -515,13 +515,30 @@ const playerStatusName = (player: Entity | undefined): string => {
 const playerDungeonLevel = (player: Entity | undefined): string =>
   formatLevelStatusLabel(player?.in === "world" ? player.at.z : undefined)
 
+const playerAttributeSummary = (player: Entity | undefined): string => {
+  if (player?._tag !== "player") {
+    return "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--"
+  }
+
+  const { attributes } = player
+
+  return [
+    `St:${attributes.strength}`,
+    `Dx:${attributes.dexterity}`,
+    `Co:${attributes.constitution}`,
+    `In:${attributes.intelligence}`,
+    `Wi:${attributes.wisdom}`,
+    `Ch:${attributes.charisma}`
+  ].join(" ")
+}
+
 export const formatStatusLines = (
   world: World
 ): ReadonlyArray<string> => {
   const player = findPlayerEntity(world)
   return [
     `Player: ${playerStatusName(player)}`,
-    "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+    `${playerAttributeSummary(player)}  HP:--/--  Pw:--/--`,
     `AC:--  Dlvl:${playerDungeonLevel(player)}`
   ]
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Entity as EntitySchema } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { HashMap } from "effect"
 import { drawWorld } from "../src/Playing.tsx"
 
@@ -70,6 +71,7 @@ const player = {
   _tag: "player",
   key: "player",
   at: position,
+  attributes: balancedAttributes,
   in: "world",
   name: "you"
 } satisfies Entity
@@ -78,6 +80,7 @@ const playerAt = (x: number, y: number): Entity => ({
   _tag: "player",
   key: "player",
   at: { x, y, z: 0 },
+  attributes: balancedAttributes,
   in: "world",
   name: "you"
 })

@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { AllAttributes } from "./stats.js"
+import { AllAttributes, balancedAttributes } from "./stats.js"
 
 export const RoleId = Schema.Literal("virgin")
 export type RoleId = typeof RoleId.Type
@@ -13,15 +13,6 @@ export const Role = Schema.Struct({
   equipment: Schema.Array(Schema.String)
 })
 export type Role = typeof Role.Type
-
-export const balancedAttributes = {
-  charisma: 10,
-  constitution: 10,
-  dexterity: 10,
-  intelligence: 10,
-  strength: 10,
-  wisdom: 10
-} as const
 
 export const virginRole: Role = {
   id: "virgin",

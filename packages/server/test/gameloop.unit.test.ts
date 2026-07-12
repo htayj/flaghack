@@ -7,6 +7,7 @@ import {
   EAction,
   GameState
 } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { vi } from "vitest"
@@ -34,6 +35,7 @@ const floorAt = (key: string, x: number, y: number): Entity => ({
 const hippieAt = (key: string, x: number, y: number): Entity => ({
   _tag: "hippie",
   at: { x, y, z: 0 },
+  attributes: balancedAttributes,
   in: "world",
   key,
   name: key
@@ -189,6 +191,28 @@ describe("initial world", () => {
         true
       )
     }
+  })
+
+  it("rolls deterministic player attributes for fresh default game states", async () => {
+    const firstWorld = await runGetWorld()
+    const secondWorld = await runGetWorld()
+    const firstPlayer = firstWorld.pipe(HashMap.get("player"))
+    const secondPlayer = secondWorld.pipe(HashMap.get("player"))
+
+    expect(Option.isSome(firstPlayer)).toBe(true)
+    expect(Option.isSome(secondPlayer)).toBe(true)
+    if (Option.isNone(firstPlayer) || Option.isNone(secondPlayer)) return
+    expect(firstPlayer.value._tag).toBe("player")
+    expect(secondPlayer.value._tag).toBe("player")
+    if (
+      firstPlayer.value._tag !== "player"
+      || secondPlayer.value._tag !== "player"
+    ) return
+
+    expect(secondPlayer.value.attributes).toEqual(
+      firstPlayer.value.attributes
+    )
+    expect(firstPlayer.value.attributes).not.toEqual(balancedAttributes)
   })
 
   it("does not spawn campground NPCs on the player", async () => {

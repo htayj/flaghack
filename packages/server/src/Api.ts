@@ -1,7 +1,8 @@
-import { HttpApiBuilder } from "@effect/platform"
+import { HttpApiBuilder, HttpServerResponse } from "@effect/platform"
 import { GameApi } from "@flaghack/domain/GameApi"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { GameRepository } from "./GameRepository.js"
+import { encodeClientStateSseEventBytes } from "./GameUpdateHub.js"
 
 const GameApiLive = HttpApiBuilder.group(
   GameApi,
@@ -14,6 +15,23 @@ const GameApiLive = HttpApiBuilder.group(
         .handle("getWorld", () => game.getWorld)
         .handle("getInventory", () => game.getInventory)
         .handle("getClientState", () => game.getClientState)
+        .handleRaw("getClientStateStream", () =>
+          Effect.gen(function*() {
+            const initial = yield* game.getClientStateStreamSnapshot
+            const events = game.clientStateEvents
+            const body = Stream.make(initial).pipe(
+              Stream.concat(events),
+              Stream.map(encodeClientStateSseEventBytes)
+            )
+
+            return HttpServerResponse.stream(body, {
+              headers: {
+                "Cache-Control": "no-cache, no-transform",
+                Connection: "keep-alive",
+                "Content-Type": "text/event-stream"
+              }
+            })
+          }))
         .handle("selectRole", ({ payload: { roleId } }) =>
           game.selectRole(roleId))
         .handle("confirmSetup", ({ payload: { confirm } }) =>

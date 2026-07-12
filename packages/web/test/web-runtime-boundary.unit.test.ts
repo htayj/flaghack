@@ -140,6 +140,10 @@ const classifyRuntimeLaunch = (source: string): string => {
     return "comma getPickupItemsFor"
   }
 
+  if (normalized === "refreshWorldAndInventory") {
+    return "stream fallback refresh"
+  }
+
   if (/^doPlayerAction\(\s*action\s*\)\.pipe\b/.test(normalized)) {
     return "player action doPlayerAction"
   }
@@ -221,14 +225,15 @@ describe("web Effect runtime boundary", () => {
       )
     )
 
-    expect(launchClassifications).toHaveLength(6)
+    expect(launchClassifications).toHaveLength(7)
     expect([...launchClassifications].sort()).toEqual([
       "comma getPickupItemsFor",
       "initial getWorld",
       "pickup doPlayerAction",
       "player action doPlayerAction",
       "quit quitGame",
-      "save saveGame"
+      "save saveGame",
+      "stream fallback refresh"
     ])
   })
 })

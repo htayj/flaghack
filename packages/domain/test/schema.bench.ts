@@ -1,4 +1,12 @@
+import {
+  hasCreatureCapability,
+  HAVE_BRAIN
+} from "@flaghack/domain/creatureCapabilities"
 import { AnyTerrain, conforms, SAction } from "@flaghack/domain/schemas"
+import {
+  attributeCheckSucceeds,
+  balancedAttributes
+} from "@flaghack/domain/stats"
 import { Either, Schema as S } from "effect"
 import { bench, describe } from "vitest"
 
@@ -23,6 +31,18 @@ describe("domain schema smoke benchmarks", () => {
     const result = S.decodeUnknownEither(SAction)(moveAction)
     if (Either.isLeft(result)) {
       throw new Error("sample move action did not decode")
+    }
+  })
+
+  bench("checks creature capabilities with bitmasks", () => {
+    if (!hasCreatureCapability("player", HAVE_BRAIN)) {
+      throw new Error("player should have HAVE_BRAIN capability")
+    }
+  })
+
+  bench("checks attributes without schema decoding", () => {
+    if (!attributeCheckSucceeds(balancedAttributes, "wisdom", 10)) {
+      throw new Error("balanced wisdom should pass a roll of 10")
     }
   })
 })

@@ -4,12 +4,18 @@ import {
   AllStates,
   AnyAttribute,
   AnyState,
+  ATTRIBUTE_NAMES,
+  attributeCheckSucceeds,
+  balancedAttributes,
   HitP,
   HungerP,
+  rollAttribute,
+  rollAttributeCheck,
+  rollAttributes,
   StatusEffect,
   VrilP
 } from "@flaghack/domain/stats"
-import { Either, Schema as S } from "effect"
+import { Effect, Either, Random, Schema as S } from "effect"
 import { readFileSync } from "node:fs"
 
 const accepts = (schema: S.Schema.AnyNoContext, input: unknown): boolean =>
@@ -29,6 +35,25 @@ describe("stats schemas", () => {
     expect(source).not.toMatch(/\bcollect\s*\(/)
     expect(source).toContain("Schema.Struct")
     expect(source).toContain("Schema.Union")
+  })
+
+  it("exports stable standard attribute names and balanced defaults", () => {
+    expect(ATTRIBUTE_NAMES).toEqual([
+      "charisma",
+      "strength",
+      "intelligence",
+      "dexterity",
+      "constitution",
+      "wisdom"
+    ])
+    expect(balancedAttributes).toEqual({
+      charisma: 10,
+      constitution: 10,
+      dexterity: 10,
+      intelligence: 10,
+      strength: 10,
+      wisdom: 10
+    })
   })
 
   it("treats wisdom as its own required attribute field", () => {
@@ -118,6 +143,45 @@ describe("stats schemas", () => {
         })
       ).toBe(true)
     }
+  })
+
+  it("rolls attributes as deterministic 3d6 values and checks cheaply", () => {
+    const attributes = Effect.runSync(
+      rollAttributes.pipe(Effect.withRandom(Random.make(1234)))
+    )
+    const repeated = Effect.runSync(
+      rollAttributes.pipe(Effect.withRandom(Random.make(1234)))
+    )
+
+    expect(attributes).toEqual(repeated)
+    for (const name of ATTRIBUTE_NAMES) {
+      expect(attributes[name]).toBeGreaterThanOrEqual(3)
+      expect(attributes[name]).toBeLessThanOrEqual(18)
+    }
+
+    expect(attributeCheckSucceeds(balancedAttributes, "wisdom", 10))
+      .toBe(true)
+    expect(attributeCheckSucceeds(balancedAttributes, "wisdom", 11))
+      .toBe(false)
+    expect(attributeCheckSucceeds(balancedAttributes, "wisdom", 0))
+      .toBe(false)
+    expect(attributeCheckSucceeds(balancedAttributes, "wisdom", 1.5))
+      .toBe(false)
+  })
+
+  it("rolls individual attributes and d20 roll-under checks", () => {
+    const attribute = Effect.runSync(
+      rollAttribute.pipe(Effect.withRandom(Random.make(7)))
+    )
+    const check = Effect.runSync(
+      rollAttributeCheck(balancedAttributes, "dexterity").pipe(
+        Effect.withRandom(Random.make(7))
+      )
+    )
+
+    expect(attribute).toBeGreaterThanOrEqual(3)
+    expect(attribute).toBeLessThanOrEqual(18)
+    expect(typeof check).toBe("boolean")
   })
 
   it("bounds status effect timing to non-negative integers", () => {

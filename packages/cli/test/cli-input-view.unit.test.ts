@@ -5,6 +5,7 @@ import {
   type Entity as EntitySchema,
   type World as WorldSchema
 } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Effect, HashMap, Option } from "effect"
 import { List } from "immutable"
 import { readFileSync } from "node:fs"
@@ -120,6 +121,7 @@ const doorAt = (x: number, y: number, open: boolean): Entity => ({
 const playerAt = (x: number, y: number): Entity => ({
   _tag: "player",
   at: { x, y, z: 0 },
+  attributes: balancedAttributes,
   in: "world",
   key: "player",
   name: "you"
@@ -127,6 +129,7 @@ const playerAt = (x: number, y: number): Entity => ({
 const hippieAt = (x: number, y: number): Entity => ({
   _tag: "hippie",
   at: { x, y, z: 0 },
+  attributes: balancedAttributes,
   in: "world",
   key: `hippie-${x}-${y}`,
   name: "blocked"
@@ -557,16 +560,24 @@ describe("CLI message log", () => {
 })
 
 describe("CLI status box", () => {
-  it("formats visible status lines with player name, placeholder stats, and dungeon level", () => {
+  it("formats visible status lines with player name, attributes, and dungeon level", () => {
     const player = {
       ...playerAt(1, 1),
       at: { x: 1, y: 1, z: 2 },
+      attributes: {
+        charisma: 8,
+        strength: 16,
+        intelligence: 11,
+        dexterity: 13,
+        constitution: 15,
+        wisdom: 9
+      },
       name: "Ada"
     }
 
     expect(formatStatusLines(worldFromEntities([player]))).toEqual([
       "Player: Ada",
-      "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--",
+      "St:16 Dx:13 Co:15 In:11 Wi:9 Ch:8  HP:--/--  Pw:--/--",
       "AC:--  Dlvl:3"
     ])
   })
@@ -582,12 +593,13 @@ describe("CLI status box", () => {
     )
   })
 
-  it("keeps status formatting in shared TUI logic with stable placeholder stats", () => {
+  it("keeps status formatting in shared TUI logic with player attributes", () => {
     const tuiGameSource = readTuiGameSource()
 
     expect(tuiGameSource).toContain("export const formatStatusLines =")
     expect(tuiGameSource).toContain("playerStatusName")
-    expect(tuiGameSource).toContain("St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--")
+    expect(tuiGameSource).toContain("playerAttributeSummary")
+    expect(tuiGameSource).toContain("attributes.strength")
     expect(tuiGameSource).toContain("HP:--/--")
     expect(tuiGameSource).toContain("playerDungeonLevel")
   })

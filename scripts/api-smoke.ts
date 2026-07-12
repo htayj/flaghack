@@ -2,11 +2,20 @@
 
 import { HttpApiClient } from "@effect/platform"
 import { NodeHttpClient } from "@effect/platform-node"
+import { isCreatureTag } from "@flaghack/domain/creatureCapabilities"
 import {
   GameApi,
   LocalMutationHeaderName,
   LocalMutationHeaderValue
 } from "@flaghack/domain/GameApi"
+import { GameStateStreamPath } from "@flaghack/domain/GameStream"
+import type { ClientStateStreamEvent } from "@flaghack/domain/GameStream"
+import {
+  AnyCreature,
+  conforms,
+  type Entity as EntitySchema,
+  type World as WorldSchema
+} from "@flaghack/domain/schemas"
 import { Effect, HashMap } from "effect"
 import {
   type ChildProcessWithoutNullStreams,
@@ -34,8 +43,140 @@ type ProcessTail = {
   readonly stderr: () => string
 }
 
+type Entity = typeof EntitySchema.Type
+type World = typeof WorldSchema.Type
+
+const schemaIsCreature = conforms(AnyCreature)
+
+const assertRuntimeCreatureAttributes = (
+  label: string,
+  world: World,
+  options: { readonly requireNonPlayer: boolean }
+) => {
+  const entities = Array.from(HashMap.values(world))
+  const player = entities.find((entity) => entity._tag === "player")
+  if (player === undefined) {
+    throw new Error(`${label} did not include a player entity`)
+  }
+  if (!schemaIsCreature(player)) {
+    throw new Error(
+      `${label} player did not include schema-valid attributes`
+    )
+  }
+
+  const nonPlayerCreatures = entities.filter((entity): entity is Entity =>
+    entity._tag !== "player" && isCreatureTag(entity._tag)
+  )
+  if (options.requireNonPlayer && nonPlayerCreatures.length === 0) {
+    throw new Error(
+      `${label} did not include generated non-player creatures`
+    )
+  }
+  for (const creature of nonPlayerCreatures) {
+    if (!schemaIsCreature(creature)) {
+      throw new Error(
+        `${label} creature ${creature.key} did not include schema-valid attributes`
+      )
+    }
+  }
+}
+
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
+
+type SseReader = {
+  readonly abort: () => void
+  readonly nextEvent: () => Promise<ClientStateStreamEvent>
+}
+
+const withTimeout = async <A>(
+  promise: Promise<A>,
+  timeoutMs: number,
+  label: string
+): Promise<A> =>
+  await new Promise<A>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    )
+    promise.then(
+      (value) => {
+        clearTimeout(timeout)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timeout)
+        reject(error)
+      }
+    )
+  })
+
+const openClientStateStream = async (): Promise<SseReader> => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5_000)
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${GameStateStreamPath}`, {
+      headers: { Accept: "text/event-stream" },
+      signal: controller.signal
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+  if (!response.ok || response.body === null) {
+    controller.abort()
+    throw new Error(
+      `${GameStateStreamPath} failed: ${response.status} ${response.statusText}`
+    )
+  }
+  const contentType = response.headers.get("content-type") ?? ""
+  if (!contentType.includes("text/event-stream")) {
+    controller.abort()
+    throw new Error(
+      `${GameStateStreamPath} content-type ${contentType}, want text/event-stream`
+    )
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  const parseBlock = (
+    block: string
+  ): ClientStateStreamEvent | undefined => {
+    const data = block.split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart())
+      .join("\n")
+    return data === ""
+      ? undefined
+      : JSON.parse(data) as ClientStateStreamEvent
+  }
+
+  const nextEvent = async (): Promise<ClientStateStreamEvent> => {
+    while (true) {
+      const boundary = buffer.indexOf("\n\n")
+      if (boundary >= 0) {
+        const block = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const event = parseBlock(block)
+        if (event !== undefined) return event
+      }
+
+      const { done, value } = await reader.read()
+      if (done) throw new Error("client-state stream closed")
+      buffer += decoder.decode(value, { stream: true })
+    }
+  }
+
+  return {
+    abort: () => {
+      controller.abort()
+      void reader.cancel().catch(() => undefined)
+    },
+    nextEvent
+  }
+}
 
 const parsePort = (name: string, value: string): number => {
   const port = Number(value)
@@ -257,12 +398,49 @@ const makeClientSmoke = (recordPerf: boolean) =>
         }),
         (value) => ({ itemCount: HashMap.size(value) })
       )
-    yield* run(
-      "doAction.move",
-      client.game.doAction({
-        payload: { action: { _tag: "move", dir: "E" } }
-      })
-    )
+    const stream = yield* Effect.promise(() => openClientStateStream())
+    const { streamAfterMove } = yield* Effect.gen(
+      function*() {
+        const streamInitial = yield* Effect.promise(() =>
+          withTimeout(
+            stream.nextEvent(),
+            5_000,
+            "initial client-state stream event"
+          )
+        )
+        yield* run(
+          "doAction.move",
+          client.game.doAction({
+            payload: { action: { _tag: "move", dir: "E" } }
+          })
+        )
+        const streamAfterMove = yield* Effect.promise(() =>
+          withTimeout(
+            (async () => {
+              for (let attempt = 0; attempt < 10; attempt += 1) {
+                const event = await withTimeout(
+                  stream.nextEvent(),
+                  5_000,
+                  "next client-state stream event"
+                )
+                if (event.revision > streamInitial.revision) return event
+              }
+              throw new Error(
+                `stream revision did not advance after action from ${streamInitial.revision}`
+              )
+            })(),
+            10_000,
+            "client-state stream action update"
+          )
+        )
+        return { streamAfterMove }
+      }
+    ).pipe(Effect.ensuring(Effect.sync(() => stream.abort())))
+    if (streamAfterMove.source !== "action") {
+      throw new Error(
+        `stream event after action had source ${streamAfterMove.source}`
+      )
+    }
     const logsAfter = yield* run(
       "getLogs.after",
       client.game.getLogs(),
@@ -380,6 +558,14 @@ const run = async () => {
     if (worldSize <= 0) {
       throw new Error("getWorld returned an empty world")
     }
+    assertRuntimeCreatureAttributes("getWorld", result.world, {
+      requireNonPlayer: true
+    })
+    assertRuntimeCreatureAttributes(
+      "getClientState.complete",
+      result.clientState.world,
+      { requireNonPlayer: false }
+    )
     if (result.initialClientState.setup.phase !== "selectRole") {
       throw new Error(
         `fresh client state did not start at role selection: ${result.initialClientState.setup.phase}`

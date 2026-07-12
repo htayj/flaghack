@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { GameState } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Effect, HashMap, Option } from "effect"
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -65,6 +66,67 @@ describe("GamePersistence", () => {
       expect(Option.isSome(restored)).toBe(true)
       if (Option.isSome(restored)) {
         expect(HashMap.has(restored.value.world, "player")).toBe(true)
+      }
+      expect(await exists(saveFilePath)).toBe(false)
+    })
+  })
+
+  it("restores legacy saves whose creature entities predate required attributes", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      await writeFile(
+        saveFilePath,
+        `${
+          JSON.stringify({
+            setup: { phase: "complete" },
+            world: [
+              [
+                "player",
+                {
+                  _tag: "player",
+                  key: "player",
+                  at: { x: 0, y: 0, z: 0 },
+                  in: "world",
+                  name: "you"
+                }
+              ],
+              [
+                "floor-0",
+                {
+                  _tag: "floor",
+                  key: "floor-0",
+                  at: { x: 0, y: 0, z: 0 },
+                  in: "world"
+                }
+              ]
+            ]
+          })
+        }\n`,
+        "utf8"
+      )
+
+      const program = Effect.gen(function*() {
+        const persistence = yield* GamePersistence
+        return yield* persistence.restoreAndConsume
+      })
+
+      const restored = await Effect.runPromise(
+        program.pipe(Effect.provide(GamePersistence.Default(saveFilePath)))
+      )
+
+      expect(Option.isSome(restored)).toBe(true)
+      if (Option.isSome(restored)) {
+        const restoredPlayer = restored.value.world.pipe(
+          HashMap.get("player")
+        )
+        expect(Option.isSome(restoredPlayer)).toBe(true)
+        if (
+          Option.isSome(restoredPlayer)
+          && restoredPlayer.value._tag === "player"
+        ) {
+          expect(restoredPlayer.value.attributes).toEqual(
+            balancedAttributes
+          )
+        }
       }
       expect(await exists(saveFilePath)).toBe(false)
     })

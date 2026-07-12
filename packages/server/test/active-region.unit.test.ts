@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { HashMap } from "effect"
 import {
   campgroundActiveRegionForWorld,
@@ -17,6 +18,7 @@ const floorAt = (key: string, x: number, y: number, z = 0): Entity => ({
 const hippieAt = (key: string, x: number, y: number, z = 0): Entity => ({
   _tag: "hippie",
   at: { x, y, z },
+  attributes: balancedAttributes,
   in: "world",
   key,
   name: key

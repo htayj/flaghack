@@ -1,4 +1,14 @@
-import { Schema } from "effect"
+import { Effect, Random, Schema } from "effect"
+
+export const ATTRIBUTE_NAMES = [
+  "charisma",
+  "strength",
+  "intelligence",
+  "dexterity",
+  "constitution",
+  "wisdom"
+] as const
+export type AttributeName = typeof ATTRIBUTE_NAMES[number]
 
 const AttributeGeneric = Schema.Number.pipe(
   Schema.int(),
@@ -19,6 +29,60 @@ const AttributeFields = {
 } as const
 
 export const AllAttributes = Schema.Struct(AttributeFields)
+export type Attributes = typeof AllAttributes.Type
+export const balancedAttributes: Attributes = {
+  charisma: 10,
+  constitution: 10,
+  dexterity: 10,
+  intelligence: 10,
+  strength: 10,
+  wisdom: 10
+}
+
+export const attributeCheckSucceeds = (
+  attributes: Attributes,
+  attribute: AttributeName,
+  roll: number
+): boolean =>
+  Number.isInteger(roll) && roll >= 1 && roll <= attributes[attribute]
+
+const rollD6 = Random.nextIntBetween(1, 7)
+
+export const rollAttribute: Effect.Effect<number> = Effect.all([
+  rollD6,
+  rollD6,
+  rollD6
+]).pipe(Effect.map(([first, second, third]) => first + second + third))
+
+export const rollAttributes: Effect.Effect<Attributes> = Effect.gen(
+  function*() {
+    const charisma = yield* rollAttribute
+    const strength = yield* rollAttribute
+    const intelligence = yield* rollAttribute
+    const dexterity = yield* rollAttribute
+    const constitution = yield* rollAttribute
+    const wisdom = yield* rollAttribute
+
+    return {
+      charisma,
+      constitution,
+      dexterity,
+      intelligence,
+      strength,
+      wisdom
+    }
+  }
+)
+
+export const rollAttributeCheck = (
+  attributes: Attributes,
+  attribute: AttributeName
+): Effect.Effect<boolean> =>
+  Random.nextIntBetween(1, 21).pipe(
+    Effect.map((roll) =>
+      attributeCheckSucceeds(attributes, attribute, roll)
+    )
+  )
 export const AnyAttribute = Schema.Union(
   Schema.Struct({ charisma: AttributeGeneric }),
   Schema.Struct({ strength: AttributeGeneric }),

@@ -5,6 +5,11 @@ import type {
   Player as PlayerSchema,
   Ranger as RangerSchema
 } from "@flaghack/domain/schemas"
+import {
+  type Attributes,
+  balancedAttributes,
+  rollAttributes
+} from "@flaghack/domain/stats"
 import { Effect } from "effect"
 import { KeyGenerator } from "./keyGenerator.js"
 
@@ -33,22 +38,39 @@ export const campgroundHumanDisplayNames = [
   "Firefly"
 ] as const
 
-export const player = (x: number, y: number, z: number): Player => ({
+export const player = (
+  x: number,
+  y: number,
+  z: number,
+  attributes: Attributes = balancedAttributes
+): Player => ({
   at: { x, y, z },
+  attributes,
   in: "world",
   _tag: "player",
   name: "you",
   key: "player"
 })
 
+export const rolledPlayer = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<Player> =>
+  rollAttributes.pipe(
+    Effect.map((attributes) => player(x, y, z, attributes))
+  )
+
 export const makeHippie = (
   key: string,
   x: number,
   y: number,
   z: number,
-  name: string = "Ian"
+  name: string = "Ian",
+  attributes: Attributes = balancedAttributes
 ): Hippie => ({
   at: { x, y, z },
+  attributes,
   in: "world",
   _tag: "hippie",
   name,
@@ -60,9 +82,11 @@ export const makeRanger = (
   x: number,
   y: number,
   z: number,
-  name: string
+  name: string,
+  attributes: Attributes = balancedAttributes
 ): Ranger => ({
   at: { x, y, z },
+  attributes,
   in: "world",
   _tag: "ranger",
   name,
@@ -74,13 +98,15 @@ export const makeAcidcop = (
   x: number,
   y: number,
   z: number,
-  name?: string
+  name?: string,
+  attributes: Attributes = balancedAttributes
 ): AcidKop => ({
   at: { x, y, z },
+  attributes,
   in: "world",
   _tag: "acidcop",
-  name,
-  key
+  key,
+  ...(name === undefined ? {} : { name })
 })
 
 export const hippie = (
@@ -93,7 +119,9 @@ export const hippie = (
     const keyGenerator = yield* KeyGenerator
     const key = yield* keyGenerator.nextKey
 
-    return makeHippie(key, x, y, z, name)
+    const attributes = yield* rollAttributes
+
+    return makeHippie(key, x, y, z, name, attributes)
   })
 
 export const ranger = (
@@ -106,7 +134,9 @@ export const ranger = (
     const keyGenerator = yield* KeyGenerator
     const key = yield* keyGenerator.nextKey
 
-    return makeRanger(key, x, y, z, name)
+    const attributes = yield* rollAttributes
+
+    return makeRanger(key, x, y, z, name, attributes)
   })
 
 export const acidcop = (
@@ -119,5 +149,7 @@ export const acidcop = (
     const keyGenerator = yield* KeyGenerator
     const key = yield* keyGenerator.nextKey
 
-    return makeAcidcop(key, x, y, z, name)
+    const attributes = yield* rollAttributes
+
+    return makeAcidcop(key, x, y, z, name, attributes)
   })

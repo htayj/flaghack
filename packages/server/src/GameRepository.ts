@@ -1,24 +1,33 @@
+import type {
+  ClientStateStreamSource,
+  ClientStateStreamTerminal
+} from "@flaghack/domain/GameStream"
+import type { RoleId } from "@flaghack/domain/roles"
 import type { Action } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option, Ref } from "effect"
 import type { TKey } from "./entity.js"
 import {
   actPlayerAction as apiDoPlayerAction,
-  confirmSetup as apiConfirmSetup,
   DefaultGameStateStoreLive,
   eGetWorld as apiGetWorld,
   getClientState as apiGetClientState,
   getInventory as apiGetInventory,
   getLootContainersFor as apiGetLootContainersFor,
   getLootItemsFor as apiGetLootItemsFor,
-  getPickupItemsFor as apiGetPickupItemsFor,
-  selectRoleForSetup as apiSelectRoleForSetup
+  getPickupItemsFor as apiGetPickupItemsFor
 } from "./gameloop.js"
 import { GamePersistence } from "./GamePersistence.js"
+import type { GameState } from "./gamestate.js"
 import { getPlayer } from "./gamestate.js"
 import { GameStateStore } from "./GameStateStore.js"
+import { GameUpdateHub } from "./GameUpdateHub.js"
 import { getLogs as apiGetLogs } from "./log.js"
 import { measureEffect } from "./perf.js"
-import { availableRoles } from "./setup.js"
+import {
+  availableRoles,
+  confirmSetupForGameState,
+  selectRoleForGameState
+} from "./setup.js"
 
 type AutosaveRegistration = () => Effect.Effect<void>
 type UnregisterAutosave = () => void
@@ -45,12 +54,16 @@ export const runRegisteredAutosaves = Effect.gen(function*() {
 
 export class GameRepository
   extends Effect.Service<GameRepository>()("api/GameRepository", {
-    dependencies: [DefaultGameStateStoreLive],
+    dependencies: [DefaultGameStateStoreLive, GameUpdateHub.Default],
     scoped: Effect.gen(function*() {
       const store = yield* GameStateStore
       const persistence = yield* GamePersistence
+      const updateHub = yield* GameUpdateHub
       const lifecycleSemaphore = yield* Effect.makeSemaphore(1)
       const terminalLifecycleRef = yield* Ref.make(false)
+      const terminalLifecycleKindRef = yield* Ref.make<
+        ClientStateStreamTerminal | undefined
+      >(undefined)
       const withStore = <A, E>(
         effect: Effect.Effect<A, E, GameStateStore>
       ): Effect.Effect<A, E> =>
@@ -71,7 +84,7 @@ export class GameRepository
         const terminalLifecycle = yield* Ref.get(terminalLifecycleRef)
         if (terminalLifecycle) return
 
-        const restored = yield* persistence.restoreAndConsume.pipe(
+        const restored = yield* persistence.restorePreserving.pipe(
           Effect.orDie
         )
         if (Option.isSome(restored)) {
@@ -94,6 +107,32 @@ export class GameRepository
           lifecycleSemaphore.withPermits(1)
         )
 
+      const emptyClientState = {
+        inventory: HashMap.empty(),
+        roles: [...availableRoles],
+        setup: { phase: "complete" as const },
+        world: HashMap.empty()
+      }
+
+      const getClientStateUnlocked = isTerminalEmptyState.pipe(
+        Effect.flatMap((isTerminalEmpty) =>
+          isTerminalEmpty
+            ? Effect.succeed(emptyClientState)
+            : withStore(apiGetClientState)
+        )
+      )
+
+      const publishClientStateUnlocked = (
+        source: ClientStateStreamSource,
+        terminal?: ClientStateStreamTerminal | undefined
+      ) =>
+        getClientStateUnlocked.pipe(
+          Effect.flatMap((clientState) =>
+            updateHub.publishClientState(source, clientState, terminal)
+          ),
+          Effect.asVoid
+        )
+
       const saveCurrentGameUnlocked = Effect.gen(function*() {
         const currentState = yield* store.peek
         if (Option.isNone(currentState)) return
@@ -109,7 +148,18 @@ export class GameRepository
         lifecycleSemaphore.withPermits(1)
       )
 
-      const withRestoredMutationAndSave = <E>(
+      const deleteSaveIfPlayerMissingUnlocked = Effect.gen(function*() {
+        const currentState = yield* store.peek
+        if (
+          Option.isSome(currentState)
+          && Option.isNone(getPlayer(currentState.value))
+        ) {
+          yield* persistence.deleteSave.pipe(Effect.orDie)
+        }
+      })
+
+      const withRestoredMutationWithoutAutosave = <E>(
+        source: ClientStateStreamSource,
         effect: Effect.Effect<void, E, GameStateStore>
       ) =>
         ensureRestoredUnlocked.pipe(
@@ -119,7 +169,43 @@ export class GameRepository
                 isTerminalEmpty
                   ? Effect.void
                   : withStore(effect).pipe(
-                    Effect.tap(() => saveCurrentGameUnlocked)
+                    Effect.tap(() => deleteSaveIfPlayerMissingUnlocked),
+                    Effect.tap(() => publishClientStateUnlocked(source))
+                  )
+              )
+            )
+          ),
+          lifecycleSemaphore.withPermits(1)
+        )
+
+      const withRestoredTransformAndSaveIfChanged = (
+        source: ClientStateStreamSource,
+        transform: (state: GameState) => GameState
+      ) =>
+        ensureRestoredUnlocked.pipe(
+          Effect.zipRight(
+            isTerminalEmptyState.pipe(
+              Effect.flatMap((isTerminalEmpty) =>
+                isTerminalEmpty
+                  ? Effect.void
+                  : store.modifyEffect((state) => {
+                    const nextState = transform(state)
+                    return Effect.succeed(
+                      [
+                        nextState !== state,
+                        nextState
+                      ] as const
+                    )
+                  }).pipe(
+                    Effect.flatMap((changed) =>
+                      changed
+                        ? saveCurrentGameUnlocked.pipe(
+                          Effect.zipRight(
+                            publishClientStateUnlocked(source)
+                          )
+                        )
+                        : deleteSaveIfPlayerMissingUnlocked
+                    )
                   )
               )
             )
@@ -132,6 +218,8 @@ export class GameRepository
         const maybeState = yield* store.peek
         if (Option.isNone(maybeState)) {
           yield* Ref.set(terminalLifecycleRef, true)
+          yield* Ref.set(terminalLifecycleKindRef, "save")
+          yield* publishClientStateUnlocked("save", "save")
           return
         }
 
@@ -139,12 +227,16 @@ export class GameRepository
           yield* persistence.deleteSave.pipe(Effect.orDie)
           yield* store.reset
           yield* Ref.set(terminalLifecycleRef, true)
+          yield* Ref.set(terminalLifecycleKindRef, "save")
+          yield* publishClientStateUnlocked("save", "save")
           return
         }
 
         yield* persistence.save(maybeState.value).pipe(Effect.orDie)
         yield* store.reset
         yield* Ref.set(terminalLifecycleRef, true)
+        yield* Ref.set(terminalLifecycleKindRef, "save")
+        yield* publishClientStateUnlocked("save", "save")
       }).pipe(lifecycleSemaphore.withPermits(1))
 
       const restoreGame = Effect.gen(function*() {
@@ -152,16 +244,20 @@ export class GameRepository
           Effect.orDie
         )
         yield* Ref.set(terminalLifecycleRef, false)
+        yield* Ref.set(terminalLifecycleKindRef, undefined)
         yield* store.reset
         if (Option.isSome(restored)) {
           yield* store.set(restored.value)
         }
+        yield* publishClientStateUnlocked("restore")
       }).pipe(lifecycleSemaphore.withPermits(1))
 
       const quitGame = Effect.gen(function*() {
         yield* persistence.deleteSave.pipe(Effect.orDie)
         yield* store.reset
         yield* Ref.set(terminalLifecycleRef, true)
+        yield* Ref.set(terminalLifecycleKindRef, "quit")
+        yield* publishClientStateUnlocked("quit", "quit")
       }).pipe(lifecycleSemaphore.withPermits(1))
 
       const autosaveOnShutdown = saveCurrentGame
@@ -214,12 +310,7 @@ export class GameRepository
           },
           withRestoredStore(
             apiGetClientState,
-            Effect.succeed({
-              inventory: HashMap.empty(),
-              roles: [...availableRoles],
-              setup: { phase: "complete" as const },
-              world: HashMap.empty()
-            })
+            Effect.succeed(emptyClientState)
           )
         ),
         saveGame: measureEffect(
@@ -238,14 +329,43 @@ export class GameRepository
           { operation: "backend.api", phase: "autosaveOnShutdown" },
           autosaveOnShutdown
         ),
-        selectRole(roleId: Parameters<typeof apiSelectRoleForSetup>[0]) {
+        clientStateEvents: updateHub.clientStateEvents,
+        getClientStateStreamSnapshot: measureEffect(
+          {
+            counts: (event) => ({
+              revision: event.revision,
+              worldSize: HashMap.size(event.clientState.world)
+            }),
+            operation: "backend.api",
+            phase: "getClientStateStreamSnapshot"
+          },
+          ensureRestoredUnlocked.pipe(
+            Effect.zipRight(getClientStateUnlocked),
+            Effect.flatMap((clientState) =>
+              Ref.get(terminalLifecycleKindRef).pipe(
+                Effect.flatMap((terminal) =>
+                  updateHub.makeClientStateEvent(
+                    "initial",
+                    clientState,
+                    terminal
+                  )
+                )
+              )
+            ),
+            lifecycleSemaphore.withPermits(1)
+          )
+        ),
+        selectRole(roleId: RoleId) {
           return measureEffect(
             {
               operation: "backend.api",
               phase: "selectRole",
               traceId: roleId
             },
-            withRestoredMutationAndSave(apiSelectRoleForSetup(roleId))
+            withRestoredTransformAndSaveIfChanged(
+              "setup",
+              (state) => selectRoleForGameState(state, roleId)
+            )
           )
         },
         confirmSetup(confirm: boolean) {
@@ -255,7 +375,10 @@ export class GameRepository
               operation: "backend.api",
               phase: "confirmSetup"
             },
-            withRestoredMutationAndSave(apiConfirmSetup(confirm))
+            withRestoredTransformAndSaveIfChanged(
+              "setup",
+              (state) => confirmSetupForGameState(state, confirm)
+            )
           )
         },
         getPickupItemsFor(k: TKey) {
@@ -309,7 +432,10 @@ export class GameRepository
               phase: "doPlayerAction",
               traceId: action._tag
             },
-            withRestoredMutationAndSave(apiDoPlayerAction(action))
+            withRestoredMutationWithoutAutosave(
+              "action",
+              apiDoPlayerAction(action)
+            )
           )
         }
       } as const

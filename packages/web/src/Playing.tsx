@@ -22,6 +22,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState
 } from "react"
@@ -36,6 +37,7 @@ import {
   quitGame,
   saveGame
 } from "./GameClient.js"
+import { subscribeClientState } from "./GameStateStream.js"
 import Inventory from "./Inventory.tsx"
 import Messages, { MAX_VISIBLE_MESSAGES } from "./Messages.tsx"
 import PickupPopup from "./PickupPopup.tsx"
@@ -270,25 +272,67 @@ export default function BPlaying(_props: Props) {
     "quit" | "saved" | undefined
   >(undefined)
   const terminalPendingRef = useRef(false)
-  const refreshWorldAndInventory = Effect.suspend(() =>
-    terminalPendingRef.current
-      ? Effect.void
-      : Effect.all({
-        world: getWorld,
-        inventory: getInventory
-      }).pipe(
-        Effect.tap(({ inventory, world }) =>
-          Effect.sync(() => {
-            if (terminalPendingRef.current) return
-            setWorld(world)
-            setInventory(inventory)
-          })
-        )
-      )
+  const streamActiveRef = useRef(false)
+  const refreshWorldAndInventory = useMemo(
+    () =>
+      Effect.suspend(() =>
+        terminalPendingRef.current
+          ? Effect.void
+          : Effect.all({
+            world: getWorld,
+            inventory: getInventory
+          }).pipe(
+            Effect.tap(({ inventory, world }) =>
+              Effect.sync(() => {
+                if (terminalPendingRef.current) return
+                setWorld(world)
+                setInventory(inventory)
+              })
+            )
+          )
+      ),
+    []
   )
 
   useEffect(() => {
-    if (initialWorldFetchRequestedRef.current) {
+    try {
+      const subscription = subscribeClientState({
+        onError: () => {
+          streamActiveRef.current = false
+          if (terminalPendingRef.current) return
+          void LiveRuntime.runPromise(refreshWorldAndInventory)
+        },
+        onUpdate: (event) => {
+          if (event.terminal !== undefined) {
+            subscription?.close()
+            streamActiveRef.current = false
+            terminalPendingRef.current = true
+            setTerminalState(event.terminal === "save" ? "saved" : "quit")
+            setMessages(
+              prependMessage(
+                event.terminal === "save"
+                  ? "saved; you may close this tab"
+                  : "game quit; you may close this tab"
+              )
+            )
+            return
+          }
+          if (terminalPendingRef.current) return
+          streamActiveRef.current = true
+          setWorld(event.clientState.world)
+          setInventory(event.clientState.inventory)
+        }
+      })
+
+      return () => subscription.close()
+    } catch {
+      streamActiveRef.current = false
+      return undefined
+    }
+  }, [refreshWorldAndInventory])
+
+  useEffect(() => {
+    if (initialWorldFetchRequestedRef.current || streamActiveRef.current) {
       return
     }
 
@@ -306,10 +350,11 @@ export default function BPlaying(_props: Props) {
   const runPlayerAction = useCallback(
     (action: Action) => {
       if (terminalPendingRef.current) return
+      const afterAction = streamActiveRef.current
+        ? Effect.void
+        : refreshWorldAndInventory
       void LiveRuntime.runPromise(
-        doPlayerAction(action).pipe(
-          Effect.andThen(refreshWorldAndInventory)
-        )
+        doPlayerAction(action).pipe(Effect.andThen(afterAction))
       )
     },
     [refreshWorldAndInventory]
@@ -513,9 +558,12 @@ export default function BPlaying(_props: Props) {
   // const GameElement = reactBlessed.render(box)
   const onDoPickup = (pickupItems: ReadonlyArray<Key>) => {
     if (terminalState !== undefined || terminalPendingRef.current) return
+    const afterAction = streamActiveRef.current
+      ? Effect.void
+      : refreshWorldAndInventory
     void LiveRuntime.runPromise(
       doPlayerAction(EAction.pickupMulti({ keys: pickupItems })).pipe(
-        Effect.andThen(refreshWorldAndInventory),
+        Effect.andThen(afterAction),
         Effect.tap(() =>
           Effect.sync(() => {
             setShowPickup(false)
@@ -534,9 +582,17 @@ export default function BPlaying(_props: Props) {
   return (
     <div
       ref={gameref}
+      aria-describedby="game-controls-help"
+      aria-label="Flag Hack game controls"
+      autoFocus
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
+      <p id="game-controls-help">
+        Controls: focus this area; move with hjkl/yubn, pick up with comma,
+        open or close with o/c plus a direction, save with Ctrl-S, and quit
+        with Ctrl-Q.
+      </p>
       <Messages messages={messages} />
       {terminalState === "saved"
         ? <p role="status">Game saved. You may close this tab.</p>

@@ -1,3 +1,4 @@
+import { isCreatureTag } from "@flaghack/domain/creatureCapabilities"
 import {
   DrinkItemTags,
   EEntity,
@@ -87,16 +88,6 @@ export const isContainedIn = <T extends Entity, C extends Entity>(
   container: C
 ) => container.key === contained.in
 
-const creatureTags = new globalThis.Set<Entity["_tag"]>([
-  "player",
-  "ranger",
-  "hippie",
-  "wook",
-  "acidcop",
-  "lesser_egregore",
-  "greater_egregore",
-  "collective_egregore"
-])
 const foodItemTags = new globalThis.Set<Entity["_tag"]>(FoodItemTags)
 const drinkItemTags = new globalThis.Set<Entity["_tag"]>(DrinkItemTags)
 const itemTags = new globalThis.Set<Entity["_tag"]>([
@@ -121,7 +112,7 @@ const terrainTags = new globalThis.Set<Entity["_tag"]>([
 ])
 
 export const isCreature = (e: Entity): e is Creature =>
-  creatureTags.has(e._tag)
+  isCreatureTag(e._tag)
 export const isTerrain = (e: Entity): boolean => terrainTags.has(e._tag)
 export const isImpassable = (e: Entity) =>
   e._tag === "wall"

@@ -39,12 +39,23 @@ const renderPickupPopup = (open: boolean) =>
 describe("web accessibility semantics", () => {
   it("keeps baseline semantics present in component source", () => {
     const gameBoardSource = readSource("GameBoard.tsx")
+    const playingSource = readSource("Playing.tsx")
     const messagesSource = readSource("Messages.tsx")
     const inventorySource = readSource("Inventory.tsx")
     const pickupPopupSource = readSource("PickupPopup.tsx")
 
     expect(gameBoardSource).toContain("role=\"region\"")
     expect(gameBoardSource).toContain("aria-label=\"Game map\"")
+
+    expect(playingSource).toContain(
+      "aria-label=\"Flag Hack game controls\""
+    )
+    expect(playingSource).toContain(
+      "aria-describedby=\"game-controls-help\""
+    )
+    expect(playingSource).toContain("autoFocus")
+    expect(playingSource).toContain("id=\"game-controls-help\"")
+    expect(playingSource).toContain("Controls: focus this area")
 
     expect(messagesSource).toContain("role=\"log\"")
     expect(messagesSource).toContain("aria-live=\"polite\"")

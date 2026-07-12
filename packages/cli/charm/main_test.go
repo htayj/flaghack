@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -32,6 +33,168 @@ func TestParseMovementCommand(t *testing.T) {
 		if got.tag != tc.tag || got.dir != tc.dir {
 			t.Fatalf("parseMovementCommand(%q) = %#v, want tag=%s dir=%s", tc.input, got, tc.tag, tc.dir)
 		}
+	}
+}
+
+func TestActionCmdUsesStreamWithoutClientStateRefreshWhenActive(t *testing.T) {
+	var clientStateRequests int
+	var actRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			w.WriteHeader(http.StatusOK)
+		case "/client-state":
+			clientStateRequests++
+			_, _ = w.Write([]byte(`{"world":[],"inventory":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	msg := actionCmd(client, action{Tag: "move", Dir: "E"}, true)().(actionDoneMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	if !msg.streamed {
+		t.Fatal("streaming action command should return a streamed action message")
+	}
+	if actRequests != 1 || clientStateRequests != 0 {
+		t.Fatalf("requests act/client-state = %d/%d, want 1/0", actRequests, clientStateRequests)
+	}
+}
+
+func streamClientStateEvent(revision int, playerX int) string {
+	return fmt.Sprintf("id: %d\nevent: client-state\ndata: {\"revision\":%d,\"source\":\"action\",\"clientState\":{\"world\":[[\"floor-0\",{\"key\":\"floor-0\",\"_tag\":\"floor\",\"in\":\"world\",\"at\":{\"x\":0,\"y\":0,\"z\":0}}],[\"floor-1\",{\"key\":\"floor-1\",\"_tag\":\"floor\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}],[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":%d,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"}}}\n\n", revision, revision, playerX)
+}
+
+func TestReadClientStateSSEParsesRevisionedSnapshots(t *testing.T) {
+	events := make(chan clientStateStreamResult, 1)
+	readClientStateSSE(
+		t.Context(),
+		strings.NewReader("id: 1\nevent: client-state\ndata: {\"revision\":1,\"source\":\"action\",\"clientState\":{\"world\":[[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"}}}\n\n"),
+		events,
+	)
+	result, ok := <-events
+	if !ok {
+		t.Fatal("SSE parser did not emit an event")
+	}
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.event.Revision != 1 || result.event.Source != "action" {
+		t.Fatalf("event = %#v, want revision 1 action", result.event)
+	}
+	snap, err := result.event.snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.world) != 1 || snap.world[0].Key != "player" {
+		t.Fatalf("snapshot world = %#v", snap.world)
+	}
+}
+
+func TestStreamedRepeatedMovementDoesNotFetchClientStatePerStep(t *testing.T) {
+	positions := make(chan int, 4)
+	streamRequests := 0
+	clientStateRequests := 0
+	actRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			if actRequests == 1 {
+				positions <- 1
+			} else {
+				positions <- 1
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/client-state/stream":
+			streamRequests++
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Fatal("response writer does not flush")
+			}
+			_, _ = w.Write([]byte(streamClientStateEvent(0, 0)))
+			flusher.Flush()
+			revision := 0
+			for revision < 2 {
+				select {
+				case x := <-positions:
+					revision++
+					_, _ = w.Write([]byte(streamClientStateEvent(revision, x)))
+					flusher.Flush()
+				case <-r.Context().Done():
+					return
+				case <-time.After(2 * time.Second):
+					return
+				}
+			}
+		case "/client-state":
+			clientStateRequests++
+			_, _ = w.Write([]byte(`{"world":[],"inventory":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	initialWorld := []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+	}
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	result, snap, err := client.runDirectionalMovementStreamedUnmeasured(t.Context(), initialWorld, moveCommand{tag: "run-to-block", dir: "E"}, make(chan struct{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.kind != "blocked" || result.steps != 1 {
+		t.Fatalf("streamed run result = %#v, want blocked after 1 step", result)
+	}
+	if actRequests != 2 || streamRequests != 1 || clientStateRequests != 0 {
+		t.Fatalf("requests act/stream/client-state = %d/%d/%d, want 2/1/0", actRequests, streamRequests, clientStateRequests)
+	}
+	player, ok := findPlayer(snap.world)
+	if !ok || player.At != (pos{X: 1, Y: 0, Z: 0}) {
+		t.Fatalf("streamed run player = %#v, %v; want x=1", player, ok)
+	}
+}
+
+func TestStreamedRepeatedMovementDoesNotPollWhenStreamOpenFails(t *testing.T) {
+	clientStateRequests := 0
+	actRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actRequests++
+			w.WriteHeader(http.StatusOK)
+		case "/client-state/stream":
+			http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+		case "/client-state":
+			clientStateRequests++
+			_, _ = w.Write([]byte(`{"world":[],"inventory":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	result, _, err := client.runDirectionalMovementStreamedUnmeasured(t.Context(), []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}}}, moveCommand{tag: "run-to-block", dir: "E"}, make(chan struct{}))
+
+	if err == nil {
+		t.Fatal("streamed run should fail instead of falling back to polling when stream open fails")
+	}
+	if result.kind != "error" || result.steps != 0 {
+		t.Fatalf("result = %#v, want immediate error", result)
+	}
+	if actRequests != 0 || clientStateRequests != 0 {
+		t.Fatalf("requests act/client-state = %d/%d, want 0/0", actRequests, clientStateRequests)
 	}
 }
 

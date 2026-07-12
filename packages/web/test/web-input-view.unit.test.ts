@@ -239,27 +239,6 @@ const extractConstInitializerSource = (
   throw new Error(`Could not find initializer for ${identifier}`)
 }
 
-const expectRefreshAfterAction = (
-  source: string,
-  actionCall: string
-) => {
-  const actionIndex = source.indexOf(actionCall)
-  expect(actionIndex, `${actionCall} should exist`).toBeGreaterThanOrEqual(
-    0
-  )
-
-  const refreshIndex = source.indexOf(
-    "Effect.andThen(refreshWorldAndInventory)",
-    actionIndex
-  )
-  expect(
-    refreshIndex,
-    "refreshWorldAndInventory should run after the player action"
-  ).toBeGreaterThan(actionIndex)
-
-  return refreshIndex
-}
-
 const expectSomeAction = (
   actual: Option.Option<Action>,
   expected: Action
@@ -364,7 +343,7 @@ describe("web input/view source guards", () => {
     ).toEqual([])
   })
 
-  it("gates player actions and refreshes after movement actions", () => {
+  it("gates player actions and uses stream-first fallback refresh after movement actions", () => {
     const playingSource = readFileSync(playingPath, "utf8")
     const handleKeyDownSource = extractHandleKeyDownSource(
       playingSource
@@ -382,34 +361,43 @@ describe("web input/view source guards", () => {
       playingSource,
       "runPlayerAction"
     )
-    const refreshIndex = runPlayerActionSource.indexOf(
-      "Effect.andThen(refreshWorldAndInventory)",
+    const fallbackIndex = runPlayerActionSource.indexOf(
+      "streamActiveRef.current"
+    )
+    const afterActionIndex = runPlayerActionSource.indexOf(
+      "Effect.andThen(afterAction)",
       runPlayerActionSource.indexOf("doPlayerAction(action)")
     )
 
     expect(parseIndex).toBeGreaterThanOrEqual(0)
     expect(guardIndex).toBeGreaterThan(parseIndex)
     expect(doActionIndex).toBeGreaterThan(guardIndex)
-    expect(refreshIndex).toBeGreaterThan(
+    expect(fallbackIndex).toBeGreaterThanOrEqual(0)
+    expect(runPlayerActionSource).toContain("? Effect.void")
+    expect(runPlayerActionSource).toContain(": refreshWorldAndInventory")
+    expect(afterActionIndex).toBeGreaterThan(
       runPlayerActionSource.indexOf("doPlayerAction(action)")
     )
     expect(handleKeyDownSource).not.toContain("Effect.andThen(getWorld)")
     expect(handleKeyDownSource).not.toContain("getInventory.pipe(")
   })
 
-  it("refreshes before closing and refocusing after pickup actions", () => {
+  it("uses stream-first fallback refresh before closing and refocusing after pickup actions", () => {
     const onDoPickupBody = extractArrowFunctionBody(
       readFileSync(playingPath, "utf8"),
       onDoPickupSignature
     )
-    const refreshIndex = expectRefreshAfterAction(
-      onDoPickupBody,
-      "doPlayerAction(EAction.pickupMulti"
+    const afterActionIndex = onDoPickupBody.indexOf(
+      "Effect.andThen(afterAction)",
+      onDoPickupBody.indexOf("doPlayerAction(EAction.pickupMulti")
     )
+    expect(onDoPickupBody).toContain("streamActiveRef.current")
+    expect(onDoPickupBody).toContain("? Effect.void")
+    expect(onDoPickupBody).toContain(": refreshWorldAndInventory")
     const hideIndex = indexOfMatch(
       onDoPickupBody,
       /setShowPickup\s*\(\s*false\s*\)/,
-      refreshIndex
+      afterActionIndex
     )
     const focusIndex = indexOfMatch(
       onDoPickupBody,
@@ -417,7 +405,8 @@ describe("web input/view source guards", () => {
       hideIndex
     )
 
-    expect(hideIndex).toBeGreaterThan(refreshIndex)
+    expect(afterActionIndex).toBeGreaterThanOrEqual(0)
+    expect(hideIndex).toBeGreaterThan(afterActionIndex)
     expect(focusIndex).toBeGreaterThan(hideIndex)
   })
 

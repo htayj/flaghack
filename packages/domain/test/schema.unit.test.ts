@@ -21,6 +21,7 @@ import {
   SAction,
   World
 } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Either, HashMap, Option, Schema as S } from "effect"
 import { readFileSync } from "node:fs"
 
@@ -146,6 +147,7 @@ describe("domain source schemas", () => {
     const player = {
       _tag: "player" as const,
       key: "player-1",
+      attributes: balancedAttributes,
       in: "world",
       at: { x: 0, y: 0, z: 0 }
     }
@@ -166,7 +168,6 @@ describe("domain source schemas", () => {
         key: "player-1",
         in: "world",
         at: { x: 0, y: 0, z: 0 },
-        role: "virgin",
         attributes: {
           charisma: 10,
           constitution: 10,
@@ -174,9 +175,74 @@ describe("domain source schemas", () => {
           intelligence: 10,
           strength: 10,
           wisdom: 10
-        }
+        },
+        role: "virgin"
       })
     )
+  })
+
+  it("requires attributes for every creature schema", () => {
+    const creatureSamples = [
+      {
+        _tag: "player" as const,
+        key: "player-1",
+        in: "world",
+        at: { x: 0, y: 0, z: 0 }
+      },
+      {
+        _tag: "ranger" as const,
+        key: "ranger-1",
+        in: "world",
+        at: { x: 1, y: 0, z: 0 }
+      },
+      {
+        _tag: "hippie" as const,
+        key: "hippie-1",
+        in: "world",
+        at: { x: 2, y: 0, z: 0 }
+      },
+      {
+        _tag: "wook" as const,
+        key: "wook-1",
+        in: "world",
+        at: { x: 3, y: 0, z: 0 }
+      },
+      {
+        _tag: "acidcop" as const,
+        key: "acidcop-1",
+        in: "world",
+        at: { x: 4, y: 0, z: 0 }
+      },
+      {
+        _tag: "lesser_egregore" as const,
+        key: "lesser-egregore-1",
+        in: "world",
+        at: { x: 5, y: 0, z: 0 }
+      },
+      {
+        _tag: "greater_egregore" as const,
+        key: "greater-egregore-1",
+        in: "world",
+        at: { x: 6, y: 0, z: 0 }
+      },
+      {
+        _tag: "collective_egregore" as const,
+        key: "collective-egregore-1",
+        in: "world",
+        at: { x: 7, y: 0, z: 0 }
+      }
+    ]
+
+    for (const creature of creatureSamples) {
+      expect(Either.isLeft(S.decodeUnknownEither(Entity)(creature)))
+        .toBe(true)
+      expectRight(
+        S.decodeUnknownEither(Entity)({
+          ...creature,
+          attributes: balancedAttributes
+        })
+      )
+    }
   })
 
   it("validates setup phases for role selection and confirmation", () => {

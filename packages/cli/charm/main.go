@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -26,6 +27,8 @@ const (
 	defaultBaseURL             = "http://127.0.0.1:3000"
 	localMutationHeaderName    = "x-flaghack-client-intent"
 	localMutationHeaderValue   = "local-game-command"
+	clientStateStreamPath      = "/client-state/stream"
+	clientStateStreamEventName = "client-state"
 	travelWorldRefreshInterval = 24
 )
 
@@ -140,6 +143,24 @@ type clientStateResponse struct {
 	Setup     setupState          `json:"setup"`
 }
 
+type clientStateStreamEvent struct {
+	Revision         int                 `json:"revision"`
+	PreviousRevision *int                `json:"previousRevision,omitempty"`
+	Source           string              `json:"source"`
+	Terminal         string              `json:"terminal,omitempty"`
+	ClientState      clientStateResponse `json:"clientState"`
+}
+
+type clientStateStreamResult struct {
+	event clientStateStreamEvent
+	err   error
+}
+
+type clientStateStream struct {
+	events <-chan clientStateStreamResult
+	cancel context.CancelFunc
+}
+
 type tile struct {
 	char   string
 	color  lipgloss.Color
@@ -204,6 +225,15 @@ type stateLoadedMsg struct {
 	responseReceived time.Time
 }
 
+type clientStateStreamMsg struct {
+	stream           *clientStateStream
+	event            clientStateStreamEvent
+	err              error
+	initial          bool
+	perfTraceID      string
+	responseReceived time.Time
+}
+
 type pickupLoadedMsg struct {
 	requestID        int
 	items            []entity
@@ -234,6 +264,7 @@ type actionDoneMsg struct {
 	caseName         string
 	perfTraceID      string
 	responseReceived time.Time
+	streamed         bool
 }
 
 type setupDoneMsg struct {
@@ -295,6 +326,9 @@ type model struct {
 	width                   int
 	height                  int
 	perf                    *perfRecorder
+	stream                  *clientStateStream
+	streamActive            bool
+	lastStreamRevision      int
 }
 
 var (
@@ -332,9 +366,10 @@ func newModelWithOptions(options clientOptions) model {
 			http:    &http.Client{Timeout: 10 * time.Second},
 			perf:    perf,
 		},
-		debugMessages: options.debugMessages,
-		messages:      []string{},
-		perf:          perf,
+		debugMessages:      options.debugMessages,
+		lastStreamRevision: -1,
+		messages:           []string{},
+		perf:               perf,
 	}
 }
 
@@ -386,7 +421,7 @@ func truthyFlagValue(value string) bool {
 }
 
 func (m model) Init() tea.Cmd {
-	return loadStateCmd(m.client)
+	return openClientStateStreamCmd(m.client)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -403,6 +438,63 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applySnapshot(msg.snapshot)
 		m.perf.markResponseReceived("loadState", "initial", msg.perfTraceID, msg.responseReceived)
 		return m, nil
+	case clientStateStreamMsg:
+		if msg.err != nil {
+			if msg.stream != nil {
+				msg.stream.cancel()
+			}
+			m.stream = nil
+			m.streamActive = false
+			if msg.initial {
+				m.addDebugMessage("client-state stream unavailable; falling back to polling")
+				return m, loadStateCmd(m.client)
+			}
+			m.addDebugMessage("client-state stream stopped: " + msg.err.Error())
+			if m.pendingTerminalAction {
+				return m, nil
+			}
+			return m, loadStateCmd(m.client)
+		}
+		if msg.stream != nil {
+			m.stream = msg.stream
+			m.streamActive = true
+		}
+		if msg.event.Revision > m.lastStreamRevision {
+			m.lastStreamRevision = msg.event.Revision
+			if msg.event.Terminal != "" {
+				m.pendingTerminalAction = true
+				m.stopActiveAutoMove()
+				if msg.stream != nil {
+					msg.stream.cancel()
+				}
+				m.stream = nil
+				m.streamActive = false
+				if msg.event.Terminal == "save" {
+					m.addMessage("saved")
+				} else {
+					m.addMessage("quit")
+				}
+				return m, tea.Quit
+			}
+			snap, err := msg.event.snapshot()
+			if err != nil {
+				if msg.stream != nil {
+					msg.stream.cancel()
+				}
+				m.stream = nil
+				m.streamActive = false
+				m.addMessage("stream update failed: " + err.Error())
+				return m, loadStateCmd(m.client)
+			}
+			m.applySnapshot(snap)
+			if msg.event.Source == "setup" {
+				m.setupPending = false
+			}
+		}
+		if m.stream == nil {
+			return m, nil
+		}
+		return m, nextClientStateStreamEventCmd(m.stream)
 	case pickupLoadedMsg:
 		if m.pendingTerminalAction || m.popup == nil || m.popup.kind != popupPickup || msg.requestID != m.pickupRequestID {
 			return m, nil
@@ -454,8 +546,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addMessage("action failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.applySnapshot(msg.snapshot)
-		m.perf.markResponseReceived("actionAndRefresh", msg.caseName, msg.perfTraceID, msg.responseReceived)
+		if !msg.streamed {
+			m.applySnapshot(msg.snapshot)
+		}
+		phase := "actionAndRefresh"
+		if msg.streamed {
+			phase = "action"
+		}
+		m.perf.markResponseReceived(phase, msg.caseName, msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case setupDoneMsg:
 		if m.pendingTerminalAction {
@@ -645,7 +743,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if act, ok := parseAction(actionInput); ok {
 		m.mutationSerial++
-		return m, actionAndRefreshCmd(m.client, act)
+		return m, actionCmd(m.client, act, m.streamActive)
 	}
 	return m, nil
 }
@@ -704,7 +802,7 @@ func (m model) handleDoorDirectionKey(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mutationSerial++
-	return m, actionAndRefreshCmd(m.client, action{Tag: kind, Dir: dir})
+	return m, actionCmd(m.client, action{Tag: kind, Dir: dir}, m.streamActive)
 }
 
 func (m model) saveAndExit() (tea.Model, tea.Cmd) {
@@ -892,21 +990,21 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		m.popup = nil
 		m.mutationSerial++
 		if kind == popupPickup {
-			return m, actionAndRefreshCmd(m.client, action{Tag: "pickupMulti", Keys: keys})
+			return m, actionCmd(m.client, action{Tag: "pickupMulti", Keys: keys}, m.streamActive)
 		}
 		if kind == popupEat {
-			return m, actionAndRefreshCmd(m.client, action{Tag: "eatMulti", Keys: keys})
+			return m, actionCmd(m.client, action{Tag: "eatMulti", Keys: keys}, m.streamActive)
 		}
 		if kind == popupQuaff {
-			return m, actionAndRefreshCmd(m.client, action{Tag: "quaffMulti", Keys: keys})
+			return m, actionCmd(m.client, action{Tag: "quaffMulti", Keys: keys}, m.streamActive)
 		}
 		if kind == popupLoot {
 			if mode == lootPut {
-				return m, actionAndRefreshCmd(m.client, action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys})
+				return m, actionCmd(m.client, action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys}, m.streamActive)
 			}
-			return m, actionAndRefreshCmd(m.client, action{Tag: "lootTakeMulti", ContainerKey: containerKey, Keys: keys})
+			return m, actionCmd(m.client, action{Tag: "lootTakeMulti", ContainerKey: containerKey, Keys: keys}, m.streamActive)
 		}
-		return m, actionAndRefreshCmd(m.client, action{Tag: "dropMulti", Keys: keys})
+		return m, actionCmd(m.client, action{Tag: "dropMulti", Keys: keys}, m.streamActive)
 	default:
 		togglePopupLetter(popup, input)
 		return m, nil
@@ -932,8 +1030,16 @@ func (m model) startRepeatedMovement(command moveCommand) (tea.Model, tea.Cmd) {
 	initialWorld := cloneEntities(m.world)
 	client := m.client
 	traceID := client.perf.nextTraceID("charm.autorun")
+	streamActive := m.streamActive
 	return m, func() tea.Msg {
-		result, snap, err := client.runDirectionalMovement(context.Background(), initialWorld, command, cancel)
+		var result autoRunResult
+		var snap snapshot
+		var err error
+		if streamActive {
+			result, snap, err = client.runDirectionalMovementStreamed(context.Background(), initialWorld, command, cancel)
+		} else {
+			result, snap, err = client.runDirectionalMovement(context.Background(), initialWorld, command, cancel)
+		}
 		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: command.tag, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
@@ -949,8 +1055,16 @@ func (m model) startTravel(target pos) (tea.Model, tea.Cmd) {
 	client := m.client
 	traceID := client.perf.nextTraceID("charm.travel")
 	m.addMessage("traveling")
+	streamActive := m.streamActive
 	return m, func() tea.Msg {
-		result, snap, err := client.runTravel(context.Background(), initialWorld, target, cancel)
+		var result autoRunResult
+		var snap snapshot
+		var err error
+		if streamActive {
+			result, snap, err = client.runTravelStreamed(context.Background(), initialWorld, target, cancel)
+		} else {
+			result, snap, err = client.runTravel(context.Background(), initialWorld, target, cancel)
+		}
 		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: "travel", perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
@@ -1327,6 +1441,45 @@ func loadStateCmd(client apiClient) tea.Cmd {
 	}
 }
 
+func openClientStateStreamCmd(client apiClient) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.stream.open")
+	return func() tea.Msg {
+		stream, err := client.openClientStateStreamWithTimeout(context.Background(), 10*time.Second)
+		if err != nil {
+			return clientStateStreamMsg{err: err, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+		}
+		timer := time.NewTimer(10 * time.Second)
+		defer timer.Stop()
+		var result clientStateStreamResult
+		var ok bool
+		select {
+		case result, ok = <-stream.events:
+		case <-timer.C:
+			stream.cancel()
+			return clientStateStreamMsg{err: fmt.Errorf("timed out waiting for initial client-state stream event"), initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+		}
+		if !ok {
+			stream.cancel()
+			return clientStateStreamMsg{err: fmt.Errorf("client-state stream closed before initial event"), initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+		}
+		if result.err != nil {
+			stream.cancel()
+			return clientStateStreamMsg{err: result.err, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+		}
+		return clientStateStreamMsg{stream: stream, event: result.event, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func nextClientStateStreamEventCmd(stream *clientStateStream) tea.Cmd {
+	return func() tea.Msg {
+		result, ok := <-stream.events
+		if !ok {
+			return clientStateStreamMsg{stream: stream, err: fmt.Errorf("client-state stream closed"), responseReceived: time.Now()}
+		}
+		return clientStateStreamMsg{stream: stream, event: result.event, err: result.err, responseReceived: time.Now()}
+	}
+}
+
 func selectRoleCmd(client apiClient, roleID string, requestID int) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.setup.role")
 	return func() tea.Msg {
@@ -1367,6 +1520,21 @@ func loadLootItemsCmd(client apiClient, requestID int, containerKey string) tea.
 	}
 }
 
+func actionCmd(client apiClient, act action, streamActive bool) tea.Cmd {
+	if streamActive {
+		return actionOnlyCmd(client, act)
+	}
+	return actionAndRefreshCmd(client, act)
+}
+
+func actionOnlyCmd(client apiClient, act action) tea.Cmd {
+	traceID := client.perf.nextTraceID("charm.action")
+	return func() tea.Msg {
+		err := client.actionOnly(context.Background(), act)
+		return actionDoneMsg{err: err, caseName: act.Tag, perfTraceID: traceID, responseReceived: time.Now(), streamed: true}
+	}
+}
+
 func actionAndRefreshCmd(client apiClient, act action) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.action")
 	return func() tea.Msg {
@@ -1404,6 +1572,16 @@ func (c apiClient) actionAndRefresh(ctx context.Context, act action) (snapshot, 
 		}
 		return c.getClientState(ctx)
 	})
+}
+
+func (c apiClient) actionOnly(ctx context.Context, act action) error {
+	_, err := measurePerfCall(c.perf, "frontend.api", "action", act.Tag, "", nil, func() (struct{}, error) {
+		if err := c.doAction(ctx, act); err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 func (c apiClient) selectRoleAndRefresh(ctx context.Context, roleID string) (snapshot, error) {
@@ -1483,6 +1661,86 @@ func (c apiClient) runDirectionalMovementUnmeasured(ctx context.Context, initial
 	return autoRunResult{label: label, kind: "too-far", steps: steps}, snapshot{world: world}, nil
 }
 
+func (c apiClient) runDirectionalMovementStreamed(ctx context.Context, initialWorld []entity, command moveCommand, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	measured, err := measurePerfCall(c.perf, "frontend.api", "runDirectionalMovement", command.tag, "stream", nil, func() (autoRunSnapshot, error) {
+		result, snap, err := c.runDirectionalMovementStreamedUnmeasured(ctx, initialWorld, command, cancel)
+		return autoRunSnapshot{result: result, snapshot: snap}, err
+	})
+	return measured.result, measured.snapshot, err
+}
+
+func (c apiClient) runDirectionalMovementStreamedUnmeasured(ctx context.Context, initialWorld []entity, command moveCommand, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	stream, err := c.openClientStateStreamWithTimeout(ctx, 10*time.Second)
+	if err != nil {
+		return autoRunResult{label: commandLabel(command), kind: "error", steps: 0}, snapshot{}, err
+	}
+	defer stream.cancel()
+
+	initialSnap, lastRevision, wasCancelled, err := waitForStreamSnapshot(ctx, stream, cancel, -1)
+	if err != nil {
+		return autoRunResult{label: commandLabel(command), kind: "error", steps: 0}, snapshot{}, err
+	}
+	if wasCancelled {
+		return autoRunResult{label: commandLabel(command), kind: "cancelled", steps: 0}, snapshot{world: initialWorld}, nil
+	}
+
+	label := commandLabel(command)
+	world := initialSnap.world
+	if world == nil {
+		world = initialWorld
+	}
+	currentDirection := command.dir
+	var previousPosition *pos
+	turnAccumulator := 0
+	steps := 0
+	latest := initialSnap
+	for steps < maxAutoMoveSteps {
+		if cancelled(cancel) {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		before, ok := findPlayer(world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if steps > 0 && shouldStopAtCorridorBoundary(command, currentDirection, world, before.At, previousPosition) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		if err := c.actionOnly(ctx, action{Tag: "move", Dir: currentDirection}); err != nil {
+			return autoRunResult{label: label, kind: "error", steps: steps}, snapshot{}, err
+		}
+		nextSnap, nextRevision, wasCancelled, err := waitForStreamSnapshot(ctx, stream, cancel, lastRevision)
+		if err != nil {
+			return autoRunResult{label: label, kind: "error", steps: steps}, snapshot{}, err
+		}
+		if wasCancelled {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		lastRevision = nextRevision
+		latest = nextSnap
+		world = nextSnap.world
+		after, ok := findPlayer(world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if samePos(before.At, after.At) {
+			return autoRunResult{label: label, kind: "blocked", steps: steps}, latest, nil
+		}
+		steps++
+		if cancelled(cancel) {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		if shouldStopDirectionalRun(command, currentDirection, world, after.At, before.At) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		next := nextDirectionalRunDirection(command, currentDirection, world, after.At, before.At, turnAccumulator)
+		previous := before.At
+		previousPosition = &previous
+		currentDirection = next.direction
+		turnAccumulator = next.turnAccumulator
+	}
+	return autoRunResult{label: label, kind: "too-far", steps: steps}, latest, nil
+}
+
 func (c apiClient) runTravel(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	measured, err := measurePerfCall(c.perf, "frontend.api", "runTravel", "travel", "", nil, func() (autoRunSnapshot, error) {
 		result, snap, err := c.runTravelUnmeasured(ctx, initialWorld, target, cancel)
@@ -1553,6 +1811,82 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, snapshot{world: world}, nil
 }
 
+func (c apiClient) runTravelStreamed(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	measured, err := measurePerfCall(c.perf, "frontend.api", "runTravel", "travel", "stream", nil, func() (autoRunSnapshot, error) {
+		result, snap, err := c.runTravelStreamedUnmeasured(ctx, initialWorld, target, cancel)
+		return autoRunSnapshot{result: result, snapshot: snap}, err
+	})
+	return measured.result, measured.snapshot, err
+}
+
+func (c apiClient) runTravelStreamedUnmeasured(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	stream, err := c.openClientStateStreamWithTimeout(ctx, 10*time.Second)
+	if err != nil {
+		return autoRunResult{label: "travel", kind: "error", steps: 0}, snapshot{}, err
+	}
+	defer stream.cancel()
+
+	initialSnap, lastRevision, wasCancelled, err := waitForStreamSnapshot(ctx, stream, cancel, -1)
+	if err != nil {
+		return autoRunResult{label: "travel", kind: "error", steps: 0}, snapshot{}, err
+	}
+	if wasCancelled {
+		return autoRunResult{label: "travel", kind: "cancelled", steps: 0}, snapshot{world: initialWorld}, nil
+	}
+
+	world := initialSnap.world
+	if world == nil {
+		world = initialWorld
+	}
+	latest := initialSnap
+	steps := 0
+	for steps < maxAutoMoveSteps {
+		if cancelled(cancel) {
+			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, latest, nil
+		}
+		player, ok := findPlayer(world)
+		if !ok {
+			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if samePos(player.At, target) {
+			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, latest, nil
+		}
+		path := findTravelDirections(world, player.At, target)
+		if len(path) == 0 {
+			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, latest, nil
+		}
+
+		before := player.At
+		direction := path[0]
+		if err := c.actionOnly(ctx, action{Tag: "move", Dir: direction}); err != nil {
+			return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
+		}
+		steps++
+		nextSnap, nextRevision, wasCancelled, err := waitForStreamSnapshot(ctx, stream, cancel, lastRevision)
+		if err != nil {
+			return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
+		}
+		if wasCancelled {
+			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, latest, nil
+		}
+		lastRevision = nextRevision
+		latest = nextSnap
+		world = nextSnap.world
+		after, ok := findPlayer(world)
+		if !ok {
+			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if samePos(after.At, target) {
+			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, latest, nil
+		}
+		expected := addPos(before, movementDeltas[direction])
+		if samePos(before, after.At) || !samePos(expected, after.At) {
+			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, latest, nil
+		}
+	}
+	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, latest, nil
+}
+
 func straightTravelBatch(path []string, remainingSteps int) []string {
 	if len(path) == 0 || remainingSteps <= 0 {
 		return nil
@@ -1597,16 +1931,187 @@ func (c apiClient) getClientState(ctx context.Context) (snapshot, error) {
 		if err := c.getJSON(ctx, "/client-state", &raw); err != nil {
 			return snapshot{}, err
 		}
-		world, err := decodeEntityPairs(raw.World)
-		if err != nil {
-			return snapshot{}, err
-		}
-		inventory, err := decodeEntityPairs(raw.Inventory)
-		if err != nil {
-			return snapshot{}, err
-		}
-		return snapshot{world: world, inventory: inventory, roles: raw.Roles, setup: normalizeSetup(raw.Setup)}, nil
+		return raw.snapshot()
 	})
+}
+
+func (event clientStateStreamEvent) snapshot() (snapshot, error) {
+	return event.ClientState.snapshot()
+}
+
+func (raw clientStateResponse) snapshot() (snapshot, error) {
+	world, err := decodeEntityPairs(raw.World)
+	if err != nil {
+		return snapshot{}, err
+	}
+	inventory, err := decodeEntityPairs(raw.Inventory)
+	if err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{world: world, inventory: inventory, roles: raw.Roles, setup: normalizeSetup(raw.Setup)}, nil
+}
+
+type openClientStateStreamResult struct {
+	stream *clientStateStream
+	err    error
+}
+
+func (c apiClient) openClientStateStreamWithTimeout(ctx context.Context, timeout time.Duration) (*clientStateStream, error) {
+	openCtx, cancel := context.WithCancel(ctx)
+	results := make(chan openClientStateStreamResult, 1)
+	go func() {
+		stream, err := c.openClientStateStream(openCtx)
+		results <- openClientStateStreamResult{stream: stream, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		cancel()
+		return nil, ctx.Err()
+	case <-timer.C:
+		cancel()
+		return nil, fmt.Errorf("timed out opening client-state stream")
+	case result := <-results:
+		if result.err != nil {
+			cancel()
+			return nil, result.err
+		}
+		originalCancel := result.stream.cancel
+		result.stream.cancel = func() {
+			originalCancel()
+			cancel()
+		}
+		return result.stream, nil
+	}
+}
+
+func (c apiClient) openClientStateStream(ctx context.Context) (*clientStateStream, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+clientStateStreamPath, nil)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	request.Header.Set("Accept", "text/event-stream")
+
+	streamHTTP := *c.http
+	streamHTTP.Timeout = 0
+	response, err := streamHTTP.Do(request)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		_ = response.Body.Close()
+		cancel()
+		return nil, fmt.Errorf("GET %s failed: %s %s", clientStateStreamPath, response.Status, strings.TrimSpace(string(body)))
+	}
+
+	events := make(chan clientStateStreamResult, 16)
+	stream := &clientStateStream{events: events, cancel: cancel}
+	go func() {
+		defer close(events)
+		defer response.Body.Close()
+		readClientStateSSE(ctx, response.Body, events)
+	}()
+	return stream, nil
+}
+
+func readClientStateSSE(ctx context.Context, body io.Reader, events chan<- clientStateStreamResult) {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	eventName := ""
+	dataLines := []string{}
+	flush := func() bool {
+		if len(dataLines) == 0 {
+			eventName = ""
+			return true
+		}
+		if eventName == "" || eventName == clientStateStreamEventName {
+			var event clientStateStreamEvent
+			if err := json.Unmarshal([]byte(strings.Join(dataLines, "\n")), &event); err != nil {
+				return sendStreamResult(ctx, events, clientStateStreamResult{err: err})
+			}
+			if !sendStreamResult(ctx, events, clientStateStreamResult{event: event}) {
+				return false
+			}
+		}
+		eventName = ""
+		dataLines = nil
+		return true
+	}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if !flush() {
+				return
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		field, value, ok := strings.Cut(line, ":")
+		if ok {
+			value = strings.TrimPrefix(value, " ")
+		} else {
+			value = ""
+		}
+		switch field {
+		case "event":
+			eventName = value
+		case "data":
+			dataLines = append(dataLines, value)
+		}
+	}
+	if len(dataLines) > 0 {
+		_ = flush()
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		_ = sendStreamResult(ctx, events, clientStateStreamResult{err: err})
+	}
+}
+
+func sendStreamResult(ctx context.Context, events chan<- clientStateStreamResult, result clientStateStreamResult) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case events <- result:
+		return true
+	}
+}
+
+func waitForStreamSnapshot(ctx context.Context, stream *clientStateStream, cancel <-chan struct{}, afterRevision int) (snapshot, int, bool, error) {
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return snapshot{}, afterRevision, false, ctx.Err()
+		case <-cancel:
+			return snapshot{}, afterRevision, true, nil
+		case <-timer.C:
+			return snapshot{}, afterRevision, false, fmt.Errorf("timed out waiting for client-state stream revision after %d", afterRevision)
+		case result, ok := <-stream.events:
+			if !ok {
+				return snapshot{}, afterRevision, false, fmt.Errorf("client-state stream closed")
+			}
+			if result.err != nil {
+				return snapshot{}, afterRevision, false, result.err
+			}
+			if result.event.Revision <= afterRevision {
+				continue
+			}
+			snap, err := result.event.snapshot()
+			if err != nil {
+				return snapshot{}, afterRevision, false, err
+			}
+			return snap, result.event.Revision, false, nil
+		}
+	}
 }
 
 func (c apiClient) getCollection(ctx context.Context, path string) ([]entity, error) {

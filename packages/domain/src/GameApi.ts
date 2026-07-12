@@ -1,5 +1,6 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
 import { Schema } from "effect"
+import { GameStateStreamPath } from "./GameStream.js"
 import { RoleId } from "./roles.js"
 import {
   ClientState,
@@ -35,6 +36,12 @@ export class GameApiGroup extends HttpApiGroup.make("game")
     HttpApiEndpoint.get("getClientState", "/client-state").addSuccess(
       ClientState
     )
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getClientStateStream",
+      GameStateStreamPath
+    ).addSuccess(Schema.String)
   )
   .add(
     HttpApiEndpoint.post("selectRole", "/setup/role").setPayload(

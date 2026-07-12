@@ -51,6 +51,15 @@ describe("GameApi item-list success contracts", () => {
     expect(block).toMatch(/\.addSuccess\(\s*ClientState\s*\)/)
   })
 
+  it("adds a client-state stream endpoint beside the polling endpoint", () => {
+    const source = readGameApiSource()
+    const block = endpointBlock(source, "getClientStateStream")
+
+    expect(source).toContain("GameStateStreamPath")
+    expect(block).toMatch(/GameStateStreamPath/)
+    expect(block).toMatch(/\.addSuccess\(\s*Schema\.String\s*\)/)
+  })
+
   it("narrows getPickupItemsFor success to ItemCollection", () => {
     const block = endpointBlock(readGameApiSource(), "getPickupItemsFor")
 

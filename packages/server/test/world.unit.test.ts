@@ -494,6 +494,8 @@ describe("CampgroundGenLevel", () => {
     ])
     const npcPositions = new Set(campgroundNpcs.map(coordinateKey))
 
+    const schemaIsCreature = conforms(AnyCreature)
+
     expect(campgroundNpcs.length).toBeGreaterThan(0)
     expect(hippies.length).toBeGreaterThan(namedHumans.length)
     expect(hippies.length).toBeGreaterThan(campgroundNpcs.length / 2)
@@ -502,6 +504,10 @@ describe("CampgroundGenLevel", () => {
 
     for (const npc of campgroundNpcs) {
       expect(npc.in).toBe("world")
+      if (!schemaIsCreature(npc)) {
+        throw new Error(`${npc.key} did not conform to AnyCreature`)
+      }
+      expect(npc.attributes).toBeDefined()
       expect(passableFloorOrRoadPositions.has(coordinateKey(npc))).toBe(
         true
       )
@@ -514,6 +520,7 @@ describe("CampgroundGenLevel", () => {
       expect(Object.keys(namedHuman).sort()).toEqual([
         "_tag",
         "at",
+        "attributes",
         "in",
         "key",
         "name"

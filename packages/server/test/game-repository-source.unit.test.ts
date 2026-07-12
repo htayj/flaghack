@@ -23,10 +23,14 @@ describe("GameRepository source", () => {
     expect(source).toContain("import { measureEffect } from \"./perf.js\"")
     expect(source).toContain("DefaultGameStateStoreLive")
     expect(source).toContain("GamePersistence")
+    expect(source).toContain("GameUpdateHub")
 
-    expect(source).toContain("dependencies: [DefaultGameStateStoreLive]")
+    expect(source).toContain(
+      "dependencies: [DefaultGameStateStoreLive, GameUpdateHub.Default]"
+    )
     expect(source).toContain("const store = yield* GameStateStore")
     expect(source).toContain("const persistence = yield* GamePersistence")
+    expect(source).toContain("const updateHub = yield* GameUpdateHub")
     expect(source).toContain(
       "Effect.provideService(effect, GameStateStore, store)"
     )
@@ -36,11 +40,21 @@ describe("GameRepository source", () => {
       /getPickupItemsFor\(k: TKey\) \{\s*return measureEffect\([\s\S]*withRestoredStore\([\s\S]*apiGetPickupItemsFor\(k\)[\s\S]*HashMap\.empty\(\)[\s\S]*\)\s*\}/
     )
     expect(source).toMatch(
-      /withRestoredMutationAndSave\s*=\s*<E>\([\s\S]*Effect\.tap\(\(\) => saveCurrentGameUnlocked\)[\s\S]*lifecycleSemaphore\.withPermits\(1\)/
+      /withRestoredMutationWithoutAutosave\s*=\s*<E>\([\s\S]*deleteSaveIfPlayerMissingUnlocked[\s\S]*lifecycleSemaphore\.withPermits\(1\)/
+    )
+    expect(source).toContain("persistence.restorePreserving")
+    expect(source).toMatch(
+      /withRestoredTransformAndSaveIfChanged\s*=\s*\([\s\S]*nextState !== state[\s\S]*changed[\s\S]*\? saveCurrentGameUnlocked[\s\S]*publishClientStateUnlocked\(source\)[\s\S]*: deleteSaveIfPlayerMissingUnlocked[\s\S]*lifecycleSemaphore\.withPermits\(1\)/
     )
     expect(source).toContain("terminalLifecycleRef")
     expect(source).toMatch(
-      /doPlayerAction\(action: Action\) \{\s*return measureEffect\([\s\S]*withRestoredMutationAndSave\(apiDoPlayerAction\(action\)\)[\s\S]*\)\s*\}/
+      /doPlayerAction\(action: Action\) \{\s*return measureEffect\([\s\S]*withRestoredMutationWithoutAutosave\([\s\S]*"action"[\s\S]*apiDoPlayerAction\(action\)[\s\S]*\)\s*\}/
+    )
+    expect(source).toMatch(
+      /selectRole\(roleId: RoleId\) \{\s*return measureEffect\([\s\S]*withRestoredTransformAndSaveIfChanged\([\s\S]*"setup"[\s\S]*selectRoleForGameState\(state, roleId\)[\s\S]*\)\s*\}/
+    )
+    expect(source).toMatch(
+      /confirmSetup\(confirm: boolean\) \{\s*return measureEffect\([\s\S]*withRestoredTransformAndSaveIfChanged\([\s\S]*"setup"[\s\S]*confirmSetupForGameState\(state, confirm\)[\s\S]*\)\s*\}/
     )
     expect(source).not.toContain("Effect.succeed(k)")
     expect(source).not.toContain("Effect.succeed(action)")

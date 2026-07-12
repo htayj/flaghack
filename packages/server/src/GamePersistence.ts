@@ -1,4 +1,6 @@
+import { isCreatureTag } from "@flaghack/domain/creatureCapabilities"
 import { GameState } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Data, Effect, Either, Option, Schema } from "effect"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
@@ -49,10 +51,53 @@ const encodeGameState = (state: TGameState) =>
     try: () => Schema.encodeSync(GameState)(state)
   })
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const hasOwn = (value: Record<string, unknown>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key)
+
+const migrateLegacyCreatureEntity = (entity: unknown): unknown => {
+  if (!isRecord(entity) || typeof entity._tag !== "string") {
+    return entity
+  }
+  if (!isCreatureTag(entity._tag) || hasOwn(entity, "attributes")) {
+    return entity
+  }
+
+  return { ...entity, attributes: balancedAttributes }
+}
+
+const migrateLegacySavePayload = (payload: unknown): unknown => {
+  if (!isRecord(payload) || !Array.isArray(payload.world)) {
+    return payload
+  }
+
+  let changed = false
+  const world = payload.world.map((entry) => {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      return entry
+    }
+
+    const migratedEntity = migrateLegacyCreatureEntity(entry[1])
+    if (migratedEntity === entry[1]) {
+      return entry
+    }
+
+    changed = true
+    return [entry[0], migratedEntity]
+  })
+
+  return changed ? { ...payload, world } : payload
+}
+
 const decodeGameState = (saveFilePath: string, raw: string) =>
   Effect.try({
     catch: (cause) => persistenceError("decode", saveFilePath, cause),
-    try: () => Schema.decodeUnknownSync(GameState)(JSON.parse(raw))
+    try: () =>
+      Schema.decodeUnknownSync(GameState)(
+        migrateLegacySavePayload(JSON.parse(raw))
+      )
   })
 
 export class GamePersistence
@@ -109,7 +154,7 @@ export class GamePersistence
             })
           })
 
-        const restoreAndConsume = Effect.gen(function*() {
+        const restorePreserving = Effect.gen(function*() {
           const maybeRaw = yield* readSaveFile
           if (Option.isNone(maybeRaw)) {
             return Option.none<TGameState>()
@@ -123,13 +168,21 @@ export class GamePersistence
             return Option.none<TGameState>()
           }
 
-          yield* deleteSave
           return Option.some(decoded.right)
+        })
+
+        const restoreAndConsume = Effect.gen(function*() {
+          const restored = yield* restorePreserving
+          if (Option.isSome(restored)) {
+            yield* deleteSave
+          }
+          return restored
         })
 
         return {
           deleteSave,
           restoreAndConsume,
+          restorePreserving,
           save,
           saveFilePath
         } as const

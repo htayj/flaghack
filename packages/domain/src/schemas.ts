@@ -33,6 +33,7 @@ export const EntityBase = S.Struct(EntityBaseFields)
 
 const CreatureBaseFields = {
   ...EntityBaseFields,
+  attributes: AllAttributes,
   name: S.String.pipe(S.optional)
 } as const
 
@@ -134,8 +135,7 @@ export const ContainerCollection = S.HashMap({
 export const Human = CreatureBase
 const PlayerFields = {
   ...CreatureBaseFields,
-  role: RoleId.pipe(S.optional),
-  attributes: AllAttributes.pipe(S.optional)
+  role: RoleId.pipe(S.optional)
 } as const
 export const Player = S.TaggedStruct("player", PlayerFields)
 export const Ranger = S.TaggedStruct("ranger", CreatureBaseFields)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { GameState } from "@flaghack/domain/schemas"
+import { balancedAttributes } from "@flaghack/domain/stats"
 import { Effect, HashMap, Option } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
@@ -19,6 +20,7 @@ describe("server ai planning", () => {
       at: { x: 1, y: 1, z: 0 },
       in: "world",
       _tag: "player",
+      attributes: balancedAttributes,
       name: "you"
     } satisfies Entity
     const hippie = {
@@ -26,6 +28,7 @@ describe("server ai planning", () => {
       at: { x: 50, y: 3, z: 0 },
       in: "world",
       _tag: "hippie",
+      attributes: balancedAttributes,
       name: "Ian"
     } satisfies Entity
     const item = {
@@ -65,6 +68,7 @@ describe("server ai planning", () => {
       at: { x: 1, y: 1, z: 0 },
       in: "world",
       _tag: "player",
+      attributes: balancedAttributes,
       name: "you"
     } satisfies Entity
     const hippie = {
@@ -72,6 +76,7 @@ describe("server ai planning", () => {
       at: { x: 50, y: 3, z: 0 },
       in: "world",
       _tag: "hippie",
+      attributes: balancedAttributes,
       name: "Ian"
     } satisfies Entity
     const terrain = {
@@ -97,6 +102,7 @@ describe("server ai planning", () => {
       at: { x: 1, y: 1, z: 0 },
       in: "world",
       _tag: "player",
+      attributes: balancedAttributes,
       name: "you"
     } satisfies Entity
     const nearHippie = {
@@ -104,6 +110,7 @@ describe("server ai planning", () => {
       at: { x: 50, y: 3, z: 0 },
       in: "world",
       _tag: "hippie",
+      attributes: balancedAttributes,
       name: "Near"
     } satisfies Entity
     const farHippie = {
@@ -111,6 +118,7 @@ describe("server ai planning", () => {
       at: { x: 70, y: 50, z: 0 },
       in: "world",
       _tag: "hippie",
+      attributes: balancedAttributes,
       name: "Far"
     } satisfies Entity
     const fullWorld = HashMap.fromIterable<string, Entity>([
@@ -152,6 +160,9 @@ describe("server ai planning", () => {
     const aiSource = readAiSource()
     const allAiPlanIndex = aiSource.indexOf("export const allAiPlan")
 
+    expect(aiSource).toContain(
+      "import { isCreatureTag } from \"@flaghack/domain/creatureCapabilities\""
+    )
     expect(aiSource).toContain("const isNonPlayerCreature")
     expect(aiSource).toContain("const nonPlayerCreaturesFrom")
     expect(aiSource).toContain("filter(isNonPlayerCreature)")

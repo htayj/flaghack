@@ -54,8 +54,7 @@ const applyRoleToPlayer = (role: Role) => (world: World): World => {
 
       const updatedPlayer: Entity = {
         ...entity,
-        role: role.id,
-        attributes: { ...role.attributes }
+        role: role.id
       }
       return HashMap.set(withoutStartingItems, entity.key, updatedPlayer)
     }

@@ -8,12 +8,21 @@ full game engine or in-process runtime behavior.
 ## Current responsibilities
 
 - `src/GameApi.ts` exports `GameApi`, the Effect HTTP API shared by all
-  clients and the server.
+  clients and the server, including setup, lifecycle, combined client-state,
+  and streamed client-state endpoints.
+- `src/GameStream.ts` owns the `/client-state/stream` path, revisioned SSE
+  event schema, update sources, terminal markers, JSON decoding, and the
+  monotonic revision-acceptance helper.
 - `src/schemas.ts` defines shared `World`, `Action`, `GameState`, item,
-  creature, terrain, position, and inventory contracts.
+  creature, terrain, door/open-close, position, inventory, and combined
+  `ClientState` contracts. Every creature carries the standard attributes.
 - `src/display.ts` provides the display tile mapping from shared entity
   shapes to character/color metadata for terminal and browser renderers.
-- `src/stats.ts` holds shared stat, state, property, and status-effect schemas.
+- `src/stats.ts` holds shared stat, state, property, status-effect schemas,
+  standard creature attributes, 3d6 attribute rolling, and d20-under checks.
+- `src/creatureCapabilities.ts` defines centralized creature tags and cheap
+  NetHack-like capability bitmask checks for brains, eyes, hands, humanoids,
+  Kops, egregores, and mindless creatures.
 
 ## Validation and workflow notes
 
@@ -34,4 +43,5 @@ Do not hand-edit generated or disposable output. The repository policy
 called out in `AGENTS.md` includes `packages/**/build/**`,
 `packages/**/dist/**`, `*.d.ts`, `*.d.ts.map`, `*.js.map`, the
 generated schema JavaScript under `packages/domain/src/schemas/*.js`,
-and editor backup files such as `*~`, `#*#`, and `.#*`.
+task-graph/subagent runtime output, and editor backup files such as `*~`,
+`#*#`, and `.#*`.

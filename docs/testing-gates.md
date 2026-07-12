@@ -43,6 +43,9 @@ Do not edit generated or disposable artifacts directly:
 - generated declarations and maps: `*.d.ts`, `*.d.ts.map`, `*.js.map`
 - editor backups such as `*~`, `#*#`, and `.#*`
 - existing generated schema JavaScript under `packages/domain/src/schemas/*.js`
+- task-graph runtime output under `.pi/dev-suite/task-graph/runs/**` and
+  `.pi/dev-suite/task-graph/artifacts/**`
+- local subagent run output under `.pi-subagents/**`
 
 Use source/config changes instead. Run the guard before handoff:
 
@@ -50,7 +53,7 @@ Use source/config changes instead. Run the guard before handoff:
 pnpm generated:guard
 ```
 
-This task intentionally does not claim that full `pnpm build` is fixed. Avoid codegen/build commands that write `build/` or `dist/` artifacts unless a future task explicitly approves that workflow.
+Full `pnpm build` is not a documented readiness gate and writes generated output. Avoid codegen/build commands that write `build/` or `dist/` artifacts during read-only or audit work unless the task explicitly approves that workflow.
 
 ## Gate commands
 
@@ -77,7 +80,7 @@ pnpm test:feature:tmux:loot:bot
 pnpm verify:smoke
 ```
 
-`pnpm verify:gates` is the stricter readiness gate and additionally runs `pnpm check` before the smoke gates:
+`pnpm verify:gates` is the stricter readiness gate and additionally runs `pnpm check` before the smoke gates. Both aggregates include the Charm Go tests; neither runs `pnpm format:check`, so run the format check separately:
 
 ```sh
 pnpm verify:gates
@@ -115,7 +118,7 @@ For parsable instrumentation during API/tmux gates, set `FLAGHACK_PERF_FILE` to 
 pnpm test:api:bot
 ```
 
-Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, exercises `getWorld`, `getLogs`, `getInventory`, loot queries, and a move action, then terminates the child process. The bot variant sets `FLAGHACK_TEST_PORT=3100` and starts the server with `FLAGHACK_PORT=3100`, so a user-owned port `3000` server can keep running. Use `pnpm test:api` only when you intentionally want the normal port `3000` gate.
+Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, waits with the typed Effect `HttpApiClient`, and uses an isolated temporary `FLAGHACK_SAVE_PATH`. It verifies fresh role selection and setup completion; required attributes on the player and generated creatures; world, logs, inventory, loot, and combined `/client-state` reads; SSE content type, the initial revisioned `/client-state/stream` event, and revision advancement after an action; local mutation intent-header rejection; and save/restore/quit lifecycle semantics. The current smoke closes its stream after verifying an action update; terminal SSE events are covered by repository/update-hub tests rather than this API process gate. Cleanup terminates the child and removes temporary artifacts. The bot variant sets `FLAGHACK_TEST_PORT=3100` and starts the server with `FLAGHACK_PORT=3100`, so a user-owned port `3000` server can keep running. Use `pnpm test:api` only when you intentionally want the normal port `3000` gate.
 
 ### tmux E2E smoke gate
 
@@ -123,7 +126,7 @@ Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, w
 pnpm test:e2e:tmux:bot
 ```
 
-Requires `tmux`. The runner creates a unique session, starts the server in one pane, waits for API readiness, starts the default Charmbracelet CLI in another pane, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
+Requires `tmux`. The runner creates a unique session, starts the server in one pane with an isolated temporary save file, waits for API readiness, starts the default Charmbracelet CLI in another pane, automatically completes fresh role setup, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise an explicit legacy/experimental CLI command instead.
 
 ### Feature-specific tmux gate
 
@@ -139,6 +142,8 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.
 - `FLAGHACK_TMUX_AUTO_SETUP`: optional boolean for the default Charm CLI; defaults to `true` so generic feature gates automatically pass the role-selection prompt. Set to `false` when the feature being verified is the setup prompt itself.
+- `FLAGHACK_TMUX_ALLOW_CLI_EXIT`: optional boolean for save/quit scenarios where a successful terminal lifecycle is expected to close the CLI pane.
+- `FLAGHACK_GAME_FIXTURE=door` or `FLAGHACK_DOOR_FIXTURE=1`: start the server with the deterministic door fixture for door interaction scenarios.
 - `FLAGHACK_TMUX_KEY_WAIT_MS` and `FLAGHACK_TMUX_FINAL_WAIT_MS`: optional timing controls.
 
 Use this for task-graph feature verification when the requested behavior must be exercised in the real terminal UI. Extend `scripts/tmux-feature-check.ts` or add a focused script when a feature needs richer assertions than output matching.

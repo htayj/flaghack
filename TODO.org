@@ -1,4 +1,9 @@
 * DONE add eslint rules to enforce Effect-ts on the backend and domain. We should use Effect-ts whenever possible and write in a functional-programming style, using Effect schemas and effect api layers, as well as effect data structures and effect logic (eg for option, either, etc). When they are added, fix all current violations.
+* DONE add initial role selection and confirmation, with the virgin as the first role.
+* DONE add openable and closable doors, including movement auto-open behavior.
+* DONE add save, restore, quit, shutdown autosave, and terminal client lifecycle handling.
+* DONE stream revisioned authoritative client state from the server to the web and default Charm clients, with stale-revision rejection and HTTP fallback.
+* DONE give every creature six standard attributes and centralize cheap tag-based capability masks.
 * DONE the event log should be at the top of the playing screen, above the map
 * DONE there should be a status box at the bottom of the screen, showing character name, stats, dungeon level, etc, similar to how it is in nethack.
 * DONE add the ability to "look" at the content of other tiles similar to how it works in nethack. ESC should exit look mode.

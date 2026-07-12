@@ -1,16 +1,22 @@
 # Future performance ideas
 
-These ideas are intentionally not part of the first safe campground movement-lag pass. They may improve responsiveness further, but need extra design/testing because they can introduce stale UI, ordering bugs, or gameplay semantic changes if implemented carelessly.
+These ideas build on the current baseline: the server streams authoritative full
+`ClientState` snapshots over SSE with monotonic revisions, and clients reject
+older revisions while retaining HTTP refresh fallback. They may improve
+responsiveness further, but need extra design/testing because they can
+introduce stale UI, ordering bugs, or gameplay semantic changes if implemented
+carelessly.
 
 ## Incremental world patches
 
-Instead of returning the full world after every action, return a revision plus changed entity patches.
+Replace or complement current full-state stream events with a revision plus
+changed entity patches.
 
 Guardrails:
 
-- Include a monotonically increasing `worldRevision`.
-- Let clients request a full refresh when a patch is missing or the revision is unexpected.
-- Add server/client patch-vs-full equivalence tests.
+- Keep a monotonically increasing revision and define gap detection explicitly.
+- Let clients request a full resync when a patch is missing or the revision is unexpected.
+- Add server/client patch-vs-full equivalence tests and reconnect/replay tests.
 
 Risk: stale or divergent client state if patches are dropped, applied out of order, or incomplete.
 

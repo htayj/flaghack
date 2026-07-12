@@ -61,14 +61,21 @@ The old blessed/react-blessed frontend is still available through `pnpm run cli:
 
 The Charmbracelet frontend implements the core CLI behavior:
 
-- world rendering and inventory display
-- a top event log plus a bottom NetHack-style status box with player name, placeholder stats/health, and dungeon level
-- NetHack movement keys: `h/j/k/l/y/u/b/n`, Shift-direction, Ctrl-direction, `g`/`G`, `m`/`M`
-- rest with `.`
-- travel mode with `_`
-- pickup with `,`
-- multidrop with `d`
-- extended `#quit`
-- cancellation of active automovement on new input
+- fresh-game role selection and confirmation (currently the `virgin` role)
+- world rendering and inventory display, updated from revisioned full-state SSE
+  snapshots with endpoint-refresh fallback
+- a top event log plus a bottom NetHack-style status box with player name,
+  six rolled attributes, placeholder health, and dungeon level
+- NetHack movement keys: `h/j/k/l/y/u/b/n`, Shift-direction, Ctrl-direction,
+  `g`/`G`, `m`/`M`, rest with `.`, look with `;`, and travel with `_`
+- pickup with `,`, multidrop with `d`, eat with `e`, quaff with `q`, and
+  cooler loot with `M-l` / Alt-l
+- directional door interaction with `o`/`c`; movement auto-opens a closed door
+- save-and-exit via `C-s` or `#save`, and confirmed permanent quit via `C-q`
+  or `#quit`
+- restore-aware terminal lifecycle, terminal-state input suppression, and
+  cancellation of active automovement on new input
 
-The popup UI is intentionally simple: `,` marks all, `space` submits, and `q`/`r`/`Esc` cancels.
+In item popups, `,` marks all, Space submits, and Escape cancels. `q` and `r`
+are ordinary gameplay keys outside a popup. In quit confirmation, `y` confirms
+and `n` or Escape cancels.

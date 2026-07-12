@@ -51,6 +51,10 @@ and then in a second terminal run:
 #+END_SRC
 to start the default Charmbracelet terminal client
 
+A fresh game starts with role selection; the only current role is =virgin=. The default client supports NetHack movement, =,= pickup, =d= drop, =e= eat, =q= quaff, =M-l= loot, =;= look, and =_= travel. Use =o= or =c= followed by a direction to open or close a door; moving into a closed door also opens it.
+
+Use =C-s= or =#save= to save and exit. Use =C-q= or =#quit= and confirm with =y= to permanently quit without saving. The server lazily resumes an existing save on first access; the explicit restore endpoint consumes a successfully decoded save. Saves default to =$XDG_STATE_HOME/flag-hack/save.json=, =~/.local/state/flag-hack/save.json= when =XDG_STATE_HOME= is unset, or =.flaghack/save.json= when no home is available. Override the location with =FLAGHACK_SAVE_PATH=.
+
 For agent/bot testing while a human server is already running on port 3000, use the bot port commands:
 #+BEGIN_SRC bash
   pnpm run bot:serve
@@ -61,4 +65,4 @@ These use port 3100.
 *** TODO:  hotreloading
 
 ** exiting the game
-press ^C (control-c)
+Use =C-s= or =#save= for a resumable save-and-exit. Use =C-q= or =#quit= for confirmed permanent quit. =C-c= disconnects the terminal client without saving; use =C-s= for durable progress. Autosave runs only when the server itself shuts down cleanly.

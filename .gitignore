@@ -24,6 +24,7 @@ build
 /stdout.log.*.tar.gz
 
 # Pi/dev-suite project settings may be tracked, but runtime state is local.
+/.pi-subagents/
 .pi/dev-suite/edited-files.log
 .pi/dev-suite/task-graph/current.json
 .pi/dev-suite/task-graph/runs/

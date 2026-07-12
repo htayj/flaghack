@@ -9,7 +9,7 @@ This complements `EFFECT_TS_OPPORTUNITIES.md`. Some findings overlap because hid
 ## Highest-impact roadmap
 
 1. **Make package/build inputs deterministic.** Remove or control stale generated artifacts; ensure every tool sees the same workspace package graph.
-2. **Make game state transitions pure/replayable.** Model commands -> reducer -> `{ state, events }`; keep mutation only in one explicit runtime owner.
+2. **Make game state transitions pure/replayable.** The single-game runtime now has explicit `GameStateStore`/persistence/update ownership; continue toward commands -> reducer -> `{ state, events }` and keyed session owners.
 3. **Fix identity/location modeling.** Branded entity keys, validated world invariants, and a single discriminated location model will eliminate many impossible states.
 4. **Make generation deterministic and total.** Thread seeded RNG/ID allocation and return typed failures for impossible generation cases.
 5. **Make UI render functions pure.** React/blessed components should render from immutable UI state; effects, focus, key subscriptions, and network calls should live in explicit interpreters/lifecycle hooks.
@@ -18,7 +18,13 @@ This complements `EFFECT_TS_OPPORTUNITIES.md`. Some findings overlap because hid
 
 ## Remediation status (audit-remediation branch)
 
-The findings below remain the original 2026-05-29 `master` audit evidence. This section summarizes the current `audit-remediation` branch and intentionally does not rewrite the historical evidence.
+The findings below remain the original 2026-05-29 `master` audit evidence. This section summarizes later remediation and intentionally does not rewrite the historical evidence.
+
+Post-audit update (verified at `2ba89d6`): state mutation is no longer hidden
+in a module `_state`; `GameStateStore` is the explicit single-instance owner,
+repository lifecycle work is serialized, persistence is isolated, and streamed
+snapshots carry monotonic revisions. Process-wide single-game ownership,
+replayable domain events, and revision-bearing command rejection remain open.
 
 Status terms:
 
@@ -28,12 +34,12 @@ Status terms:
 
 Validation note: this docs-only closing slice does not require code changes. Later validation may skip root `pnpm check` if artifact-emission risk is not approved; the generated-file guard, dprint check, and smoke gates remain the safe evidence for this documentation change.
 
-| Status      | Findings / category                                                                                                                                         | Remediation evidence                                                                                                                                                                                                  | Remaining / not claimed                                                                                                                                                                                                           | Validation                                                                                              |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Partial** | 1-3, 31-32, 49-50, 54: generated/workspace/package boundaries, stricter TS/lint/tests/deps/docs                                                             | Workspace inclusion, generated guardrails, dprint/eslint exclusions, `noUncheckedIndexedAccess`, dependency cleanup, targeted tests, and docs/gate policy reduce risk.                                                | Stale generated schema JS/declarations remain tracked until approved regeneration; source-vs-dist package resolution remains; full CI/readiness pipeline and a complete FP lint/mutation policy are deferred.                     | `pnpm generated:guard`; `pnpm format:check`; `pnpm check`; unit/perf/API/E2E smoke gates as applicable. |
-| **Partial** | 4-6, 16-22, 40-41: server reducer purity, logs, pathfinding, worldgen, unsafe indexing, hidden nondeterminism, and import side effects                      | Action reducer work, capped log snapshots, immutable pathfinding distance handling, UUID key generation, safer indexing, structural position handling, and narrower AI planning reduce risk.                          | A global state owner still exists; atomic/session store, typed failures, deterministic seeded generation, explicit turn model, and deeper world/AI architecture are deferred.                                                     | Reducer/log/pathfinding/world tests plus smoke gates.                                                   |
-| **Partial** | 9-15, 33-39, 47: domain identity/location/actions/API/collections/types/rendering/numeric helpers                                                           | Stats bugs/bounds, tool variants, integer positions, `Schema.is` validation, item collection responses, stale pickup action removal, and exhaustive display handling were addressed.                                  | Branded entity keys, location ADT and world invariant validation, immutable collection boundary policy, public readonly collection cleanup, null/undefined sentinel cleanup, schema annotations, and helper renames are deferred. | Schema/domain/display unit tests plus `pnpm generated:guard`.                                           |
-| **Partial** | 7-8, 23-30, 42-46, 48, 51-53: CLI/web render purity, UI state/input/popups, view layering, duplicate UI/client/util code, terminal/color/debug/static state | Render-time fetches moved to lifecycle hooks, app-scoped runtimes, key cleanup, unknown input ignoring, popup selection/focus fixes, deterministic layering, capped messages, and baseline accessibility reduce risk. | Complete UI state machine/remote-data ADT, shared view-model/UI-core/client extraction, terminal state modeling, layout/view-model cleanup, supervised runtime/error handling, and user-visible error handling are deferred.      | CLI/web unit smoke and API/E2E smoke gates as applicable.                                               |
+| Status      | Findings / category                                                                                                                                         | Remediation evidence                                                                                                                                                                                                        | Remaining / not claimed                                                                                                                                                                                                           | Validation                                                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Partial** | 1-3, 31-32, 49-50, 54: generated/workspace/package boundaries, stricter TS/lint/tests/deps/docs                                                             | Workspace inclusion, generated guardrails, dprint/eslint exclusions, `noUncheckedIndexedAccess`, dependency cleanup, targeted tests, and docs/gate policy reduce risk.                                                      | Stale generated schema JS/declarations remain tracked until approved regeneration; source-vs-dist package resolution remains; full CI/readiness pipeline and a complete FP lint/mutation policy are deferred.                     | `pnpm generated:guard`; `pnpm format:check`; `pnpm check`; unit/perf/API/E2E smoke gates as applicable. |
+| **Partial** | 4-6, 16-22, 40-41: server reducer purity, logs, pathfinding, worldgen, unsafe indexing, hidden nondeterminism, and import side effects                      | Explicit `GameStateStore`, serialized lifecycle mutations, persistence/update services, capped log snapshots, immutable pathfinding, UUID keys, safer indexing, structural positions, and narrower AI planning reduce risk. | Keyed multi-session ownership, pure replayable domain events, typed failures, revision-bearing commands, deterministic seeded generation, an explicit turn model, and deeper world/AI architecture are deferred.                  | Store/persistence/update-hub/reducer/log/pathfinding/world tests plus smoke gates.                      |
+| **Partial** | 9-15, 33-39, 47: domain identity/location/actions/API/collections/types/rendering/numeric helpers                                                           | Stats bugs/bounds, tool variants, integer positions, `Schema.is` validation, item collection responses, stale pickup action removal, and exhaustive display handling were addressed.                                        | Branded entity keys, location ADT and world invariant validation, immutable collection boundary policy, public readonly collection cleanup, null/undefined sentinel cleanup, schema annotations, and helper renames are deferred. | Schema/domain/display unit tests plus `pnpm generated:guard`.                                           |
+| **Partial** | 7-8, 23-30, 42-46, 48, 51-53: CLI/web render purity, UI state/input/popups, view layering, duplicate UI/client/util code, terminal/color/debug/static state | Lifecycle fetches, app-scoped runtimes, revisioned SSE snapshots, stale-revision rejection, key cleanup, popup/focus fixes, deterministic layering, capped messages, and baseline accessibility reduce risk.                | Complete UI state machine/remote-data ADT, shared view-model/UI-core/client extraction, layout/view-model cleanup, supervised runtime/error handling, revision-bearing commands, and user-visible error handling are deferred.    | CLI/web stream/runtime unit tests and API/E2E smoke gates as applicable.                                |
 
 ---
 
@@ -60,10 +66,10 @@ Validation note: this docs-only closing slice does not require code changes. Lat
 - **Recommended pattern:** During development, link workspace packages to source, or make build/codegen of `dist` a required checked prerequisite.
 - **Rationale:** Immutable package boundaries require reproducible inputs.
 
-### 4. Global mutable game state breaks reducer purity
+### 4. Process-wide game state still limits reducer purity
 
-- **Evidence:** `packages/server/src/gameloop.ts:67-76`, `:78-89`, `:129-131`.
-- **Current pattern:** `_state` is a module-level mutable singleton; transitions read/compute/write hidden global state.
+- **Historical evidence:** `packages/server/src/gameloop.ts:67-76`, `:78-89`, `:129-131` at the audited commit.
+- **Current status:** `GameStateStore` now owns the single live state explicitly, and repository lifecycle mutations are serialized. The remaining issue is process-wide ownership plus orchestration that has not yet become a pure replayable command/event reducer.
 - **Recommended pattern:** Model game logic as pure reducers: `step(state, command): Either<GameError, { state; events }>` or similar. Keep mutable ownership in one explicit boundary (request/session store, `Ref`, database, etc.).
 - **Rationale:** Pure transitions are replayable, testable, serializable, and safe from lost updates.
 
@@ -419,10 +425,11 @@ Validation note: this docs-only closing slice does not require code changes. Lat
 - **Recommended pattern:** Remove debug logs from pure helpers; pass logging explicitly at effect/test boundaries.
 - **Rationale:** Pure functions should not write to global console output.
 
-### 54. Docs/CI do not define the intended FP policy
+### 54. Docs now define guardrails, but CI does not enforce the intended FP policy
 
-- **Evidence:** root `README.org` says build may fail; package READMEs are template placeholders; no CI workflow files were found.
-- **Recommended pattern:** Document collection policy, state ownership, generated-file lifecycle, reducer/event architecture, and root install/codegen/check/build/lint/test workflow.
+- **Historical evidence:** root `README.org` said build may fail; package READMEs were placeholders; no CI workflow files were found.
+- **Current status:** repository and package docs now describe state/stream ownership, lifecycle invariants, generated-file rules, and validation gates. A formal collection policy, pure reducer/event architecture, canonical build/codegen workflow, and CI enforcement remain open.
+- **Recommended pattern:** Keep documenting collection policy, state ownership, generated-file lifecycle, reducer/event architecture, and root install/codegen/check/build/lint/test workflow.
 - **Rationale:** Without docs/CI, future work will keep reintroducing mutable and inconsistent patterns.
 
 ---

@@ -33,6 +33,10 @@ const FORBIDDEN_PATTERNS = [
     pattern: /^packages\/domain\/src\/schemas\/[^/]+\.js$/u
   },
   {
+    label: "local subagent runtime output",
+    pattern: /^\.pi-subagents\//u
+  },
+  {
     label: "task graph runtime output",
     pattern: /^\.pi\/dev-suite\/task-graph\/(?:runs|artifacts|plans)\//u
   },

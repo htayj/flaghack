@@ -312,10 +312,18 @@ const captureShowsRoleSelection = (capture: string): boolean =>
 const captureShowsSetupConfirmation = (capture: string): boolean =>
   capture.includes("Is this ok? [yn]")
 
-const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
+const captureShowsOpeningExposition = (capture: string): boolean =>
+  capture.includes("You wake in the mud")
+  && capture.includes("Enter/Space continues")
+
+const ensureDefaultCliPastSetup = async (
+  pane: string,
+  pauseAtOpeningExposition: boolean
+): Promise<void> => {
   const startedAt = Date.now()
   let sentRole = false
   let sentConfirm = false
+  let dismissedOpeningExposition = false
 
   while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
     if (paneDead(pane)) {
@@ -324,6 +332,16 @@ const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
 
     const capture = stripAnsi(capturePane(pane))
     if (captureShowsDefaultCliReady(capture)) return
+
+    if (captureShowsOpeningExposition(capture)) {
+      if (pauseAtOpeningExposition) return
+      if (!dismissedOpeningExposition) {
+        tmux(["send-keys", "-t", pane, "Enter"])
+        dismissedOpeningExposition = true
+      }
+      await delay(POLL_INTERVAL_MS)
+      continue
+    }
 
     if (!sentRole && captureShowsRoleSelection(capture)) {
       tmux(["send-keys", "-t", pane, "v"])
@@ -410,6 +428,10 @@ const run = async () => {
     throw new Error("FLAGHACK_TMUX_WINDOW_WIDTH must be at least 40")
   }
   const autoSetup = booleanFromEnv("FLAGHACK_TMUX_AUTO_SETUP", true)
+  const pauseAtOpeningExposition = booleanFromEnv(
+    "FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION",
+    false
+  )
   const allowCliExit = booleanFromEnv(
     "FLAGHACK_TMUX_ALLOW_CLI_EXIT",
     false
@@ -476,7 +498,10 @@ const run = async () => {
 
     await waitForPaneOutput(cliPane)
     if (autoSetup && cliCommand === DEFAULT_CLI_COMMAND) {
-      await ensureDefaultCliPastSetup(cliPane)
+      await ensureDefaultCliPastSetup(
+        cliPane,
+        pauseAtOpeningExposition
+      )
     }
     if (initialWaitMs > 0) {
       await delay(initialWaitMs)

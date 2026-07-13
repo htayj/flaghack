@@ -69,18 +69,19 @@ Acceptance criteria:
 ### Heavy-rain opening
 
 A fresh game begins in persistent heavy rain at an authored mud puddle one
-tile off the campground road. After role setup completes, emit exactly one
-plain gameplay narration: the player wakes naked and face down in the puddle,
-rain hammers around them, and they cannot remember how they arrived. The
-inventory is empty. The prose gives no objective, quest, prescribed
+tile off the campground road. After role setup completes, present a blocking,
+dismissible exposition pane: the player wakes naked and face down in the
+puddle, rain hammers around them, and they cannot remember how they arrived.
+The inventory is empty. The prose gives no objective, quest, prescribed
 destination, or explanation of what happened.
 
-The narration is a semantic gameplay event rather than an untracked string.
-Repeated views and confirmations do not append it again. At the restore
-boundary, remove only the retained arrival-narration event before publishing
-the restored snapshot, leaving other history and the monotonic event ID
-untouched. This prevents Charm's retained-history behavior from replaying the
-opening on a reconnect.
+The pane is driven by a semantic gameplay event rather than an untracked
+client string. Repeated views and confirmations do not append or reopen it.
+It blocks gameplay input until Enter, Space, or Escape dismisses it. At the
+restore boundary, remove only the retained arrival-narration event before
+publishing the restored snapshot, leaving other history and the monotonic
+event ID untouched. This prevents the opening from replaying on a restore or
+completed-game reconnect.
 
 Heavy rain is authoritative server state. Project it to the client only while
 the player is on level zero; the dungeon must not display surface weather.
@@ -100,6 +101,9 @@ Acceptance criteria:
   road; the initial inventory is empty.
 - Fresh setup appends one and only one arrival-narration event with all four
   facts (naked, face down in mud, heavy rain, no memory) and no objective text.
+- Charm presents that event in a blocking opening pane, swallows gameplay
+  input until dismissal, and does not reopen it for duplicate snapshots or a
+  completed-game reconnect.
 - Legacy/partial campground state hydrates to heavy rain, and only a level-zero
   client view exposes that weather.
 - Outdoor, tent-roof, and arrival-gate ambience use the correct deterministic

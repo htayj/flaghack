@@ -5,11 +5,19 @@ const noTrackerHiddenDestinationsOrStatusAddress = String
 
 process.env.FLAGHACK_TMUX_LABEL ??= "campground"
 process.env.FLAGHACK_TMUX_WINDOW_WIDTH ??= "240"
+process.env.FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION = "true"
 process.env.FLAGHACK_TMUX_STEPS = JSON.stringify([
   {
     expect: String
-      .raw`You wake naked and face down in a puddle of mud just off the road\.[\s\S]*Rain hammers down around you,[\s\S]*cannot[\s\S]*remember how you got here\.[\s\S]*\(empty\)[\s\S]*;;;@G[\s\S]*Weather: heavy rain`,
+      .raw`You wake in the mud[\s\S]*wake naked[\s\S]*face down in a puddle of mud[\s\S]*Rain hammers down[\s\S]*cannot remember how you got[\s\S]*here\.[\s\S]*You are carrying nothing\.[\s\S]*Enter/Space continues`,
     keys: [],
+    label: "opening-exposition",
+    reject: noTrackerHiddenDestinationsOrStatusAddress
+  },
+  {
+    expect: String
+      .raw`\(empty\)[\s\S]*;;;@G[\s\S]*Weather: heavy rain`,
+    keys: ["Enter"],
     label: "brutal-arrival",
     reject: noTrackerHiddenDestinationsOrStatusAddress
   },

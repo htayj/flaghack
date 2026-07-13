@@ -136,6 +136,7 @@ type apiClient struct {
 
 type gameplayEvent struct {
 	ID               int    `json:"id"`
+	Kind             string `json:"kind,omitempty"`
 	Message          string `json:"message"`
 	InterruptsTravel *bool  `json:"interruptsTravel,omitempty"`
 }
@@ -356,6 +357,7 @@ type model struct {
 	setup                   setupState
 	campground              campgroundView
 	messages                []string
+	openingExposition       string
 	debugMessages           bool
 	pendingMovementPrefix   string
 	pendingDoorAction       string
@@ -385,14 +387,15 @@ type model struct {
 }
 
 var (
-	mutedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
-	messageStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
-	sidebarStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(20)
-	statusStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(118)
-	popupStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(34)
-	setupStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(1, 2).Width(34)
-	selectedStyle = lipgloss.NewStyle().Reverse(true)
+	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	helpStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	messageStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+	sidebarStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(20)
+	statusStyle     = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1).Width(118)
+	popupStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(34)
+	setupStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(1, 2).Width(34)
+	expositionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(1, 2)
+	selectedStyle   = lipgloss.NewStyle().Reverse(true)
 )
 
 func main() {
@@ -675,6 +678,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSetupKey(input)
 	}
 	if m.pendingTerminalAction {
+		return m, nil
+	}
+	if strings.TrimSpace(m.openingExposition) != "" {
+		switch input {
+		case "enter", " ", "escape":
+			m.openingExposition = ""
+		}
 		return m, nil
 	}
 	if m.cancelActiveAutoMove() {
@@ -1317,6 +1327,7 @@ func (m *model) cancelActiveAutoMove() bool {
 }
 
 func (m *model) applySnapshot(snap snapshot) {
+	setupWasComplete := m.setup.complete()
 	if snap.world != nil {
 		m.world = snap.world
 	}
@@ -1333,15 +1344,24 @@ func (m *model) applySnapshot(snap snapshot) {
 	if !(m.setup.Phase == "complete" && !nextSetup.complete()) {
 		m.setup = nextSetup
 	}
-	m.applyGameplayEvents(snap.gameplayEvents)
+	m.applyGameplayEvents(
+		snap.gameplayEvents,
+		!setupWasComplete && m.setup.complete(),
+	)
 }
 
-func (m *model) applyGameplayEvents(events []gameplayEvent) {
+func (m *model) applyGameplayEvents(events []gameplayEvent, setupJustCompleted bool) {
 	for _, event := range events {
 		if event.ID <= m.lastGameplayEventID {
 			continue
 		}
-		m.addMessage(event.Message)
+		if event.Kind == "arrival-narration" {
+			if setupJustCompleted && strings.TrimSpace(event.Message) != "" {
+				m.openingExposition = event.Message
+			}
+		} else {
+			m.addMessage(event.Message)
+		}
 		m.lastGameplayEventID = event.ID
 	}
 }
@@ -1370,6 +1390,11 @@ func (m model) View() string {
 		if m.needsSetupScreen() {
 			return m.perf.measureString("frontend.component", "setup", m.setup.Phase, "", map[string]int{"roleCount": len(m.roles)}, func() string {
 				return renderSetupScreen(m.setup, m.roles, m.width, m.height, m.setupPending, m.messages)
+			})
+		}
+		if strings.TrimSpace(m.openingExposition) != "" {
+			return m.perf.measureString("frontend.component", "opening_exposition", "", "", nil, func() string {
+				return renderOpeningExposition(m.openingExposition, m.width, m.height)
 			})
 		}
 
@@ -1700,6 +1725,26 @@ func renderSetupScreen(setup setupState, roles []role, width int, height int, pe
 	if len(messages) > 0 {
 		content = lipgloss.JoinVertical(lipgloss.Left, content, renderMessages(messages))
 	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func renderOpeningExposition(message string, width int, height int) string {
+	if width <= 0 {
+		width = 120
+	}
+	if height <= 0 {
+		height = 30
+	}
+	paneWidth := min(72, max(34, width-4))
+	content := expositionStyle.Width(paneWidth).Render(strings.Join([]string{
+		lipgloss.NewStyle().Bold(true).Render("You wake in the mud"),
+		"",
+		strings.TrimSpace(message),
+		"",
+		"You are carrying nothing.",
+		"",
+		mutedStyle.Render("Enter/Space continues · Esc closes"),
+	}, "\n"))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
 

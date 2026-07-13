@@ -85,12 +85,13 @@ The campground implementation is split by responsibility:
 Fresh games place the player naked and inventory-free on the authored mud
 puddle beside the road. Confirming setup appends exactly one semantic arrival
 narration: the player wakes face down in mud, hears the rain, and remembers
-nothing. It states no quest or objective. Restore removes only that retained
-arrival event before publishing a new client snapshot, while preserving all
-other event history and the monotonic next-event ID, so a reconnect cannot
-replay the opening prose. World generation places at least 90 percent of the
-surface population beneath tents or roadside awnings during the storm,
-leaving only a few travelers and patrols exposed.
+nothing. It states no quest or objective. Charm presents that event as a
+blocking, dismissible opening pane. Restore removes only the retained arrival
+event before publishing a new client snapshot, while preserving all other
+event history and the monotonic next-event ID, so a reconnect cannot replay
+the opening prose. World generation places at least 90 percent of the surface
+population beneath tents or roadside awnings during the storm, leaving only a
+few travelers and patrols exposed.
 
 The temple stairs lazily merge the persistent first dungeon into the live
 world. Its return stairs, exact dust-caked flag, tunnel-hippie greetings,

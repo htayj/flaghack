@@ -164,10 +164,15 @@ const captureShowsRoleSelection = (capture: string): boolean =>
 const captureShowsSetupConfirmation = (capture: string): boolean =>
   capture.includes("Is this ok? [yn]")
 
+const captureShowsOpeningExposition = (capture: string): boolean =>
+  capture.includes("You wake in the mud")
+  && capture.includes("Enter/Space continues")
+
 const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
   const startedAt = Date.now()
   let sentRole = false
   let sentConfirm = false
+  let dismissedOpeningExposition = false
 
   while (Date.now() - startedAt < CLI_WAIT_TIMEOUT_MS) {
     if (paneDead(pane)) {
@@ -178,6 +183,16 @@ const ensureDefaultCliPastSetup = async (pane: string): Promise<void> => {
 
     const capture = stripAnsi(capturePane(pane))
     if (captureShowsDefaultCliReady(capture)) return
+
+    if (
+      !dismissedOpeningExposition
+      && captureShowsOpeningExposition(capture)
+    ) {
+      tmux(["send-keys", "-t", pane, "Enter"])
+      dismissedOpeningExposition = true
+      await delay(POLL_INTERVAL_MS)
+      continue
+    }
 
     if (!sentRole && captureShowsRoleSelection(capture)) {
       tmux(["send-keys", "-t", pane, "v"])

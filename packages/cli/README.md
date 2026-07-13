@@ -22,7 +22,8 @@ HTTP and revisioned server-sent events.
 ## Player controls
 
 A fresh game first prompts for a role and confirmation; `virgin` is the only
-current role. During play:
+current role. Confirming a fresh game opens the wake-up exposition pane;
+Enter, Space, or Escape dismisses it before gameplay begins. During play:
 
 - `h/j/k/l/y/u/b/n` move, `.` rests, `;` looks, and `_` travels. Shift,
   Control, and `g`/`G`/`m`/`M` prefixes provide repeated/no-pickup movement.

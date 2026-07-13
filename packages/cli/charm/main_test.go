@@ -14,6 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const testOpeningExposition = "You wake naked and face down in a puddle of mud just off the road. Rain hammers down around you, and you cannot remember how you got here."
+
 func TestParseMovementCommand(t *testing.T) {
 	tests := []struct {
 		input string
@@ -135,7 +137,7 @@ func TestReadClientStateSSEParsesRevisionedSnapshots(t *testing.T) {
 	events := make(chan clientStateStreamResult, 1)
 	readClientStateSSE(
 		t.Context(),
-		strings.NewReader("id: 1\nevent: client-state\ndata: {\"revision\":1,\"source\":\"action\",\"clientState\":{\"world\":[[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"},\"gameplayEvents\":[{\"id\":7,\"message\":\"You hear distant laughter.\",\"interruptsTravel\":false}]}}\n\n"),
+		strings.NewReader("id: 1\nevent: client-state\ndata: {\"revision\":1,\"source\":\"action\",\"clientState\":{\"world\":[[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"},\"gameplayEvents\":[{\"id\":7,\"kind\":\"arrival-narration\",\"message\":\"You hear distant laughter.\",\"interruptsTravel\":false}]}}\n\n"),
 		events,
 	)
 	result, ok := <-events
@@ -157,6 +159,9 @@ func TestReadClientStateSSEParsesRevisionedSnapshots(t *testing.T) {
 	}
 	if len(snap.gameplayEvents) != 1 || snap.gameplayEvents[0].ID != 7 || snap.gameplayEvents[0].Message != "You hear distant laughter." {
 		t.Fatalf("snapshot gameplay events = %#v", snap.gameplayEvents)
+	}
+	if snap.gameplayEvents[0].Kind != "arrival-narration" {
+		t.Fatalf("snapshot gameplay event kind = %q, want arrival-narration", snap.gameplayEvents[0].Kind)
 	}
 	if snap.gameplayEvents[0].InterruptsTravel == nil || *snap.gameplayEvents[0].InterruptsTravel {
 		t.Fatalf("snapshot ambient event lost explicit noninterrupting flag: %#v", snap.gameplayEvents)
@@ -931,13 +936,69 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 
 	m.setupRequestID = 7
 	m.setupPending = true
-	next, _ = m.Update(setupDoneMsg{requestID: 7, snapshot: snapshot{setup: setupState{Phase: "complete", SelectedRoleID: "virgin"}, roles: m.roles, world: m.world, inventory: []entity{}}})
+	completion := snapshot{
+		setup:     setupState{Phase: "complete", SelectedRoleID: "virgin"},
+		roles:     m.roles,
+		world:     m.world,
+		inventory: []entity{},
+		gameplayEvents: []gameplayEvent{{
+			ID: 1, Kind: "arrival-narration", Message: testOpeningExposition,
+		}},
+	}
+	next, _ = m.Update(setupDoneMsg{requestID: 7, snapshot: completion})
 	m = next.(model)
 	if !m.setup.complete() {
 		t.Fatalf("setup completion response did not enter normal play: %#v", m.setup)
 	}
-	if view := m.View(); !strings.Contains(view, "Flag Hack Charmbracelet UI") {
-		t.Fatalf("complete setup should render normal play view: %q", view)
+	if m.openingExposition != testOpeningExposition {
+		t.Fatalf("opening exposition = %q, want arrival narration", m.openingExposition)
+	}
+	view := m.View()
+	for _, expected := range []string{
+		"You wake in the mud",
+		"wake naked and face down in a puddle of mud",
+		"Rain hammers down",
+		"cannot remember how you got",
+		"here.",
+		"You are carrying nothing",
+		"Enter/Space continues",
+	} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("opening exposition missing %q: %q", expected, view)
+		}
+	}
+	if strings.Contains(view, "Flag Hack Charmbracelet UI") || len(m.messages) != 0 {
+		t.Fatalf("opening exposition leaked normal play or duplicated narration: view=%q messages=%#v", view, m.messages)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('l'))
+	if cmd != nil {
+		t.Fatalf("movement from opening exposition returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	player, ok = findPlayer(m.world)
+	if !ok || player.At != (pos{X: 0, Y: 0, Z: 0}) || m.openingExposition == "" {
+		t.Fatalf("movement escaped exposition or moved player: player=%#v exposition=%q", player, m.openingExposition)
+	}
+
+	next, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatalf("exposition dismissal returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.openingExposition != "" || !strings.Contains(m.View(), "Flag Hack Charmbracelet UI") {
+		t.Fatalf("dismissed exposition did not reveal normal play: exposition=%q view=%q", m.openingExposition, m.View())
+	}
+
+	m.applySnapshot(completion)
+	if m.openingExposition != "" || m.lastGameplayEventID != 1 {
+		t.Fatalf("duplicate completion replayed exposition: exposition=%q eventID=%d", m.openingExposition, m.lastGameplayEventID)
+	}
+
+	reconnected := newModel()
+	reconnected.applySnapshot(completion)
+	if reconnected.openingExposition != "" || reconnected.lastGameplayEventID != 1 {
+		t.Fatalf("completed-game reconnect opened exposition: exposition=%q eventID=%d", reconnected.openingExposition, reconnected.lastGameplayEventID)
 	}
 
 	next, _ = m.Update(setupDoneMsg{requestID: 6, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles, world: []entity{{Key: "stale-player", Tag: "player", In: "world", At: pos{X: 9, Y: 9, Z: 0}}}, inventory: []entity{}}})

@@ -142,6 +142,7 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 - `FLAGHACK_TMUX_EXPECT`: optional JavaScript regex source that must match the captured CLI output.
 - `FLAGHACK_TMUX_REJECT`: optional JavaScript regex source that must not match the captured CLI output.
 - `FLAGHACK_TMUX_AUTO_SETUP`: optional boolean for the default Charm CLI; defaults to `true` so generic feature gates automatically pass the role-selection prompt. Set to `false` when the feature being verified is the setup prompt itself.
+- `FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION`: optional boolean; when true, automatic setup stops at the fresh-game exposition pane so staged checks can inspect it. Otherwise the runner dismisses the pane with Enter before continuing.
 - `FLAGHACK_TMUX_ALLOW_CLI_EXIT`: optional boolean for save/quit scenarios where a successful terminal lifecycle is expected to close the CLI pane.
 - `FLAGHACK_GAME_FIXTURE=door` or `FLAGHACK_DOOR_FIXTURE=1`: start the server with the deterministic door fixture for door interaction scenarios.
 - `FLAGHACK_TMUX_KEY_WAIT_MS` and `FLAGHACK_TMUX_FINAL_WAIT_MS`: optional timing controls.
@@ -154,7 +155,7 @@ Campground terminal verification has a focused bot-port gate:
 pnpm test:feature:tmux:campground:bot
 ```
 
-It uses one disposable server and Charm session to verify the one-time brutal-arrival narration, empty inventory, visible mud-puddle spawn beside the gate, heavy-rain projection, and the absence of a current-address readout in playing status. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
+It uses one disposable server and Charm session to verify the one-time blocking brutal-arrival exposition, its dismissal into an empty inventory and visible mud-puddle spawn beside the gate, heavy-rain projection, and the absence of a current-address readout in playing status. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
 
 Loot-specific terminal verification has a focused bot-port gate:
 

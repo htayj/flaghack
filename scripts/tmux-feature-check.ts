@@ -18,6 +18,7 @@ const CLI_WAIT_TIMEOUT_MS = 15_000
 const POLL_INTERVAL_MS = 250
 const DEFAULT_KEY_WAIT_MS = 500
 const DEFAULT_WINDOW_WIDTH = 120
+const DEFAULT_WINDOW_HEIGHT = 40
 
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -124,6 +125,51 @@ const paneDead = (pane: string) =>
 const capturePane = (pane: string) =>
   tmux(["capture-pane", "-p", "-t", pane, "-S", "-200"])
 
+const capturePaneQuiet = (pane: string): string | undefined => {
+  try {
+    return capturePane(pane)
+  } catch {
+    return undefined
+  }
+}
+
+type PaneDimensions = {
+  readonly height: number
+  readonly width: number
+}
+
+const paneDimensions = (pane: string): PaneDimensions => {
+  const output = tmux([
+    "display-message",
+    "-p",
+    "-t",
+    pane,
+    "#{pane_width}\t#{pane_height}"
+  ]).trim()
+  const [rawWidth, rawHeight] = output.split("\t")
+  const width = Number(rawWidth)
+  const height = Number(rawHeight)
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new Error(`could not read CLI pane dimensions from ${output}`)
+  }
+  return { height, width }
+}
+
+const assertPaneDimensions = (
+  pane: string,
+  expected: PaneDimensions
+): PaneDimensions => {
+  const actual = paneDimensions(pane)
+  if (
+    actual.width !== expected.width || actual.height !== expected.height
+  ) {
+    throw new Error(
+      `CLI pane is ${actual.width}x${actual.height}; expected ${expected.width}x${expected.height}`
+    )
+  }
+  return actual
+}
+
 const parseJsonArrayEnv = (
   name: string,
   defaultValue: ReadonlyArray<string>
@@ -159,6 +205,18 @@ const numberFromEnv = (name: string, defaultValue: number): number => {
   }
 
   return parsed
+}
+
+const dimensionFromEnv = (
+  name: string,
+  defaultValue: number,
+  minimum: number
+): number => {
+  const dimension = numberFromEnv(name, defaultValue)
+  if (!Number.isInteger(dimension) || dimension < minimum) {
+    throw new Error(`${name} must be an integer of at least ${minimum}`)
+  }
+  return dimension
 }
 
 const booleanFromEnv = (name: string, defaultValue: boolean): boolean => {
@@ -420,13 +478,16 @@ const run = async () => {
   )
   const initialWaitMs = numberFromEnv("FLAGHACK_TMUX_INITIAL_WAIT_MS", 0)
   const finalWaitMs = numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
-  const windowWidth = numberFromEnv(
+  const windowWidth = dimensionFromEnv(
     "FLAGHACK_TMUX_WINDOW_WIDTH",
-    DEFAULT_WINDOW_WIDTH
+    DEFAULT_WINDOW_WIDTH,
+    40
   )
-  if (windowWidth < 40) {
-    throw new Error("FLAGHACK_TMUX_WINDOW_WIDTH must be at least 40")
-  }
+  const windowHeight = dimensionFromEnv(
+    "FLAGHACK_TMUX_WINDOW_HEIGHT",
+    DEFAULT_WINDOW_HEIGHT,
+    12
+  )
   const autoSetup = booleanFromEnv("FLAGHACK_TMUX_AUTO_SETUP", true)
   const pauseAtOpeningExposition = booleanFromEnv(
     "FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION",
@@ -445,6 +506,7 @@ const run = async () => {
     path.join(tmpdir(), "flag-hack-tmux-feature-")
   )
   const capturePath = path.join(artifactDir, "cli-pane.txt")
+  const dimensionsPath = path.join(artifactDir, "cli-pane-dimensions.json")
   const saveFilePath = path.join(artifactDir, "save.json")
   let sessionCreated = false
   let cliPane: string | undefined
@@ -461,7 +523,7 @@ const run = async () => {
       "-x",
       String(windowWidth),
       "-y",
-      "40",
+      String(windowHeight),
       `${perfEnvAssignments()} FLAGHACK_PORT=${
         String(PORT)
       } FLAGHACK_SAVE_PATH=${
@@ -479,15 +541,13 @@ const run = async () => {
 
     await waitForApiReady(serverPane)
 
-    if (allowCliExit) {
-      tmux(["set-window-option", "-t", session, "remain-on-exit", "on"])
-    }
-
     cliPane = tmux([
-      "split-window",
-      "-h",
+      "new-window",
+      "-d",
       "-t",
       session,
+      "-n",
+      "cli",
       "-c",
       process.cwd(),
       "-P",
@@ -495,6 +555,34 @@ const run = async () => {
       "#{pane_id}",
       cliCommandWithApiUrl
     ]).trim()
+
+    if (allowCliExit) {
+      tmux([
+        "set-window-option",
+        "-t",
+        cliPane,
+        "remain-on-exit",
+        "on"
+      ])
+    }
+
+    tmux([
+      "resize-window",
+      "-t",
+      cliPane,
+      "-x",
+      String(windowWidth),
+      "-y",
+      String(windowHeight)
+    ])
+    const dimensions = assertPaneDimensions(cliPane, {
+      height: windowHeight,
+      width: windowWidth
+    })
+    await writeFile(
+      dimensionsPath,
+      `${JSON.stringify(dimensions, null, 2)}\n`
+    )
 
     await waitForPaneOutput(cliPane)
     if (autoSetup && cliCommand === DEFAULT_CLI_COMMAND) {
@@ -544,7 +632,7 @@ const run = async () => {
         })))
       }`
     console.log(
-      `tmux feature check passed with ${tmuxVersion}; ${inputSummary}; capture=${capturePath}${
+      `tmux feature check passed with ${tmuxVersion}; pane=${dimensions.width}x${dimensions.height}; ${inputSummary}; capture=${capturePath}; dimensions=${dimensionsPath}${
         process.env.FLAGHACK_PERF_FILE === undefined
           ? ""
           : `; perf=${process.env.FLAGHACK_PERF_FILE}`
@@ -552,17 +640,25 @@ const run = async () => {
     )
   } catch (error) {
     if (cliPane !== undefined) {
-      await writeFile(capturePath, capturePane(cliPane))
-      console.error(`CLI capture written to ${capturePath}`)
+      const failedCapture = capturePaneQuiet(cliPane)
+      if (failedCapture !== undefined) {
+        await writeFile(capturePath, failedCapture)
+        console.error(`CLI capture written to ${capturePath}`)
+      }
     }
     if (serverPane !== undefined) {
-      console.error("--- server pane tail ---")
-      console.error(capturePane(serverPane))
+      const serverCapture = capturePaneQuiet(serverPane)
+      if (serverCapture !== undefined) {
+        console.error("--- server pane tail ---")
+        console.error(serverCapture)
+      }
     }
     throw error
   } finally {
     if (sessionCreated) {
-      tmuxQuiet(["send-keys", "-t", session, "C-c"])
+      if (serverPane !== undefined) {
+        tmuxQuiet(["send-keys", "-t", serverPane, "C-c"])
+      }
       await delay(500)
       tmuxQuiet(["kill-session", "-t", session])
     }

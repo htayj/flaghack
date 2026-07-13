@@ -18,6 +18,28 @@ func benchmarkWorld() []entity {
 	return world
 }
 
+func benchmarkLayeredWorld() []entity {
+	world := benchmarkWorld()
+	for index := 0; index < 140; index++ {
+		x := (index*17 + 3) % boardWidth
+		y := (index*11 + 2) % boardHeight
+		position := pos{X: x, Y: y, Z: 0}
+		switch index % 5 {
+		case 0:
+			world = append(world, entity{Key: fmt.Sprintf("tent-%d", index), Tag: "tent", In: "world", At: position})
+		case 1:
+			world = append(world, entity{Key: fmt.Sprintf("wall-%d", index), Tag: "tent-wall", Variant: "horizontal", In: "world", At: position})
+		case 2:
+			world = append(world, entity{Key: fmt.Sprintf("prop-%d", index), Tag: "camp-prop", Kind: "lantern", In: "world", At: position})
+		case 3:
+			world = append(world, entity{Key: fmt.Sprintf("item-%d", index), Tag: "beer", In: "world", At: position})
+		case 4:
+			world = append(world, entity{Key: fmt.Sprintf("hippie-%d", index), Tag: "hippie", In: "world", At: position})
+		}
+	}
+	return world
+}
+
 func BenchmarkDrawWorld(b *testing.B) {
 	world := benchmarkWorld()
 	for b.Loop() {
@@ -32,11 +54,39 @@ func BenchmarkRenderBoard(b *testing.B) {
 	}
 }
 
+func BenchmarkDrawWorldLayered(b *testing.B) {
+	world := benchmarkLayeredWorld()
+	for b.Loop() {
+		_ = drawWorld(world, nil)
+	}
+}
+
+func BenchmarkRenderBoardLayered(b *testing.B) {
+	world := benchmarkLayeredWorld()
+	for b.Loop() {
+		_ = renderBoard(world, nil)
+	}
+}
+
 func BenchmarkView(b *testing.B) {
 	m := newModel()
 	m.world = benchmarkWorld()
 	m.inventory = []entity{{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 10, Y: 10, Z: 0}}}
 	m.messages = []string{"hello", "world"}
+	for b.Loop() {
+		_ = m.View()
+	}
+}
+
+func BenchmarkResponsiveCampgroundView(b *testing.B) {
+	m := newModel()
+	m.width = 120
+	m.height = 40
+	m.setup = setupState{Phase: "complete"}
+	m.world = benchmarkLayeredWorld()
+	m.inventory = []entity{{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 10, Y: 10, Z: 0}}}
+	m.messages = []string{"Rain rattles against the tents.", "Someone laughs nearby."}
+	m.campground = campgroundView{Weather: &campgroundWeather{Condition: "heavy-rain"}}
 	for b.Loop() {
 		_ = m.View()
 	}

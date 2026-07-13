@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -30,6 +31,14 @@ const (
 	clientStateStreamPath      = "/client-state/stream"
 	clientStateStreamEventName = "client-state"
 	travelWorldRefreshInterval = 24
+	minTerminalWidth           = 40
+	minTerminalHeight          = 14
+	richLayoutWidth            = boardWidth + 22
+	defaultTerminalWidth       = 120
+	defaultTerminalHeight      = 40
+	maxQueuedActions           = 32
+	streamReconnectBaseDelay   = 100 * time.Millisecond
+	streamReconnectMaxDelay    = 2 * time.Second
 )
 
 type pos struct {
@@ -240,15 +249,49 @@ const (
 	popupStageItems  popupStage = "items"
 )
 
+type popupLoadState string
+
+const (
+	popupLoadReady   popupLoadState = ""
+	popupLoadLoading popupLoadState = "loading"
+	popupLoadError   popupLoadState = "error"
+)
+
+type popupLoadKind string
+
+const (
+	popupLoadPickup         popupLoadKind = "pickup"
+	popupLoadLootContainers popupLoadKind = "loot-containers"
+	popupLoadLootItems      popupLoadKind = "loot-items"
+)
+
 type popupState struct {
 	kind         popupKind
 	title        string
 	containerKey string
 	mode         lootMode
 	stage        popupStage
+	page         int
 	items        []entity
 	putItems     []entity
 	marked       map[string]bool
+	loadState    popupLoadState
+	loadKind     popupLoadKind
+	loadError    string
+}
+
+type layoutMetrics struct {
+	width             int
+	height            int
+	boardWidth        int
+	boardHeight       int
+	eventHeight       int
+	helpHeight        int
+	statusHeight      int
+	sidebarWidth      int
+	showSidebar       bool
+	tooSmall          bool
+	popupItemPageSize int
 }
 
 type landmarkPopupState struct {
@@ -270,6 +313,8 @@ type autoRunSnapshot struct {
 type stateLoadedMsg struct {
 	snapshot         snapshot
 	err              error
+	generation       int
+	mutationSerial   int
 	perfTraceID      string
 	responseReceived time.Time
 }
@@ -278,9 +323,14 @@ type clientStateStreamMsg struct {
 	stream           *clientStateStream
 	event            clientStateStreamEvent
 	err              error
+	generation       int
 	initial          bool
 	perfTraceID      string
 	responseReceived time.Time
+}
+
+type streamReconnectMsg struct {
+	generation int
 }
 
 type pickupLoadedMsg struct {
@@ -312,9 +362,31 @@ type actionDoneMsg struct {
 	err              error
 	caseName         string
 	perfTraceID      string
+	requestID        int
 	responseReceived time.Time
 	streamed         bool
 }
+
+type activeActionState struct {
+	requestID int
+	streamed  bool
+}
+
+type activeAutoState struct {
+	id              int
+	cancel          chan struct{}
+	mutationSerial  int
+	cancelRequested bool
+	streamed        bool
+}
+
+type terminalIntent string
+
+const (
+	terminalIntentNone terminalIntent = ""
+	terminalIntentSave terminalIntent = "save"
+	terminalIntentQuit terminalIntent = "quit"
+)
 
 type setupDoneMsg struct {
 	snapshot         snapshot
@@ -322,6 +394,8 @@ type setupDoneMsg struct {
 	caseName         string
 	perfTraceID      string
 	requestID        int
+	generation       int
+	mutationSerial   int
 	responseReceived time.Time
 }
 
@@ -347,6 +421,7 @@ type autoDoneMsg struct {
 	caseName         string
 	perfTraceID      string
 	responseReceived time.Time
+	streamed         bool
 }
 
 type model struct {
@@ -370,20 +445,30 @@ type model struct {
 	popup                   *popupState
 	landmarkPopup           *landmarkPopupState
 	overviewOpen            bool
+	helpOpen                bool
 	pickupRequestID         int
 	lootRequestID           int
 	mutationSerial          int
+	actionRequestID         int
+	activeAction            *activeActionState
+	queuedActions           []action
+	terminalIntent          terminalIntent
 	setupRequestID          int
 	setupPending            bool
-	autoCancel              chan struct{}
+	activeAuto              *activeAutoState
 	autoID                  int
 	width                   int
 	height                  int
 	perf                    *perfRecorder
 	stream                  *clientStateStream
 	streamActive            bool
+	streamConnecting        bool
+	streamGeneration        int
+	streamRetryAttempt      int
+	streamRetryScheduled    bool
 	lastStreamRevision      int
 	lastGameplayEventID     int
+	inventoryPage           int
 }
 
 var (
@@ -397,6 +482,79 @@ var (
 	expositionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(1, 2)
 	selectedStyle   = lipgloss.NewStyle().Reverse(true)
 )
+
+func layoutForSize(width int, height int) layoutMetrics {
+	if width <= 0 {
+		width = defaultTerminalWidth
+	}
+	if height <= 0 {
+		height = defaultTerminalHeight
+	}
+	layout := layoutMetrics{
+		width:        width,
+		height:       height,
+		helpHeight:   1,
+		statusHeight: 4,
+		tooSmall:     width < minTerminalWidth || height < minTerminalHeight,
+	}
+	if layout.tooSmall {
+		return layout
+	}
+
+	layout.showSidebar = width >= richLayoutWidth
+	if layout.showSidebar {
+		layout.sidebarWidth = 22
+	}
+	layout.boardWidth = min(boardWidth, width-layout.sidebarWidth)
+	switch {
+	case height >= 38:
+		layout.eventHeight = 10
+	case height >= 30:
+		layout.eventHeight = 7
+	default:
+		layout.eventHeight = 4
+	}
+	layout.boardHeight = min(
+		boardHeight,
+		height-layout.eventHeight-layout.statusHeight-layout.helpHeight,
+	)
+	if layout.boardHeight < 6 {
+		layout.eventHeight = max(
+			3,
+			height-layout.statusHeight-layout.helpHeight-6,
+		)
+		layout.boardHeight = max(
+			1,
+			height-layout.eventHeight-layout.statusHeight-layout.helpHeight,
+		)
+	}
+	layout.popupItemPageSize = min(
+		len(itemLetterAlphabet),
+		max(1, layout.boardHeight-7),
+	)
+	return layout
+}
+
+func renderTooSmall(layout layoutMetrics) string {
+	message := strings.Join([]string{
+		"Flag Hack",
+		"terminal too small",
+		fmt.Sprintf("need %dx%d", minTerminalWidth, minTerminalHeight),
+	}, "\n")
+	content := lipgloss.NewStyle().
+		Width(max(1, layout.width-2)).
+		MaxWidth(layout.width).
+		MaxHeight(layout.height).
+		Align(lipgloss.Center).
+		Render(message)
+	return lipgloss.Place(
+		layout.width,
+		layout.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		content,
+	)
+}
 
 func main() {
 	program := tea.NewProgram(newModel(), tea.WithAltScreen())
@@ -426,6 +584,8 @@ func newModelWithOptions(options clientOptions) model {
 		lastStreamRevision: -1,
 		messages:           []string{},
 		perf:               perf,
+		streamConnecting:   true,
+		streamGeneration:   1,
 	}
 }
 
@@ -477,7 +637,7 @@ func truthyFlagValue(value string) bool {
 }
 
 func (m model) Init() tea.Cmd {
-	return openClientStateStreamCmd(m.client)
+	return openClientStateStreamCmd(m.client, m.streamGeneration)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -487,44 +647,70 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case stateLoadedMsg:
+		if msg.generation != m.streamGeneration || m.streamActive || msg.mutationSerial != m.mutationSerial {
+			return m, nil
+		}
 		if msg.err != nil {
-			m.addMessage("initial load failed: " + msg.err.Error())
+			m.addDebugMessage("state refresh failed: " + msg.err.Error())
 			return m, nil
 		}
 		m.applySnapshot(msg.snapshot)
-		m.perf.markResponseReceived("loadState", "initial", msg.perfTraceID, msg.responseReceived)
+		m.perf.markResponseReceived("loadState", "fallback", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case clientStateStreamMsg:
+		if msg.generation != m.streamGeneration {
+			if msg.stream != nil && msg.stream != m.stream {
+				msg.stream.cancel()
+			}
+			return m, nil
+		}
+		if !msg.initial && msg.stream != nil && m.stream != nil && msg.stream != m.stream {
+			msg.stream.cancel()
+			return m, nil
+		}
 		if msg.err != nil {
 			if msg.stream != nil {
 				msg.stream.cancel()
+			} else if m.stream != nil {
+				m.stream.cancel()
 			}
 			m.stream = nil
 			m.streamActive = false
+			m.streamConnecting = false
 			if msg.initial {
 				m.addDebugMessage("client-state stream unavailable; falling back to polling")
-				return m, loadStateCmd(m.client)
+			} else {
+				m.addDebugMessage("client-state stream stopped: " + msg.err.Error())
 			}
-			m.addDebugMessage("client-state stream stopped: " + msg.err.Error())
 			if m.pendingTerminalAction {
 				return m, nil
 			}
-			return m, loadStateCmd(m.client)
+			return m, m.streamRecoveryCmd(msg.generation)
 		}
 		if msg.stream != nil {
+			if m.stream != nil && m.stream != msg.stream {
+				m.stream.cancel()
+			}
 			m.stream = msg.stream
 			m.streamActive = true
+			m.streamConnecting = false
+			m.streamRetryAttempt = 0
+			m.streamRetryScheduled = false
+		}
+		if msg.initial {
+			m.lastStreamRevision = -1
 		}
 		if msg.event.Revision > m.lastStreamRevision {
-			m.lastStreamRevision = msg.event.Revision
 			if msg.event.Terminal != "" {
+				m.lastStreamRevision = msg.event.Revision
 				m.pendingTerminalAction = true
-				m.stopActiveAutoMove()
-				if msg.stream != nil {
-					msg.stream.cancel()
+				m.requestAutoCancel()
+				if m.stream != nil {
+					m.stream.cancel()
 				}
 				m.stream = nil
 				m.streamActive = false
+				m.streamRetryScheduled = false
 				if msg.event.Terminal == "save" {
 					m.addMessage("saved")
 				} else {
@@ -534,14 +720,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			snap, err := msg.event.snapshot()
 			if err != nil {
-				if msg.stream != nil {
-					msg.stream.cancel()
+				if m.stream != nil {
+					m.stream.cancel()
 				}
 				m.stream = nil
 				m.streamActive = false
-				m.addMessage("stream update failed: " + err.Error())
-				return m, loadStateCmd(m.client)
+				m.streamConnecting = false
+				m.addDebugMessage("stream update failed: " + err.Error())
+				return m, m.streamRecoveryCmd(msg.generation)
 			}
+			m.lastStreamRevision = msg.event.Revision
 			m.applySnapshot(snap)
 			if msg.event.Source == "setup" {
 				m.setupPending = false
@@ -550,24 +738,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.stream == nil {
 			return m, nil
 		}
-		return m, nextClientStateStreamEventCmd(m.stream)
+		return m, nextClientStateStreamEventCmd(m.stream, msg.generation)
+	case streamReconnectMsg:
+		if msg.generation != m.streamGeneration || !m.streamRetryScheduled {
+			return m, nil
+		}
+		m.streamRetryScheduled = false
+		if m.pendingTerminalAction {
+			return m, nil
+		}
+		m.streamGeneration++
+		m.streamConnecting = true
+		return m, openClientStateStreamCmd(m.client, m.streamGeneration)
 	case pickupLoadedMsg:
 		if m.pendingTerminalAction || m.popup == nil || m.popup.kind != popupPickup || msg.requestID != m.pickupRequestID {
 			return m, nil
 		}
 		if msg.err != nil {
+			m.popup.loadState = popupLoadError
+			m.popup.loadKind = popupLoadPickup
+			m.popup.loadError = msg.err.Error()
 			m.addMessage("pickup failed: " + msg.err.Error())
 			return m, nil
 		}
 		m.popup.items = msg.items
 		m.popup.marked = map[string]bool{}
+		m.popup.loadState = popupLoadReady
+		m.popup.loadError = ""
 		m.perf.markResponseReceived("loadPickup", "pickup", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case lootContainersLoadedMsg:
-		if m.pendingTerminalAction || msg.requestID != m.lootRequestID {
+		if m.pendingTerminalAction || m.popup == nil || m.popup.kind != popupLoot || msg.requestID != m.lootRequestID {
 			return m, nil
 		}
 		if msg.err != nil {
+			m.popup.loadState = popupLoadError
+			m.popup.loadKind = popupLoadLootContainers
+			m.popup.loadError = msg.err.Error()
 			m.addMessage("loot failed: " + msg.err.Error())
 			return m, nil
 		}
@@ -578,7 +785,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		sort.SliceStable(msg.containers, func(i, j int) bool { return msg.containers[i].Key < msg.containers[j].Key })
 		container := msg.containers[0]
-		m.popup = &popupState{kind: popupLoot, title: "Loot " + container.Tag, containerKey: container.Key, mode: lootTake, stage: popupStageAction, items: []entity{}, putItems: m.inventory, marked: map[string]bool{}}
+		m.popup = &popupState{kind: popupLoot, title: "Loot " + container.Tag, containerKey: container.Key, mode: lootTake, stage: popupStageAction, items: []entity{}, putItems: m.inventory, marked: map[string]bool{}, loadState: popupLoadLoading, loadKind: popupLoadLootItems}
 		m.addMessage("looting " + container.Tag)
 		m.perf.markResponseReceived("loadLootContainers", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, loadLootItemsCmd(m.client, m.lootRequestID, container.Key)
@@ -587,22 +794,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.err != nil {
+			m.popup.loadState = popupLoadError
+			m.popup.loadKind = popupLoadLootItems
+			m.popup.loadError = msg.err.Error()
 			m.addMessage("loot failed: " + msg.err.Error())
 			return m, nil
 		}
 		m.popup.items = msg.items
 		m.popup.marked = map[string]bool{}
+		m.popup.loadState = popupLoadReady
+		m.popup.loadError = ""
 		m.perf.markResponseReceived("loadLootItems", "loot", msg.perfTraceID, msg.responseReceived)
 		return m, nil
 	case actionDoneMsg:
-		if m.pendingTerminalAction {
+		if m.activeAction == nil || msg.requestID != m.activeAction.requestID {
 			return m, nil
 		}
+		wasStreamed := m.activeAction.streamed
+		m.activeAction = nil
 		if msg.err != nil {
 			m.addMessage("action failed: " + msg.err.Error())
-			return m, nil
-		}
-		if !msg.streamed {
+		} else if !msg.streamed && !m.streamActive {
 			m.applySnapshot(msg.snapshot)
 		}
 		phase := "actionAndRefresh"
@@ -610,6 +822,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			phase = "action"
 		}
 		m.perf.markResponseReceived(phase, msg.caseName, msg.perfTraceID, msg.responseReceived)
+		if m.pendingTerminalAction {
+			return m, m.startTerminalRequest()
+		}
+		if nextCmd := m.startNextQueuedAction(); nextCmd != nil {
+			return m, nextCmd
+		}
+		if wasStreamed && !m.streamActive {
+			return m, loadStateCmd(
+				m.client,
+				m.streamGeneration,
+				m.mutationSerial,
+			)
+		}
 		return m, nil
 	case setupDoneMsg:
 		if m.pendingTerminalAction {
@@ -618,19 +843,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.requestID != m.setupRequestID {
 			return m, nil
 		}
-		m.setupPending = false
 		if msg.err != nil {
+			m.setupPending = false
 			m.addMessage("setup failed: " + msg.err.Error())
 			return m, nil
 		}
-		m.applySnapshot(msg.snapshot)
 		m.perf.markResponseReceived("setup", msg.caseName, msg.perfTraceID, msg.responseReceived)
+		if m.streamActive {
+			return m, nil
+		}
+		if msg.generation != m.streamGeneration || msg.mutationSerial != m.mutationSerial {
+			m.setupPending = false
+			return m, loadStateCmd(m.client, m.streamGeneration, m.mutationSerial)
+		}
+		m.setupPending = false
+		m.applySnapshot(msg.snapshot)
 		return m, nil
 	case saveDoneMsg:
 		if msg.err != nil {
 			m.pendingTerminalAction = false
+			m.terminalIntent = terminalIntentNone
 			m.addMessage("save failed: " + msg.err.Error())
-			return m, nil
+			return m, m.resumeStreamRecoveryCmd()
 		}
 		m.addMessage("saved")
 		m.perf.markResponseReceived("save", "save", msg.perfTraceID, msg.responseReceived)
@@ -638,29 +872,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quitDoneMsg:
 		if msg.err != nil {
 			m.pendingTerminalAction = false
+			m.terminalIntent = terminalIntentNone
 			m.addMessage("quit failed: " + msg.err.Error())
-			return m, nil
+			return m, m.resumeStreamRecoveryCmd()
 		}
 		m.addMessage("quit")
 		m.perf.markResponseReceived("quit", "quit", msg.perfTraceID, msg.responseReceived)
 		return m, tea.Quit
 	case autoDoneMsg:
-		if m.pendingTerminalAction {
+		if m.activeAuto == nil ||
+			m.activeAuto.id != msg.id ||
+			m.activeAuto.cancel != msg.cancel ||
+			m.activeAuto.mutationSerial != msg.mutationSerial ||
+			m.activeAuto.streamed != msg.streamed {
 			return m, nil
 		}
-		isCurrentAutoMove := m.autoCancel != nil && m.autoCancel == msg.cancel && m.autoID == msg.id
-		isFinishedCurrentAutoMove := m.autoCancel == nil && m.autoID == msg.id && msg.mutationSerial == m.mutationSerial
-		if !isCurrentAutoMove && !isFinishedCurrentAutoMove {
-			return m, nil
-		}
-		m.autoCancel = nil
+		wasStreamed := m.activeAuto.streamed
+		m.activeAuto = nil
 		if msg.err != nil {
 			m.addMessage(msg.result.label + " failed: " + msg.err.Error())
+			if m.pendingTerminalAction {
+				return m, m.startTerminalRequest()
+			}
+			if !m.streamActive {
+				return m, loadStateCmd(m.client, m.streamGeneration, m.mutationSerial)
+			}
 			return m, nil
 		}
-		m.applySnapshot(msg.snapshot)
 		m.addMessage(formatAutoResult(msg.result))
 		m.perf.markResponseReceived("autoMove", msg.caseName, msg.perfTraceID, msg.responseReceived)
+		if m.pendingTerminalAction {
+			return m, m.startTerminalRequest()
+		}
+		if !m.streamActive {
+			if wasStreamed {
+				return m, loadStateCmd(m.client, m.streamGeneration, m.mutationSerial)
+			}
+			m.applySnapshot(msg.snapshot)
+		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -687,7 +936,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.activeAuto != nil {
+		switch input {
+		case "C-s":
+			return m.saveAndExit()
+		case "C-q":
+			m.requestAutoCancel()
+			return m.beginQuitConfirmation()
+		default:
+			if m.pendingQuitConfirmation {
+				return m.handleQuitConfirmationKey(input)
+			}
+		}
+	}
 	if m.cancelActiveAutoMove() {
+		return m, nil
+	}
+	if m.helpOpen {
+		if input == "?" || input == "escape" || strings.EqualFold(input, "q") {
+			m.helpOpen = false
+		}
 		return m, nil
 	}
 	if m.overviewOpen {
@@ -727,6 +995,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch input {
+	case "?":
+		m.pendingMovementPrefix = ""
+		m.helpOpen = true
+		return m, nil
+	case "[", "]":
+		layout := layoutForSize(m.width, m.height)
+		pageCount := itemPageCount(
+			len(m.inventory),
+			layout.popupItemPageSize,
+		)
+		if input == "[" {
+			m.inventoryPage = max(0, m.inventoryPage-1)
+		} else {
+			m.inventoryPage = min(pageCount-1, m.inventoryPage+1)
+		}
+		return m, nil
 	case "C-s":
 		return m.saveAndExit()
 	case "C-q":
@@ -781,13 +1065,20 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "M-l":
 		m.pendingMovementPrefix = ""
 		m.lootRequestID++
-		m.popup = nil
+		m.popup = &popupState{
+			kind:      popupLoot,
+			title:     "Loot",
+			stage:     popupStageAction,
+			marked:    map[string]bool{},
+			loadState: popupLoadLoading,
+			loadKind:  popupLoadLootContainers,
+		}
 		m.addMessage("looting")
 		return m, loadLootContainersCmd(m.client, m.lootRequestID)
 	case ",":
 		m.pendingMovementPrefix = ""
 		m.pickupRequestID++
-		m.popup = &popupState{kind: popupPickup, title: "Pickup what?", stage: popupStageItems, items: []entity{}, marked: map[string]bool{}}
+		m.popup = &popupState{kind: popupPickup, title: "Pickup what?", stage: popupStageItems, items: []entity{}, marked: map[string]bool{}, loadState: popupLoadLoading, loadKind: popupLoadPickup}
 		m.addMessage("picking up ")
 		return m, loadPickupCmd(m.client, m.pickupRequestID)
 	case "d":
@@ -833,8 +1124,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startRepeatedMovement(command)
 	}
 	if act, ok := parseAction(actionInput); ok {
-		m.mutationSerial++
-		return m, actionCmd(m.client, act, m.streamActive)
+		return m.enqueueAction(act)
 	}
 	return m, nil
 }
@@ -854,7 +1144,13 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 		m.setup = setupState{Phase: "confirm", SelectedRoleID: selected.ID}
 		m.setupPending = true
 		m.setupRequestID++
-		return m, selectRoleCmd(m.client, selected.ID, m.setupRequestID)
+		return m, selectRoleCmd(
+			m.client,
+			selected.ID,
+			m.setupRequestID,
+			m.streamGeneration,
+			m.mutationSerial,
+		)
 	case "confirm":
 		switch normalizedInput {
 		case "n":
@@ -862,7 +1158,14 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 			m.setup = setupState{Phase: "selectRole"}
 			m.setupPending = true
 			m.setupRequestID++
-			return m, confirmSetupCmd(m.client, selectedRoleID, false, m.setupRequestID)
+			return m, confirmSetupCmd(
+				m.client,
+				selectedRoleID,
+				false,
+				m.setupRequestID,
+				m.streamGeneration,
+				m.mutationSerial,
+			)
 		case "y":
 			selectedRoleID := m.setup.SelectedRoleID
 			if selectedRoleID == "" {
@@ -870,7 +1173,14 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 			}
 			m.setupPending = true
 			m.setupRequestID++
-			return m, confirmSetupCmd(m.client, selectedRoleID, true, m.setupRequestID)
+			return m, confirmSetupCmd(
+				m.client,
+				selectedRoleID,
+				true,
+				m.setupRequestID,
+				m.streamGeneration,
+				m.mutationSerial,
+			)
 		default:
 			return m, nil
 		}
@@ -892,8 +1202,7 @@ func (m model) handleDoorDirectionKey(input string) (tea.Model, tea.Cmd) {
 		m.addMessage("canceled " + kind)
 		return m, nil
 	}
-	m.mutationSerial++
-	return m, actionCmd(m.client, action{Tag: kind, Dir: dir}, m.streamActive)
+	return m.enqueueAction(action{Tag: kind, Dir: dir})
 }
 
 func (m model) handleTalkDirectionKey(input string) (tea.Model, tea.Cmd) {
@@ -908,8 +1217,7 @@ func (m model) handleTalkDirectionKey(input string) (tea.Model, tea.Cmd) {
 		m.addMessage("canceled talk")
 		return m, nil
 	}
-	m.mutationSerial++
-	return m, actionCmd(m.client, action{Tag: "talk", Dir: dir}, m.streamActive)
+	return m.enqueueAction(action{Tag: "talk", Dir: dir})
 }
 
 func (m model) handleOverviewKey(input string) (tea.Model, tea.Cmd) {
@@ -966,14 +1274,41 @@ func (m model) handleLandmarkPopupKey(input string) (tea.Model, tea.Cmd) {
 }
 
 func (m model) saveAndExit() (tea.Model, tea.Cmd) {
+	return m.requestTerminal(terminalIntentSave)
+}
+
+func (m model) requestTerminal(intent terminalIntent) (tea.Model, tea.Cmd) {
 	m.pendingDoorAction = ""
 	m.pendingExtendedCommand = nil
 	m.pendingMovementPrefix = ""
 	m.pendingQuitConfirmation = false
 	m.pendingTerminalAction = true
-	m.stopActiveAutoMove()
-	m.addMessage("saving")
-	return m, saveGameCmd(m.client)
+	m.terminalIntent = intent
+	m.queuedActions = nil
+	m.requestAutoCancel()
+	if intent == terminalIntentSave {
+		m.addMessage("saving")
+	} else {
+		m.addMessage("quitting")
+	}
+	if m.activeAction != nil || m.activeAuto != nil {
+		return m, nil
+	}
+	return m, m.startTerminalRequest()
+}
+
+func (m *model) startTerminalRequest() tea.Cmd {
+	if m.activeAction != nil || m.activeAuto != nil {
+		return nil
+	}
+	switch m.terminalIntent {
+	case terminalIntentSave:
+		return saveGameCmd(m.client)
+	case terminalIntentQuit:
+		return quitGameCmd(m.client)
+	default:
+		return nil
+	}
 }
 
 func (m model) beginQuitConfirmation() (tea.Model, tea.Cmd) {
@@ -988,11 +1323,7 @@ func (m model) beginQuitConfirmation() (tea.Model, tea.Cmd) {
 func (m model) handleQuitConfirmationKey(input string) (tea.Model, tea.Cmd) {
 	switch strings.ToLower(input) {
 	case "y":
-		m.pendingQuitConfirmation = false
-		m.pendingTerminalAction = true
-		m.stopActiveAutoMove()
-		m.addMessage("quitting")
-		return m, quitGameCmd(m.client)
+		return m.requestTerminal(terminalIntentQuit)
 	case "n", "escape":
 		m.pendingQuitConfirmation = false
 		m.addMessage("quit canceled")
@@ -1088,6 +1419,19 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 	if popup == nil {
 		return m, nil
 	}
+	if popup.loadState != popupLoadReady {
+		return m.handlePopupLoadKey(input)
+	}
+	pageSize := m.popupItemPageSize()
+	if input == "[" || input == "]" {
+		pageCount := itemPageCount(len(popupVisibleItems(*popup)), pageSize)
+		if input == "[" {
+			popup.page = max(0, popup.page-1)
+		} else {
+			popup.page = min(pageCount-1, popup.page+1)
+		}
+		return m, nil
+	}
 	if popupIsSingleItemAction(popup.kind) {
 		if input == "q" || input == "r" || input == "escape" {
 			kind := popup.kind
@@ -1099,7 +1443,12 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		key, ok := itemKeyForLetter(popupVisibleItems(*popup), input)
+		key, ok := itemKeyForLetterPage(
+			popupVisibleItems(*popup),
+			input,
+			popup.page,
+			pageSize,
+		)
 		if !ok {
 			return m, nil
 		}
@@ -1108,8 +1457,7 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 			tag = "quaffMulti"
 		}
 		m.popup = nil
-		m.mutationSerial++
-		return m, actionCmd(m.client, action{Tag: tag, Keys: []string{key}}, m.streamActive)
+		return m.enqueueAction(action{Tag: tag, Keys: []string{key}})
 	}
 	switch input {
 	case "q", "r", "escape":
@@ -1132,19 +1480,21 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		if popup.kind == popupLoot && popup.stage == popupStageAction {
 			popup.mode = lootTake
 			popup.stage = popupStageItems
+			popup.page = 0
 			popup.marked = map[string]bool{}
 			return m, nil
 		}
-		togglePopupLetter(popup, input)
+		togglePopupLetterPage(popup, input, pageSize)
 		return m, nil
 	case "p":
 		if popup.kind == popupLoot && popup.stage == popupStageAction {
 			popup.mode = lootPut
 			popup.stage = popupStageItems
+			popup.page = 0
 			popup.marked = map[string]bool{}
 			return m, nil
 		}
-		togglePopupLetter(popup, input)
+		togglePopupLetterPage(popup, input, pageSize)
 		return m, nil
 	case ",":
 		if popup.stage == popupStageAction {
@@ -1167,25 +1517,91 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 			}
 		}
 		sort.Strings(keys)
+		if len(keys) == 0 {
+			m.addMessage("select at least one item")
+			return m, nil
+		}
 		kind := popup.kind
 		containerKey := popup.containerKey
 		mode := popup.mode
 		m.popup = nil
-		m.mutationSerial++
 		if kind == popupPickup {
-			return m, actionCmd(m.client, action{Tag: "pickupMulti", Keys: keys}, m.streamActive)
+			return m.enqueueAction(action{Tag: "pickupMulti", Keys: keys})
 		}
 		if kind == popupLoot {
 			if mode == lootPut {
-				return m, actionCmd(m.client, action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys}, m.streamActive)
+				return m.enqueueAction(action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys})
 			}
-			return m, actionCmd(m.client, action{Tag: "lootTakeMulti", ContainerKey: containerKey, Keys: keys}, m.streamActive)
+			return m.enqueueAction(action{Tag: "lootTakeMulti", ContainerKey: containerKey, Keys: keys})
 		}
-		return m, actionCmd(m.client, action{Tag: "dropMulti", Keys: keys}, m.streamActive)
+		return m.enqueueAction(action{Tag: "dropMulti", Keys: keys})
 	default:
-		togglePopupLetter(popup, input)
+		togglePopupLetterPage(popup, input, pageSize)
 		return m, nil
 	}
+}
+
+func (m model) handlePopupLoadKey(input string) (tea.Model, tea.Cmd) {
+	popup := m.popup
+	if popup == nil {
+		return m, nil
+	}
+	switch input {
+	case "q", "r", "escape":
+		kind := popup.kind
+		m.popup = nil
+		if kind == popupLoot {
+			m.addMessage("canceling loot")
+		} else {
+			m.addMessage("canceling pickup")
+		}
+		return m, nil
+	case "enter", "C-j":
+		if popup.loadState != popupLoadError {
+			return m, nil
+		}
+		popup.loadState = popupLoadLoading
+		popup.loadError = ""
+		switch popup.loadKind {
+		case popupLoadPickup:
+			m.pickupRequestID++
+			return m, loadPickupCmd(m.client, m.pickupRequestID)
+		case popupLoadLootContainers:
+			m.lootRequestID++
+			return m, loadLootContainersCmd(m.client, m.lootRequestID)
+		case popupLoadLootItems:
+			m.lootRequestID++
+			return m, loadLootItemsCmd(
+				m.client,
+				m.lootRequestID,
+				popup.containerKey,
+			)
+		default:
+			popup.loadState = popupLoadError
+			popup.loadError = "retry unavailable"
+			return m, nil
+		}
+	default:
+		if input == "," {
+			m.popup = nil
+			m.lootRequestID++
+			m.pickupRequestID++
+			m.popup = &popupState{kind: popupPickup, title: "Pickup what?", stage: popupStageItems, items: []entity{}, marked: map[string]bool{}, loadState: popupLoadLoading, loadKind: popupLoadPickup}
+			m.addMessage("picking up ")
+			return m, loadPickupCmd(m.client, m.pickupRequestID)
+		}
+		if act, ok := parseAction(input); ok {
+			m.popup = nil
+			m.pickupRequestID++
+			m.lootRequestID++
+			return m.enqueueAction(act)
+		}
+		return m, nil
+	}
+}
+
+func (m model) popupItemPageSize() int {
+	return layoutForSize(m.width, m.height).popupItemPageSize
 }
 
 func popupIsSingleItemAction(kind popupKind) bool {
@@ -1193,25 +1609,99 @@ func popupIsSingleItemAction(kind popupKind) bool {
 }
 
 func togglePopupLetter(popup *popupState, input string) {
+	togglePopupLetterPage(popup, input, len(itemLetterAlphabet))
+}
+
+func togglePopupLetterPage(
+	popup *popupState,
+	input string,
+	pageSize int,
+) {
 	if popup.stage == popupStageAction {
 		return
 	}
-	if key, ok := itemKeyForLetter(popupVisibleItems(*popup), input); ok {
+	if key, ok := itemKeyForLetterPage(
+		popupVisibleItems(*popup),
+		input,
+		popup.page,
+		pageSize,
+	); ok {
 		toggleMarkedItem(popup.marked, key)
 	}
 }
 
+func (m model) enqueueAction(act action) (tea.Model, tea.Cmd) {
+	if m.pendingTerminalAction {
+		return m, nil
+	}
+	if m.activeAuto != nil {
+		m.cancelActiveAutoMove()
+		return m, nil
+	}
+	if m.activeAction != nil {
+		if len(m.queuedActions) >= maxQueuedActions {
+			m.addMessage("input queue full")
+			return m, nil
+		}
+		m.queuedActions = append(m.queuedActions, act)
+		m.mutationSerial++
+		return m, nil
+	}
+	m.mutationSerial++
+	return m, m.startAction(act)
+}
+
+func (m *model) startAction(act action) tea.Cmd {
+	m.actionRequestID++
+	requestID := m.actionRequestID
+	streamed := m.streamActive
+	m.activeAction = &activeActionState{
+		requestID: requestID,
+		streamed:  streamed,
+	}
+	return actionCmd(m.client, act, streamed, requestID)
+}
+
+func (m *model) startNextQueuedAction() tea.Cmd {
+	if m.activeAction != nil || m.activeAuto != nil || len(m.queuedActions) == 0 {
+		return nil
+	}
+	act := m.queuedActions[0]
+	m.queuedActions = append([]action(nil), m.queuedActions[1:]...)
+	return m.startAction(act)
+}
+
+func (m model) pendingActionCount() int {
+	count := len(m.queuedActions)
+	if m.activeAction != nil {
+		count++
+	}
+	if m.activeAuto != nil {
+		count++
+	}
+	return count
+}
+
 func (m model) startRepeatedMovement(command moveCommand) (tea.Model, tea.Cmd) {
+	if m.pendingActionCount() > 0 {
+		m.addMessage("finish pending actions first")
+		return m, nil
+	}
 	m.autoID++
 	m.mutationSerial++
 	id := m.autoID
 	mutationSerial := m.mutationSerial
 	cancel := make(chan struct{})
-	m.autoCancel = cancel
 	initialWorld := cloneEntities(m.world)
 	client := m.client
 	traceID := client.perf.nextTraceID("charm.autorun")
 	streamActive := m.streamActive
+	m.activeAuto = &activeAutoState{
+		id:             id,
+		cancel:         cancel,
+		mutationSerial: mutationSerial,
+		streamed:       streamActive,
+	}
 	return m, func() tea.Msg {
 		var result autoRunResult
 		var snap snapshot
@@ -1221,22 +1711,31 @@ func (m model) startRepeatedMovement(command moveCommand) (tea.Model, tea.Cmd) {
 		} else {
 			result, snap, err = client.runDirectionalMovement(context.Background(), initialWorld, command, cancel)
 		}
-		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: command.tag, perfTraceID: traceID, responseReceived: time.Now()}
+		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: command.tag, perfTraceID: traceID, responseReceived: time.Now(), streamed: streamActive}
 	}
 }
 
 func (m model) startTravel(target pos) (tea.Model, tea.Cmd) {
+	if m.pendingActionCount() > 0 {
+		m.addMessage("finish pending actions first")
+		return m, nil
+	}
 	m.autoID++
 	m.mutationSerial++
 	id := m.autoID
 	mutationSerial := m.mutationSerial
 	cancel := make(chan struct{})
-	m.autoCancel = cancel
 	initialWorld := cloneEntities(m.world)
 	client := m.client
 	traceID := client.perf.nextTraceID("charm.travel")
 	m.addMessage("traveling")
 	streamActive := m.streamActive
+	m.activeAuto = &activeAutoState{
+		id:             id,
+		cancel:         cancel,
+		mutationSerial: mutationSerial,
+		streamed:       streamActive,
+	}
 	baselineEventID := m.lastGameplayEventID
 	return m, func() tea.Msg {
 		var result autoRunResult
@@ -1247,19 +1746,22 @@ func (m model) startTravel(target pos) (tea.Model, tea.Cmd) {
 		} else {
 			result, snap, err = client.runTravelFromBaseline(context.Background(), initialWorld, target, baselineEventID, cancel)
 		}
-		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: "travel", perfTraceID: traceID, responseReceived: time.Now()}
+		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: "travel", perfTraceID: traceID, responseReceived: time.Now(), streamed: streamActive}
 	}
 }
 
 func (m model) startLandmarkTravel(
 	landmark campgroundLandmark,
 ) (tea.Model, tea.Cmd) {
+	if m.pendingActionCount() > 0 {
+		m.addMessage("finish pending actions first")
+		return m, nil
+	}
 	m.autoID++
 	m.mutationSerial++
 	id := m.autoID
 	mutationSerial := m.mutationSerial
 	cancel := make(chan struct{})
-	m.autoCancel = cancel
 	campground := m.campground
 	initial := snapshot{
 		world:      cloneEntities(m.world),
@@ -1268,6 +1770,12 @@ func (m model) startLandmarkTravel(
 	client := m.client
 	traceID := client.perf.nextTraceID("charm.landmarkTravel")
 	streamActive := m.streamActive
+	m.activeAuto = &activeAutoState{
+		id:             id,
+		cancel:         cancel,
+		mutationSerial: mutationSerial,
+		streamed:       streamActive,
+	}
 	baselineEventID := m.lastGameplayEventID
 	m.addMessage("traveling to " + landmark.Name)
 	return m, func() tea.Msg {
@@ -1289,6 +1797,7 @@ func (m model) startLandmarkTravel(
 			caseName:         "landmarkTravel",
 			perfTraceID:      traceID,
 			responseReceived: time.Now(),
+			streamed:         streamActive,
 		}
 	}
 }
@@ -1306,23 +1815,29 @@ func (m *model) addDebugMessage(message string) {
 	}
 }
 
-func (m *model) stopActiveAutoMove() bool {
-	if m.autoCancel == nil {
+func (m *model) requestAutoCancel() bool {
+	if m.activeAuto == nil {
 		return false
 	}
-	close(m.autoCancel)
-	m.autoCancel = nil
+	if !m.activeAuto.cancelRequested {
+		close(m.activeAuto.cancel)
+		m.activeAuto.cancelRequested = true
+	}
 	return true
 }
 
 func (m *model) cancelActiveAutoMove() bool {
-	if !m.stopActiveAutoMove() {
+	if m.activeAuto == nil {
 		return false
 	}
+	wasAlreadyRequested := m.activeAuto.cancelRequested
+	m.requestAutoCancel()
 	m.pendingDoorAction = ""
 	m.pendingMovementPrefix = ""
 	m.pendingQuitConfirmation = false
-	m.addMessage("automove canceled")
+	if !wasAlreadyRequested {
+		m.addMessage("automove stopping")
+	}
 	return true
 }
 
@@ -1366,6 +1881,50 @@ func (m *model) applyGameplayEvents(events []gameplayEvent, setupJustCompleted b
 	}
 }
 
+func (m *model) streamRecoveryCmd(generation int) tea.Cmd {
+	if m.streamRetryScheduled || m.pendingTerminalAction {
+		return nil
+	}
+	m.streamRetryScheduled = true
+	delay := streamReconnectDelay(m.streamRetryAttempt)
+	m.streamRetryAttempt++
+	reconnectCmd := streamReconnectAfterCmd(generation, delay)
+	if m.pendingActionCount() > 0 || m.activeAuto != nil {
+		return reconnectCmd
+	}
+	return tea.Batch(
+		loadStateCmd(m.client, generation, m.mutationSerial),
+		reconnectCmd,
+	)
+}
+
+func (m *model) resumeStreamRecoveryCmd() tea.Cmd {
+	if m.streamActive || m.streamConnecting || m.streamRetryScheduled {
+		return nil
+	}
+	return m.streamRecoveryCmd(m.streamGeneration)
+}
+
+func streamReconnectDelay(attempt int) time.Duration {
+	delay := streamReconnectBaseDelay
+	for range max(0, attempt) {
+		if delay >= streamReconnectMaxDelay/2 {
+			return streamReconnectMaxDelay
+		}
+		delay *= 2
+	}
+	if delay > streamReconnectMaxDelay {
+		return streamReconnectMaxDelay
+	}
+	return delay
+}
+
+func streamReconnectAfterCmd(generation int, delay time.Duration) tea.Cmd {
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return streamReconnectMsg{generation: generation}
+	})
+}
+
 func normalizeSetup(setup setupState) setupState {
 	if strings.TrimSpace(setup.Phase) == "" {
 		return setupState{Phase: "complete"}
@@ -1387,14 +1946,18 @@ func (m model) needsSetupScreen() bool {
 
 func (m model) View() string {
 	view := m.perf.measureString("frontend.view", "total", "", "", map[string]int{"worldSize": len(m.world), "inventorySize": len(m.inventory)}, func() string {
+		layout := layoutForSize(m.width, m.height)
+		if layout.tooSmall {
+			return renderTooSmall(layout)
+		}
 		if m.needsSetupScreen() {
 			return m.perf.measureString("frontend.component", "setup", m.setup.Phase, "", map[string]int{"roleCount": len(m.roles)}, func() string {
-				return renderSetupScreen(m.setup, m.roles, m.width, m.height, m.setupPending, m.messages)
+				return renderSetupScreen(m.setup, m.roles, layout.width, layout.height, m.setupPending, m.messages)
 			})
 		}
 		if strings.TrimSpace(m.openingExposition) != "" {
 			return m.perf.measureString("frontend.component", "opening_exposition", "", "", nil, func() string {
-				return renderOpeningExposition(m.openingExposition, m.width, m.height)
+				return renderOpeningExposition(m.openingExposition, layout.width, layout.height)
 			})
 		}
 
@@ -1403,32 +1966,66 @@ func (m model) View() string {
 			cursorTarget = m.lookTarget
 		}
 		board := m.perf.measureString("frontend.component", "board", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
-			return renderBoardWithCampground(m.world, cursorTarget, m.campground)
-		})
-		sidebar := m.perf.measureString("frontend.component", "sidebar", "", "", map[string]int{"inventorySize": len(m.inventory)}, func() string {
-			return renderSidebarArea(m.inventory, m.popup, m.landmarkPopup)
+			return renderBoardSizedWithCampground(
+				m.world,
+				cursorTarget,
+				m.campground,
+				layout.boardWidth,
+				layout.boardHeight,
+			)
 		})
 		main := m.perf.measureString("frontend.component", "main_join", "", "", nil, func() string {
-			if m.overviewOpen {
-				return renderCampgroundOverview(m.campground)
+			if m.helpOpen {
+				return renderHelpOverlay(layout.width, layout.boardHeight)
 			}
+			if m.overviewOpen {
+				return renderCampgroundOverviewSized(
+					m.campground,
+					layout.width,
+					layout.boardHeight,
+				)
+			}
+			if !layout.showSidebar && (m.popup != nil || m.landmarkPopup != nil) {
+				return renderCompactModal(m.popup, m.landmarkPopup, layout)
+			}
+			if !layout.showSidebar {
+				return board
+			}
+			sidebar := m.perf.measureString("frontend.component", "sidebar", "", "", map[string]int{"inventorySize": len(m.inventory)}, func() string {
+				return renderSidebarAreaSized(
+					m.inventory,
+					m.inventoryPage,
+					m.popup,
+					m.landmarkPopup,
+					layout,
+				)
+			})
 			return lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
 		})
 		sections := []string{
 			m.perf.measureString("frontend.component", "event", "", "", map[string]int{"messageCount": len(m.messages)}, func() string {
-				return renderEventArea(m.world, m.messages, m.lookTarget, m.campground)
+				return renderEventAreaSized(
+					m.world,
+					m.messages,
+					m.lookTarget,
+					m.campground,
+					layout.width,
+					layout.eventHeight,
+				)
 			}),
 			main,
 			m.perf.measureString("frontend.component", "status", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
-				return renderStatus(m.world, m.campground)
+				return renderStatusSized(
+					m.world,
+					m.campground,
+					layout.width,
+					layout.statusHeight,
+					m.pendingActionCount(),
+					m.connectionStatus(),
+				)
 			}),
 		}
-		if m.popup != nil && m.popup.kind == popupDrop {
-			sections = append(sections, m.perf.measureString("frontend.component", "popup", "drop", "", map[string]int{"itemCount": len(m.popup.items)}, func() string {
-				return renderPopup(*m.popup)
-			}))
-		}
-		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · t talk · O overview · _ landmark/map travel · <> stairs · Shift/Ctrl/g/G/m/M run · o/c doors · ; look · , pickup · d drop · e eat · q quaff · M-l loot · #save/Ctrl-S · #quit/Ctrl-Q"))
+		sections = append(sections, renderCompactHelp(layout.width))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	})
 	m.perf.finishRedraws()
@@ -1436,27 +2033,108 @@ func (m model) View() string {
 }
 
 func renderBoard(world []entity, target *pos) string {
-	return renderTiles(drawWorld(world, target))
+	return renderTileGrid(drawWorldGridWithTileFor(
+		world,
+		target,
+		boardWidth,
+		boardHeight,
+		tileFor,
+	))
 }
 
 func renderBoardWithCampground(world []entity, target *pos, campground campgroundView) string {
-	return renderTiles(drawWorldWithCampground(world, target, campground))
+	return renderBoardSizedWithCampground(world, target, campground, boardWidth, boardHeight)
+}
+
+func renderBoardSizedWithCampground(
+	world []entity,
+	target *pos,
+	campground campgroundView,
+	width int,
+	height int,
+) string {
+	return renderTileGrid(drawWorldGridWithTileFor(world, target, width, height, func(item entity) tile {
+		return tileForCampground(item, campground)
+	}))
 }
 
 func renderTiles(tiles [][]tile) string {
-	lines := make([]string, 0, boardHeight)
-	for _, row := range tiles {
-		var b strings.Builder
-		for _, t := range row {
-			style := lipgloss.NewStyle().Foreground(t.color)
-			if t.bright {
-				style = style.Bold(true)
-			}
-			b.WriteString(style.Render(t.char))
-		}
-		lines = append(lines, b.String())
+	if len(tiles) == 0 {
+		return ""
 	}
-	return strings.Join(lines, "\n")
+	width := len(tiles[0])
+	grid := tileGrid{
+		width:  width,
+		height: len(tiles),
+		cells:  make([]tile, 0, width*len(tiles)),
+	}
+	for _, row := range tiles {
+		grid.cells = append(grid.cells, row...)
+	}
+	return renderTileGrid(grid)
+}
+
+type tileGrid struct {
+	width  int
+	height int
+	cells  []tile
+}
+
+type tileStyleKey struct {
+	color  lipgloss.Color
+	bright bool
+}
+
+var tileStyles = func() map[tileStyleKey]lipgloss.Style {
+	styles := make(map[tileStyleKey]lipgloss.Style, 16)
+	for _, color := range []lipgloss.Color{
+		"3", "8", "9", "10", "11", "13", "14", "15",
+	} {
+		styles[tileStyleKey{color: color}] = lipgloss.NewStyle().Foreground(color)
+		styles[tileStyleKey{color: color, bright: true}] = lipgloss.NewStyle().
+			Foreground(color).
+			Bold(true)
+	}
+	return styles
+}()
+
+func renderTileGrid(grid tileGrid) string {
+	if grid.width <= 0 || grid.height <= 0 || len(grid.cells) == 0 {
+		return ""
+	}
+	var output strings.Builder
+	output.Grow(grid.width * grid.height * 2)
+	for y := 0; y < grid.height; y++ {
+		row := grid.cells[y*grid.width : (y+1)*grid.width]
+		for start := 0; start < len(row); {
+			key := tileStyleKey{color: row[start].color, bright: row[start].bright}
+			end := start + 1
+			for end < len(row) && row[end].color == key.color && row[end].bright == key.bright {
+				end++
+			}
+			var run strings.Builder
+			run.Grow(end - start)
+			for _, cell := range row[start:end] {
+				run.WriteString(cell.char)
+			}
+			if key.color == "" && !key.bright {
+				output.WriteString(run.String())
+			} else if style, ok := tileStyles[key]; ok {
+				output.WriteString(style.Render(run.String()))
+			} else {
+				style := lipgloss.NewStyle().Foreground(key.color)
+				if key.bright {
+					style = style.Bold(true)
+				}
+				output.WriteString(style.Render(run.String()))
+			}
+			start = end
+		}
+		if y < grid.height-1 {
+			output.WriteByte('\n')
+		}
+	}
+	return output.String()
 }
 
 func renderSidebarArea(
@@ -1473,11 +2151,184 @@ func renderSidebarArea(
 	return renderSidebar(inventory)
 }
 
+func renderSidebarAreaSized(
+	inventory []entity,
+	inventoryPage int,
+	popup *popupState,
+	landmarkPopup *landmarkPopupState,
+	layout layoutMetrics,
+) string {
+	if landmarkPopup != nil {
+		return renderLandmarkPopupSized(
+			*landmarkPopup,
+			layout.sidebarWidth,
+			layout.boardHeight,
+		)
+	}
+	if popup != nil {
+		return renderPopupSized(
+			*popup,
+			layout.sidebarWidth,
+			layout.boardHeight,
+			layout.popupItemPageSize,
+			sidebarStyle,
+		)
+	}
+	return renderSidebarSized(
+		inventory,
+		inventoryPage,
+		layout.sidebarWidth,
+		layout.boardHeight,
+		layout.popupItemPageSize,
+	)
+}
+
+func renderCompactModal(
+	popup *popupState,
+	landmarkPopup *landmarkPopupState,
+	layout layoutMetrics,
+) string {
+	modalWidth := min(42, max(30, layout.boardWidth-4))
+	modalHeight := layout.boardHeight
+	var content string
+	if landmarkPopup != nil {
+		content = renderLandmarkPopupSized(*landmarkPopup, modalWidth, modalHeight)
+	} else if popup != nil {
+		content = renderPopupSized(
+			*popup,
+			modalWidth,
+			modalHeight,
+			layout.popupItemPageSize,
+			popupStyle,
+		)
+	}
+	return lipgloss.Place(
+		layout.boardWidth,
+		layout.boardHeight,
+		lipgloss.Center,
+		lipgloss.Center,
+		content,
+	)
+}
+
+func renderBoundedBox(
+	base lipgloss.Style,
+	lines []string,
+	outerWidth int,
+	outerHeight int,
+) string {
+	return renderBoundedBoxPinned(base, lines, nil, outerWidth, outerHeight)
+}
+
+type boundedBoxMetrics struct {
+	outerWidth    int
+	outerHeight   int
+	styleWidth    int
+	styleHeight   int
+	contentWidth  int
+	contentHeight int
+}
+
+func boundedBoxSize(base lipgloss.Style, outerWidth int, outerHeight int) boundedBoxMetrics {
+	paddingTop, paddingRight, paddingBottom, paddingLeft := base.GetPadding()
+	marginTop, marginRight, marginBottom, marginLeft := base.GetMargin()
+	borderWidth := base.GetBorderLeftSize() + base.GetBorderRightSize()
+	borderHeight := base.GetBorderTopSize() + base.GetBorderBottomSize()
+	minimumWidth := marginLeft + marginRight + borderWidth + paddingLeft + paddingRight + 1
+	minimumHeight := marginTop + marginBottom + borderHeight + paddingTop + paddingBottom + 1
+	outerWidth = max(minimumWidth, outerWidth)
+	outerHeight = max(minimumHeight, outerHeight)
+	styleWidth := outerWidth - marginLeft - marginRight - borderWidth
+	styleHeight := outerHeight - marginTop - marginBottom - borderHeight
+	return boundedBoxMetrics{
+		outerWidth:    outerWidth,
+		outerHeight:   outerHeight,
+		styleWidth:    styleWidth,
+		styleHeight:   styleHeight,
+		contentWidth:  max(1, styleWidth-paddingLeft-paddingRight),
+		contentHeight: max(1, styleHeight-paddingTop-paddingBottom),
+	}
+}
+
+func wrapBoundedLines(lines []string, width int) []string {
+	wrapped := make([]string, 0, len(lines))
+	for _, line := range lines {
+		for _, physicalLine := range strings.Split(line, "\n") {
+			if physicalLine == "" {
+				wrapped = append(wrapped, "")
+				continue
+			}
+			wordWrapped := ansi.Wordwrap(physicalLine, width, "")
+			hardWrapped := ansi.Hardwrap(wordWrapped, width, false)
+			wrapped = append(wrapped, strings.Split(hardWrapped, "\n")...)
+		}
+	}
+	return wrapped
+}
+
+func truncateToSingleLine(line string, width int) string {
+	line = strings.ReplaceAll(line, "\n", " ")
+	return ansi.Truncate(line, max(1, width), "")
+}
+
+func addContinuationMarker(line string, width int) string {
+	if width <= 1 {
+		return "…"
+	}
+	return ansi.Truncate(line, width-1, "") + "…"
+}
+
+func renderBoundedBoxPinned(
+	base lipgloss.Style,
+	lines []string,
+	pinnedLines []string,
+	outerWidth int,
+	outerHeight int,
+) string {
+	metrics := boundedBoxSize(base, outerWidth, outerHeight)
+	pinnedCount := min(len(pinnedLines), metrics.contentHeight)
+	pinnedStart := len(pinnedLines) - pinnedCount
+	pinned := make([]string, 0, pinnedCount)
+	for _, line := range pinnedLines[pinnedStart:] {
+		pinned = append(pinned, truncateToSingleLine(line, metrics.contentWidth))
+	}
+
+	bodyHeight := metrics.contentHeight - len(pinned)
+	wrapped := wrapBoundedLines(lines, metrics.contentWidth)
+	visible := make([]string, 0, metrics.contentHeight)
+	if bodyHeight > 0 {
+		visibleCount := min(len(wrapped), bodyHeight)
+		visible = append(visible, wrapped[:visibleCount]...)
+		if len(wrapped) > visibleCount {
+			visible[len(visible)-1] = addContinuationMarker(
+				visible[len(visible)-1],
+				metrics.contentWidth,
+			)
+		}
+	}
+	visible = append(visible, pinned...)
+	return base.
+		Width(metrics.styleWidth).
+		Height(metrics.styleHeight).
+		MaxWidth(metrics.outerWidth).
+		MaxHeight(metrics.outerHeight).
+		Render(strings.Join(visible, "\n"))
+}
+
 func renderLandmarkPopup(popup landmarkPopupState) string {
+	return renderLandmarkPopupSized(popup, 40, boardHeight)
+}
+
+func renderLandmarkPopupSized(
+	popup landmarkPopupState,
+	width int,
+	height int,
+) string {
 	const pageSize = 8
+	contentWidth := boundedBoxSize(sidebarStyle, width, height).contentWidth
 	lines := []string{
-		"travel where?",
-		mutedStyle.Render("* - map cursor"),
+		truncateToSingleLine("travel where?", contentWidth),
+		truncateToSingleLine(mutedStyle.Render("* - map cursor"), contentWidth),
 	}
 	entries := letteredLandmarks(popup.landmarks)
 	if len(entries) == 0 {
@@ -1496,17 +2347,17 @@ func renderLandmarkPopup(popup landmarkPopupState) string {
 		if !entry.landmark.TravelAvailable {
 			line += " (unavailable)"
 		}
-		lines = append(lines, line)
+		lines = append(lines, truncateToSingleLine(line, contentWidth))
 	}
+	pinned := []string{mutedStyle.Render("q/r/Esc cancels")}
 	if pageCount > 1 {
-		lines = append(lines, mutedStyle.Render(fmt.Sprintf(
+		pinned = append([]string{mutedStyle.Render(fmt.Sprintf(
 			"page %d/%d · [ ] change page",
 			page+1,
 			pageCount,
-		)))
+		))}, pinned...)
 	}
-	lines = append(lines, mutedStyle.Render("q/r/Esc cancels"))
-	return sidebarStyle.Render(strings.Join(lines, "\n"))
+	return renderBoundedBoxPinned(sidebarStyle, lines, pinned, width, height)
 }
 
 func landmarkPopupPageCount(landmarkCount int) int {
@@ -1515,6 +2366,14 @@ func landmarkPopupPageCount(landmarkCount int) int {
 }
 
 func renderCampgroundOverview(view campgroundView) string {
+	return renderCampgroundOverviewSized(view, 120, boardHeight)
+}
+
+func renderCampgroundOverviewSized(
+	view campgroundView,
+	width int,
+	height int,
+) string {
 	address := strings.TrimSpace(view.CurrentAddress)
 	if address == "" {
 		address = "unknown"
@@ -1558,21 +2417,56 @@ func renderCampgroundOverview(view campgroundView) string {
 		"Legend: @ you  # road  ? sign  Y effigy  Ω temple  < > stairs",
 		"Props: G gate  A art  | flagpole  = stage  W bench  B bikes",
 		"       D directory  ~ water  S speaker  L lantern  T table",
-		mutedStyle.Render("O/q/Esc closes · _ chooses a destination"),
 	)
-	return messageStyle.Width(118).Render(strings.Join(lines, "\n"))
+	return renderBoundedBoxPinned(
+		messageStyle,
+		lines,
+		[]string{mutedStyle.Render("O/q/Esc closes · _ chooses a destination")},
+		width,
+		height,
+	)
 }
 
 func renderSidebar(inventory []entity) string {
-	lines := []string{"inventory"}
+	return renderSidebarSized(inventory, 0, 22, boardHeight, len(itemLetterAlphabet))
+}
+
+func renderSidebarSized(
+	inventory []entity,
+	page int,
+	width int,
+	height int,
+	pageSize int,
+) string {
+	contentWidth := boundedBoxSize(sidebarStyle, width, height).contentWidth
+	lines := []string{truncateToSingleLine("inventory", contentWidth)}
+	pinned := []string{}
 	if len(inventory) == 0 {
 		lines = append(lines, mutedStyle.Render("(empty)"))
 	} else {
-		for _, entry := range letteredItems(inventory) {
-			lines = append(lines, renderLetteredItem(entry, false, false))
+		entries, normalizedPage, pageCount := letteredItemsPage(
+			inventory,
+			page,
+			pageSize,
+		)
+		for _, entry := range entries {
+			lines = append(
+				lines,
+				truncateToSingleLine(
+					renderLetteredItem(entry, false, false),
+					contentWidth,
+				),
+			)
+		}
+		if pageCount > 1 {
+			pinned = append(pinned, mutedStyle.Render(fmt.Sprintf(
+				"page %d/%d · [ ]",
+				normalizedPage+1,
+				pageCount,
+			)))
 		}
 	}
-	return sidebarStyle.Render(strings.Join(lines, "\n"))
+	return renderBoundedBoxPinned(sidebarStyle, lines, pinned, width, height)
 }
 
 func renderLetteredItem(entry letteredItem, marked bool, bracketed bool) string {
@@ -1612,14 +2506,42 @@ func renderEventArea(
 	lookTarget *pos,
 	campground campgroundView,
 ) string {
+	return renderEventAreaSized(
+		world,
+		messages,
+		lookTarget,
+		campground,
+		120,
+		fixedEventAreaLines+2,
+	)
+}
+
+func renderEventAreaSized(
+	world []entity,
+	messages []string,
+	lookTarget *pos,
+	campground campgroundView,
+	width int,
+	height int,
+) string {
 	if lookTarget != nil {
-		return renderLookPanel(world, *lookTarget, campground)
+		return renderLookPanelSized(
+			world,
+			*lookTarget,
+			campground,
+			width,
+			height,
+		)
 	}
-	return renderMessages(messages)
+	return renderMessagesSized(messages, width, height)
 }
 
 func renderMessages(messages []string) string {
-	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(messages), "\n"))
+	return renderMessagesSized(messages, 120, fixedEventAreaLines+2)
+}
+
+func renderMessagesSized(messages []string, width int, height int) string {
+	return renderBoundedBox(messageStyle, messages, width, height)
 }
 
 func renderLookPanel(
@@ -1627,17 +2549,52 @@ func renderLookPanel(
 	target pos,
 	campground campgroundView,
 ) string {
-	lines := []string{
-		describeLookTargetWithCampground(world, target, campground),
-		mutedStyle.Render("hjkl/yubn move look cursor, Esc exits look mode"),
-	}
+	return renderLookPanelSized(
+		world,
+		target,
+		campground,
+		120,
+		fixedEventAreaLines+2,
+	)
+}
+
+func renderLookPanelSized(
+	world []entity,
+	target pos,
+	campground campgroundView,
+	width int,
+	height int,
+) string {
+	lines := []string{describeLookTargetWithCampground(world, target, campground)}
+	pinned := []string{mutedStyle.Render("hjkl/yubn move look cursor, Esc exits look mode")}
 	if address := strings.TrimSpace(campground.CurrentAddress); address != "" {
-		lines = append(lines, "Address: "+address)
+		addressLine := "Address: " + address
+		contentHeight := boundedBoxSize(messageStyle, width, height).contentHeight
+		if contentHeight <= 2 {
+			pinned = []string{addressLine + " · hjkl/yubn moves · Esc exits"}
+		} else {
+			pinned = append(pinned, addressLine)
+		}
 	}
-	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(lines), "\n"))
+	return renderBoundedBoxPinned(messageStyle, lines, pinned, width, height)
 }
 
 func renderStatus(world []entity, campgroundViews ...campgroundView) string {
+	campground := campgroundView{}
+	if len(campgroundViews) > 0 {
+		campground = campgroundViews[0]
+	}
+	return renderStatusSized(world, campground, 120, 6, 0, "")
+}
+
+func renderStatusSized(
+	world []entity,
+	campground campgroundView,
+	width int,
+	height int,
+	pendingCount int,
+	connectionStatus string,
+) string {
 	name := "player"
 	dungeonLevel := "?"
 	attributeLine := "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--"
@@ -1654,18 +2611,75 @@ func renderStatus(world []entity, campgroundViews ...campgroundView) string {
 			dungeonLevel = fmt.Sprintf("%d", player.At.Z)
 		}
 	}
-	lines := []string{
-		"Player: " + name,
-		attributeLine,
-		"AC:--  Dlvl:" + dungeonLevel,
+	firstLine := "Player: " + name + "  Dlvl:" + dungeonLevel
+	if pendingCount > 0 {
+		firstLine += fmt.Sprintf("  Pending:%d", pendingCount)
 	}
-	if len(campgroundViews) > 0 {
-		campground := campgroundViews[0]
-		if weather := campgroundWeatherLabel(campground.Weather); weather != "" {
-			lines = append(lines, "Weather: "+weather)
+	if connectionStatus != "" {
+		firstLine += "  " + connectionStatus
+	}
+	if weather := campgroundWeatherLabel(campground.Weather); weather != "" {
+		firstLine += "  Weather: " + weather
+	}
+	lines := []string{
+		firstLine,
+		attributeLine + "  AC:--",
+	}
+	return renderBoundedBox(statusStyle, lines, width, height)
+}
+
+func (m model) connectionStatus() string {
+	if m.streamActive {
+		return ""
+	}
+	if m.streamConnecting {
+		return "Connecting"
+	}
+	if m.streamRetryScheduled {
+		return "Retrying"
+	}
+	return "Offline"
+}
+
+func renderCompactHelp(width int) string {
+	text := "Flag Hack · ? help · hjklyubn move · <> stairs · Ctrl-S save · Ctrl-Q quit"
+	return helpStyle.Render(ansi.Truncate(text, max(1, width), ""))
+}
+
+func renderHelpOverlay(width int, height int) string {
+	pairs := [][2]string{
+		{"hjklyubn move · . wait", "; look"},
+		{"Shift+move run to block", "t then move: talk"},
+		{"Ctrl+move run", "o/c then move: doors"},
+		{"g rush · G run", "< / > stairs"},
+		{"m+move no-pickup walk", "M+move no-pickup run"},
+		{"O overview · _ travel", ", pickup · d drop"},
+		{"e eat · q quaff", "Alt-l / M-l loot"},
+		{"[ / ] list pages", "Enter/Space confirm"},
+		{"Esc cancel · q/r lists", "#save / Ctrl-S save"},
+		{"#quit / Ctrl-Q quit", "Ctrl-C exit · key cancels auto"},
+	}
+	contentWidth := boundedBoxSize(messageStyle, width, height).contentWidth
+	lines := []string{"Flag Hack commands"}
+	if contentWidth >= 60 {
+		columnWidth := (contentWidth - 2) / 2
+		for _, pair := range pairs {
+			left := ansi.Truncate(pair[0], columnWidth, "")
+			left += strings.Repeat(" ", max(0, columnWidth-ansi.StringWidth(left)))
+			lines = append(lines, left+"  "+ansi.Truncate(pair[1], columnWidth, ""))
+		}
+	} else {
+		for _, pair := range pairs {
+			lines = append(lines, pair[0], pair[1])
 		}
 	}
-	return statusStyle.Render(strings.Join(lines, "\n"))
+	return renderBoundedBoxPinned(
+		messageStyle,
+		lines,
+		[]string{mutedStyle.Render("?/q/Esc closes")},
+		width,
+		height,
+	)
 }
 
 func campgroundWeatherLabel(weather *campgroundWeather) string {
@@ -1693,25 +2707,122 @@ func formatAttributeStatus(a attributes) string {
 }
 
 func renderPopup(popup popupState) string {
-	instructions := "letters toggle, , marks all, space submits, q/r/Esc cancels"
+	return renderPopupSized(
+		popup,
+		38,
+		boardHeight,
+		max(1, boardHeight-7),
+		popupStyle,
+	)
+}
+
+func renderPopupSized(
+	popup popupState,
+	width int,
+	height int,
+	pageSize int,
+	style lipgloss.Style,
+) string {
+	contentWidth := boundedBoxSize(style, width, height).contentWidth
+	oneLine := func(line string) string {
+		return truncateToSingleLine(line, contentWidth)
+	}
+	lines := []string{oneLine(popup.title)}
+	if popup.loadState == popupLoadLoading {
+		lines = append(lines, mutedStyle.Render("Loading..."))
+		return renderBoundedBoxPinned(
+			style,
+			lines,
+			[]string{mutedStyle.Render("q/r/Esc cancels")},
+			width,
+			height,
+		)
+	}
+	if popup.loadState == popupLoadError {
+		lines = append(
+			lines,
+			"Load failed",
+			mutedStyle.Render(popup.loadError),
+		)
+		return renderBoundedBoxPinned(
+			style,
+			lines,
+			[]string{
+				mutedStyle.Render("Enter retries"),
+				mutedStyle.Render("q/r/Esc cancels"),
+			},
+			width,
+			height,
+		)
+	}
+	if popup.kind == popupLoot && popup.stage == popupStageAction {
+		lines = append(
+			lines,
+			mutedStyle.Render("choose action"),
+			"t - take",
+			"p - put",
+		)
+		return renderBoundedBoxPinned(
+			style,
+			lines,
+			[]string{mutedStyle.Render("q/r/Esc cancels")},
+			width,
+			height,
+		)
+	}
+
+	pinned := []string{}
 	if popupIsSingleItemAction(popup.kind) {
-		instructions = "letter selects immediately, q/r/Esc cancels"
-	}
-	lines := []string{popup.title, mutedStyle.Render(instructions)}
-	if popup.stage == popupStageAction {
-		lines = append(lines, "t - take", "p - put")
-		return popupStyle.Render(strings.Join(lines, "\n"))
-	}
-	items := popupVisibleItems(popup)
-	if len(items) == 0 {
-		lines = append(lines, mutedStyle.Render("(nothing available)"))
+		pinned = append(
+			pinned,
+			mutedStyle.Render("letter selects"),
+			mutedStyle.Render("immediately · q/r/Esc"),
+		)
 	} else {
-		for _, entry := range letteredItems(items) {
+		if popup.kind == popupLoot {
+			modeLabel := "take"
+			if popup.mode == lootPut {
+				modeLabel = "put"
+			}
+			lines = append(lines, modeLabel)
+		}
+		pinned = append(
+			pinned,
+			mutedStyle.Render("letters toggle · , all"),
+			mutedStyle.Render("space ok · q/r/Esc"),
+		)
+	}
+
+	items := popupVisibleItems(popup)
+	entries, normalizedPage, pageCount := letteredItemsPage(
+		items,
+		popup.page,
+		pageSize,
+	)
+	if len(items) == 0 {
+		if popup.kind == popupLoot && popup.mode == lootPut {
+			lines = append(lines, mutedStyle.Render("(inventory empty)"))
+		} else {
+			lines = append(lines, mutedStyle.Render("(nothing available)"))
+		}
+	} else {
+		for _, entry := range entries {
 			single := popupIsSingleItemAction(popup.kind)
-			lines = append(lines, renderLetteredItem(entry, !single && popup.marked[entry.item.Key], !single))
+			lines = append(lines, oneLine(renderLetteredItem(
+				entry,
+				!single && popup.marked[entry.item.Key],
+				false,
+			)))
 		}
 	}
-	return popupStyle.Render(strings.Join(lines, "\n"))
+	if pageCount > 1 {
+		pinned = append(pinned, mutedStyle.Render(fmt.Sprintf(
+			"page %d/%d · [ ]",
+			normalizedPage+1,
+			pageCount,
+		)))
+	}
+	return renderBoundedBoxPinned(style, lines, pinned, width, height)
 }
 
 func renderSetupScreen(setup setupState, roles []role, width int, height int, pending bool, messages []string) string {
@@ -1723,8 +2834,21 @@ func renderSetupScreen(setup setupState, roles []role, width int, height int, pe
 	}
 	content := renderSetupBox(setup, roles, pending)
 	if len(messages) > 0 {
-		content = lipgloss.JoinVertical(lipgloss.Left, content, renderMessages(messages))
+		remainingHeight := height - lipgloss.Height(content) - 1
+		if remainingHeight >= 3 {
+			messageWidth := min(width, max(36, lipgloss.Width(content)))
+			content = lipgloss.JoinVertical(
+				lipgloss.Left,
+				content,
+				"",
+				renderMessagesSized(messages, messageWidth, remainingHeight),
+			)
+		}
 	}
+	content = lipgloss.NewStyle().
+		MaxWidth(width).
+		MaxHeight(height).
+		Render(content)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
 
@@ -1735,16 +2859,21 @@ func renderOpeningExposition(message string, width int, height int) string {
 	if height <= 0 {
 		height = 30
 	}
-	paneWidth := min(72, max(34, width-4))
-	content := expositionStyle.Width(paneWidth).Render(strings.Join([]string{
+	paneWidth := min(74, max(1, width-2))
+	body := []string{
 		lipgloss.NewStyle().Bold(true).Render("You wake in the mud"),
 		"",
 		strings.TrimSpace(message),
 		"",
 		"You are carrying nothing.",
-		"",
-		mutedStyle.Render("Enter/Space continues · Esc closes"),
-	}, "\n"))
+	}
+	content := renderBoundedBoxPinned(
+		expositionStyle,
+		body,
+		[]string{mutedStyle.Render("Enter/Space continues · Esc closes")},
+		paneWidth,
+		height,
+	)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
 
@@ -1819,52 +2948,29 @@ func roleForID(roles []role, id string) (role, bool) {
 }
 
 func renderSidebarPopup(popup popupState) string {
-	lines := []string{popup.title}
-	if popup.kind == popupLoot && popup.stage == popupStageAction {
-		lines = append(lines, mutedStyle.Render("choose action"), "t - take", "p - put", mutedStyle.Render("q/r/Esc cancels"))
-		return sidebarStyle.Render(strings.Join(lines, "\n"))
-	}
-	if popupIsSingleItemAction(popup.kind) {
-		lines = append(lines, mutedStyle.Render("letter selects immediately · q/r/Esc cancels"))
-	} else if popup.kind == popupLoot {
-		modeLabel := "take"
-		if popup.mode == lootPut {
-			modeLabel = "put"
-		}
-		lines = append(lines, modeLabel, mutedStyle.Render("letters toggle · , all · space ok · Esc cancels"))
-	} else {
-		lines = append(lines, mutedStyle.Render("letters toggle · , all · space ok · Esc cancels"))
-	}
-	items := popupVisibleItems(popup)
-	if len(items) == 0 {
-		if popup.kind == popupLoot && popup.mode == lootPut {
-			lines = append(lines, mutedStyle.Render("(inventory empty)"))
-		} else {
-			lines = append(lines, mutedStyle.Render("(nothing available)"))
-		}
-	} else {
-		for _, entry := range letteredItems(items) {
-			single := popupIsSingleItemAction(popup.kind)
-			lines = append(lines, renderLetteredItem(entry, !single && popup.marked[entry.item.Key], false))
-		}
-	}
-	return sidebarStyle.Render(strings.Join(lines, "\n"))
+	return renderPopupSized(
+		popup,
+		22,
+		boardHeight,
+		max(1, boardHeight-7),
+		sidebarStyle,
+	)
 }
 
-func loadStateCmd(client apiClient) tea.Cmd {
+func loadStateCmd(client apiClient, generation int, mutationSerial int) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.loadState")
 	return func() tea.Msg {
 		snap, err := client.loadState(context.Background())
-		return stateLoadedMsg{snapshot: snap, err: err, perfTraceID: traceID, responseReceived: time.Now()}
+		return stateLoadedMsg{snapshot: snap, err: err, generation: generation, mutationSerial: mutationSerial, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
-func openClientStateStreamCmd(client apiClient) tea.Cmd {
+func openClientStateStreamCmd(client apiClient, generation int) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.stream.open")
 	return func() tea.Msg {
 		stream, err := client.openClientStateStreamWithTimeout(context.Background(), 10*time.Second)
 		if err != nil {
-			return clientStateStreamMsg{err: err, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+			return clientStateStreamMsg{err: err, generation: generation, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
 		}
 		timer := time.NewTimer(10 * time.Second)
 		defer timer.Stop()
@@ -1874,43 +2980,56 @@ func openClientStateStreamCmd(client apiClient) tea.Cmd {
 		case result, ok = <-stream.events:
 		case <-timer.C:
 			stream.cancel()
-			return clientStateStreamMsg{err: fmt.Errorf("timed out waiting for initial client-state stream event"), initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+			return clientStateStreamMsg{err: fmt.Errorf("timed out waiting for initial client-state stream event"), generation: generation, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
 		}
 		if !ok {
 			stream.cancel()
-			return clientStateStreamMsg{err: fmt.Errorf("client-state stream closed before initial event"), initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+			return clientStateStreamMsg{err: fmt.Errorf("client-state stream closed before initial event"), generation: generation, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
 		}
 		if result.err != nil {
 			stream.cancel()
-			return clientStateStreamMsg{err: result.err, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+			return clientStateStreamMsg{err: result.err, generation: generation, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
 		}
-		return clientStateStreamMsg{stream: stream, event: result.event, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
+		return clientStateStreamMsg{stream: stream, event: result.event, generation: generation, initial: true, perfTraceID: traceID, responseReceived: time.Now()}
 	}
 }
 
-func nextClientStateStreamEventCmd(stream *clientStateStream) tea.Cmd {
+func nextClientStateStreamEventCmd(stream *clientStateStream, generation int) tea.Cmd {
 	return func() tea.Msg {
 		result, ok := <-stream.events
 		if !ok {
-			return clientStateStreamMsg{stream: stream, err: fmt.Errorf("client-state stream closed"), responseReceived: time.Now()}
+			return clientStateStreamMsg{stream: stream, err: fmt.Errorf("client-state stream closed"), generation: generation, responseReceived: time.Now()}
 		}
-		return clientStateStreamMsg{stream: stream, event: result.event, err: result.err, responseReceived: time.Now()}
+		return clientStateStreamMsg{stream: stream, event: result.event, err: result.err, generation: generation, responseReceived: time.Now()}
 	}
 }
 
-func selectRoleCmd(client apiClient, roleID string, requestID int) tea.Cmd {
+func selectRoleCmd(
+	client apiClient,
+	roleID string,
+	requestID int,
+	generation int,
+	mutationSerial int,
+) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.setup.role")
 	return func() tea.Msg {
 		snap, err := client.selectRoleAndRefresh(context.Background(), roleID)
-		return setupDoneMsg{snapshot: snap, err: err, caseName: "role", perfTraceID: traceID, requestID: requestID, responseReceived: time.Now()}
+		return setupDoneMsg{snapshot: snap, err: err, caseName: "role", perfTraceID: traceID, requestID: requestID, generation: generation, mutationSerial: mutationSerial, responseReceived: time.Now()}
 	}
 }
 
-func confirmSetupCmd(client apiClient, roleID string, confirm bool, requestID int) tea.Cmd {
+func confirmSetupCmd(
+	client apiClient,
+	roleID string,
+	confirm bool,
+	requestID int,
+	generation int,
+	mutationSerial int,
+) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.setup.confirm")
 	return func() tea.Msg {
 		snap, err := client.confirmSetupAndRefresh(context.Background(), roleID, confirm)
-		return setupDoneMsg{snapshot: snap, err: err, caseName: "confirm", perfTraceID: traceID, requestID: requestID, responseReceived: time.Now()}
+		return setupDoneMsg{snapshot: snap, err: err, caseName: "confirm", perfTraceID: traceID, requestID: requestID, generation: generation, mutationSerial: mutationSerial, responseReceived: time.Now()}
 	}
 }
 
@@ -1938,26 +3057,31 @@ func loadLootItemsCmd(client apiClient, requestID int, containerKey string) tea.
 	}
 }
 
-func actionCmd(client apiClient, act action, streamActive bool) tea.Cmd {
+func actionCmd(
+	client apiClient,
+	act action,
+	streamActive bool,
+	requestID int,
+) tea.Cmd {
 	if streamActive {
-		return actionOnlyCmd(client, act)
+		return actionOnlyCmd(client, act, requestID)
 	}
-	return actionAndRefreshCmd(client, act)
+	return actionAndRefreshCmd(client, act, requestID)
 }
 
-func actionOnlyCmd(client apiClient, act action) tea.Cmd {
+func actionOnlyCmd(client apiClient, act action, requestID int) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.action")
 	return func() tea.Msg {
 		err := client.actionOnly(context.Background(), act)
-		return actionDoneMsg{err: err, caseName: act.Tag, perfTraceID: traceID, responseReceived: time.Now(), streamed: true}
+		return actionDoneMsg{err: err, caseName: act.Tag, perfTraceID: traceID, requestID: requestID, responseReceived: time.Now(), streamed: true}
 	}
 }
 
-func actionAndRefreshCmd(client apiClient, act action) tea.Cmd {
+func actionAndRefreshCmd(client apiClient, act action, requestID int) tea.Cmd {
 	traceID := client.perf.nextTraceID("charm.action")
 	return func() tea.Msg {
 		snap, err := client.actionAndRefresh(context.Background(), act)
-		return actionDoneMsg{snapshot: snap, err: err, caseName: act.Tag, perfTraceID: traceID, responseReceived: time.Now()}
+		return actionDoneMsg{snapshot: snap, err: err, caseName: act.Tag, perfTraceID: traceID, requestID: requestID, responseReceived: time.Now()}
 	}
 }
 
@@ -3124,22 +4248,47 @@ func addPos(a, b pos) pos {
 	return pos{X: a.X + b.X, Y: a.Y + b.Y, Z: a.Z + b.Z}
 }
 
-func worldTravelBounds(world []entity, target pos) (int, int) {
-	maxX := boardWidth - 1
-	maxY := boardHeight - 1
+type worldBounds struct {
+	minX int
+	maxX int
+	minY int
+	maxY int
+	z    int
+	ok   bool
+}
+
+func boundsForWorldZ(world []entity, z int) worldBounds {
+	bounds := worldBounds{z: z}
 	for _, item := range world {
-		if item.In != "world" || item.At.Z != target.Z {
+		if item.In != "world" || item.At.Z != z {
 			continue
 		}
-		maxX = max(maxX, item.At.X)
-		maxY = max(maxY, item.At.Y)
+		if !bounds.ok {
+			bounds.minX = item.At.X
+			bounds.maxX = item.At.X
+			bounds.minY = item.At.Y
+			bounds.maxY = item.At.Y
+			bounds.ok = true
+			continue
+		}
+		bounds.minX = min(bounds.minX, item.At.X)
+		bounds.maxX = max(bounds.maxX, item.At.X)
+		bounds.minY = min(bounds.minY, item.At.Y)
+		bounds.maxY = max(bounds.maxY, item.At.Y)
 	}
-	return maxX, maxY
+	return bounds
 }
 
 func clampTravelTarget(p pos, world []entity) pos {
-	maxX, maxY := worldTravelBounds(world, p)
-	return pos{X: clamp(p.X, 0, maxX), Y: clamp(p.Y, 0, maxY), Z: p.Z}
+	bounds := boundsForWorldZ(world, p.Z)
+	if !bounds.ok {
+		return p
+	}
+	return pos{
+		X: clamp(p.X, bounds.minX, bounds.maxX),
+		Y: clamp(p.Y, bounds.minY, bounds.maxY),
+		Z: p.Z,
+	}
 }
 
 func moveTravelTarget(target pos, dir string, world []entity) pos {
@@ -3240,22 +4389,31 @@ type viewport struct {
 }
 
 func viewportForWorld(world []entity) viewport {
+	return viewportForWorldSized(world, boardWidth, boardHeight)
+}
+
+func viewportForWorldSized(world []entity, width int, height int) viewport {
 	player, ok := findPlayer(world)
 	if !ok {
 		return viewport{}
 	}
-	maxX := player.At.X
-	maxY := player.At.Y
-	for _, item := range world {
-		if item.In != "world" || item.At.Z != player.At.Z {
-			continue
-		}
-		maxX = max(maxX, item.At.X)
-		maxY = max(maxY, item.At.Y)
+	bounds := boundsForWorldZ(world, player.At.Z)
+	if !bounds.ok {
+		return viewport{}
 	}
+	minLeft := min(0, bounds.minX)
+	if bounds.maxX-bounds.minX+1 >= width {
+		minLeft = bounds.minX
+	}
+	minTop := min(0, bounds.minY)
+	if bounds.maxY-bounds.minY+1 >= height {
+		minTop = bounds.minY
+	}
+	maxLeft := max(minLeft, bounds.maxX-width+1)
+	maxTop := max(minTop, bounds.maxY-height+1)
 	return viewport{
-		left: clamp(player.At.X-boardWidth/2, 0, max(0, maxX-boardWidth+1)),
-		top:  clamp(player.At.Y-boardHeight/2, 0, max(0, maxY-boardHeight+1)),
+		left: clamp(player.At.X-width/2, minLeft, maxLeft),
+		top:  clamp(player.At.Y-height/2, minTop, maxTop),
 		z:    player.At.Z,
 		hasZ: true,
 	}
@@ -3266,7 +4424,11 @@ func screenPos(p pos, vp viewport) pos {
 }
 
 func isVisibleScreenPos(p pos) bool {
-	return p.X >= 0 && p.X < boardWidth && p.Y >= 0 && p.Y < boardHeight
+	return isVisibleScreenPosSized(p, boardWidth, boardHeight)
+}
+
+func isVisibleScreenPosSized(p pos, width int, height int) bool {
+	return p.X >= 0 && p.X < width && p.Y >= 0 && p.Y < height
 }
 
 func drawWorld(world []entity, target *pos) [][]tile {
@@ -3280,39 +4442,125 @@ func drawWorldWithCampground(world []entity, target *pos, campground campgroundV
 }
 
 func drawWorldWithTileFor(world []entity, target *pos, tileForEntity func(entity) tile) [][]tile {
-	tiles := make([][]tile, boardHeight)
-	for y := 0; y < boardHeight; y++ {
-		tiles[y] = make([]tile, boardWidth)
-		for x := 0; x < boardWidth; x++ {
-			tiles[y][x] = tile{char: " "}
-		}
+	return tileGridRows(drawWorldGridWithTileFor(
+		world,
+		target,
+		boardWidth,
+		boardHeight,
+		tileForEntity,
+	))
+}
+
+type renderPriority struct {
+	layer int
+	tag   int
+	key   string
+}
+
+func renderTagPriority(item entity) int {
+	switch item.Tag {
+	case "floor":
+		return 0
+	case "tunnel":
+		return 1
+	case "tent":
+		return 2
+	case "mud":
+		return 3
+	case "wall":
+		return 10
+	case "tent-wall":
+		return 11
+	case "tent-post":
+		return 12
+	case "camp-prop":
+		return 13
+	case "sign":
+		return 14
+	case "effigy":
+		return 15
+	case "temple":
+		return 16
+	case "stairs-down", "stairs-up":
+		return 17
+	case "door":
+		return 18
+	case "player":
+		return 100
+	default:
+		return 50
 	}
-	vp := viewportForWorld(world)
-	chosen := map[string]entity{}
+}
+
+func renderPriorityFor(item entity) renderPriority {
+	return renderPriority{
+		layer: zIndex(item),
+		tag:   renderTagPriority(item),
+		key:   item.Key,
+	}
+}
+
+func renderPriorityWins(candidate renderPriority, current renderPriority) bool {
+	if candidate.layer != current.layer {
+		return candidate.layer > current.layer
+	}
+	if candidate.tag != current.tag {
+		return candidate.tag > current.tag
+	}
+	return candidate.key < current.key
+}
+
+func drawWorldGridWithTileFor(
+	world []entity,
+	target *pos,
+	width int,
+	height int,
+	tileForEntity func(entity) tile,
+) tileGrid {
+	width = max(1, width)
+	height = max(1, height)
+	grid := tileGrid{
+		width:  width,
+		height: height,
+		cells:  make([]tile, width*height),
+	}
+	priorities := make([]renderPriority, width*height)
+	occupied := make([]bool, width*height)
+	for index := range grid.cells {
+		grid.cells[index] = tile{char: " "}
+	}
+	vp := viewportForWorldSized(world, width, height)
 	for _, item := range world {
 		if item.In != "world" || (vp.hasZ && item.At.Z != vp.z) {
 			continue
 		}
-		screenItem := item
-		screenItem.At = screenPos(item.At, vp)
-		if !isVisibleScreenPos(screenItem.At) {
+		screen := screenPos(item.At, vp)
+		if !isVisibleScreenPosSized(screen, width, height) {
 			continue
 		}
-		key := posKey(screenItem.At)
-		if previous, ok := chosen[key]; !ok || zIndex(screenItem) >= zIndex(previous) {
-			chosen[key] = screenItem
+		index := screen.Y*width + screen.X
+		priority := renderPriorityFor(item)
+		if !occupied[index] || renderPriorityWins(priority, priorities[index]) {
+			grid.cells[index] = tileForEntity(item)
+			priorities[index] = priority
+			occupied[index] = true
 		}
-	}
-	for _, item := range chosen {
-		tiles[item.At.Y][item.At.X] = tileForEntity(item)
 	}
 	if target != nil && (!vp.hasZ || target.Z == vp.z) {
 		screenTarget := screenPos(*target, vp)
-		if isVisibleScreenPos(screenTarget) {
-			tiles[screenTarget.Y][screenTarget.X] = tile{char: "*", color: lipgloss.Color("11"), bright: true}
+		if isVisibleScreenPosSized(screenTarget, width, height) {
+			grid.cells[screenTarget.Y*width+screenTarget.X] = tile{char: "*", color: lipgloss.Color("11"), bright: true}
 		}
 	}
-	return tiles
+	return grid
+}
+
+func tileGridRows(grid tileGrid) [][]tile {
+	rows := make([][]tile, grid.height)
+	for y := 0; y < grid.height; y++ {
+		rows[y] = grid.cells[y*grid.width : (y+1)*grid.width]
+	}
+	return rows
 }
 
 func campgroundHasHeavyRain(campground campgroundView) bool {

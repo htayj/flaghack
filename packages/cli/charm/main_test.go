@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const testOpeningExposition = "You wake naked and face down in a puddle of mud just off the road. Rain hammers down around you, and you cannot remember how you got here."
@@ -59,7 +60,7 @@ func TestActionCmdUsesStreamWithoutClientStateRefreshWhenActive(t *testing.T) {
 	defer server.Close()
 
 	client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
-	msg := actionCmd(client, action{Tag: "move", Dir: "E"}, true)().(actionDoneMsg)
+	msg := actionCmd(client, action{Tag: "move", Dir: "E"}, true, 1)().(actionDoneMsg)
 	if msg.err != nil {
 		t.Fatal(msg.err)
 	}
@@ -863,7 +864,7 @@ func TestSetupViewAndKeysSelectConfirmOrReturnToRoleSelection(t *testing.T) {
 	}
 	m = next.(model)
 
-	next, _ = m.Update(setupDoneMsg{requestID: m.setupRequestID, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles}})
+	next, _ = m.Update(setupDoneMsg{requestID: m.setupRequestID, generation: m.streamGeneration, mutationSerial: m.mutationSerial, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles}})
 	m = next.(model)
 	if m.setupPending {
 		t.Fatal("role selection response should clear setup pending")
@@ -946,7 +947,7 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 			ID: 1, Kind: "arrival-narration", Message: testOpeningExposition,
 		}},
 	}
-	next, _ = m.Update(setupDoneMsg{requestID: 7, snapshot: completion})
+	next, _ = m.Update(setupDoneMsg{requestID: 7, generation: m.streamGeneration, mutationSerial: m.mutationSerial, snapshot: completion})
 	m = next.(model)
 	if !m.setup.complete() {
 		t.Fatalf("setup completion response did not enter normal play: %#v", m.setup)
@@ -968,7 +969,7 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 			t.Fatalf("opening exposition missing %q: %q", expected, view)
 		}
 	}
-	if strings.Contains(view, "Flag Hack Charmbracelet UI") || len(m.messages) != 0 {
+	if strings.Contains(view, "Flag Hack · ? help") || len(m.messages) != 0 {
 		t.Fatalf("opening exposition leaked normal play or duplicated narration: view=%q messages=%#v", view, m.messages)
 	}
 
@@ -987,7 +988,7 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 		t.Fatalf("exposition dismissal returned command %#v, want nil", cmd)
 	}
 	m = next.(model)
-	if m.openingExposition != "" || !strings.Contains(m.View(), "Flag Hack Charmbracelet UI") {
+	if m.openingExposition != "" || !strings.Contains(m.View(), "Flag Hack · ? help") {
 		t.Fatalf("dismissed exposition did not reveal normal play: exposition=%q view=%q", m.openingExposition, m.View())
 	}
 
@@ -1002,7 +1003,7 @@ func TestSetupIgnoresMovementUntilCompletionAndAppliesServerCompletion(t *testin
 		t.Fatalf("completed-game reconnect opened exposition: exposition=%q eventID=%d", reconnected.openingExposition, reconnected.lastGameplayEventID)
 	}
 
-	next, _ = m.Update(setupDoneMsg{requestID: 6, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles, world: []entity{{Key: "stale-player", Tag: "player", In: "world", At: pos{X: 9, Y: 9, Z: 0}}}, inventory: []entity{}}})
+	next, _ = m.Update(setupDoneMsg{requestID: 6, generation: m.streamGeneration, mutationSerial: m.mutationSerial, snapshot: snapshot{setup: setupState{Phase: "confirm", SelectedRoleID: "virgin"}, roles: m.roles, world: []entity{{Key: "stale-player", Tag: "player", In: "world", At: pos{X: 9, Y: 9, Z: 0}}}, inventory: []entity{}}})
 	m = next.(model)
 	if m.setup.Phase != "complete" {
 		t.Fatalf("stale setup response regressed completed setup to %#v", m.setup)
@@ -1837,7 +1838,7 @@ func TestPopupLettersToggleVisibleItems(t *testing.T) {
 	}
 }
 
-func TestPopupLettersAllowLootActionLettersInItemStage(t *testing.T) {
+func TestLootActionLettersDoNotSwitchModeInPagedItemStage(t *testing.T) {
 	items := make([]entity, 0, 18)
 	for i := 0; i < 18; i++ {
 		items = append(items, entity{Key: fmt.Sprintf("item-%02d", i), Tag: fmt.Sprintf("tag-%02d", i)})
@@ -1852,25 +1853,82 @@ func TestPopupLettersAllowLootActionLettersInItemStage(t *testing.T) {
 		items:        items,
 		marked:       map[string]bool{},
 	}
-	pKey := letteredItems(items)[15].item.Key
-	tKey := letteredItems(items)[17].item.Key
-
 	next, cmd := m.handlePopupKey("p")
 	if cmd != nil {
-		t.Fatalf("p item letter returned command %#v, want nil", cmd)
+		t.Fatalf("p in item stage returned command %#v, want nil", cmd)
 	}
 	m = next.(model)
-	if m.popup == nil || !m.popup.marked[pKey] {
-		t.Fatalf("p item letter should mark %s, popup=%#v", pKey, m.popup)
+	if m.popup == nil || m.popup.mode != lootTake || m.popup.stage != popupStageItems || len(m.popup.marked) != 0 {
+		t.Fatalf("p should not switch a paged item stage back to put mode: popup=%#v", m.popup)
 	}
 
 	next, cmd = m.handlePopupKey("t")
 	if cmd != nil {
-		t.Fatalf("t item letter returned command %#v, want nil", cmd)
+		t.Fatalf("t in item stage returned command %#v, want nil", cmd)
 	}
 	m = next.(model)
-	if m.popup == nil || !m.popup.marked[tKey] {
-		t.Fatalf("t item letter should mark %s, popup=%#v", tKey, m.popup)
+	if m.popup == nil || m.popup.mode != lootTake || m.popup.stage != popupStageItems || len(m.popup.marked) != 0 {
+		t.Fatalf("t should not change a paged item stage: popup=%#v", m.popup)
+	}
+}
+
+func TestPagedPopupMakesEveryItemReachableAndKeepsQuaffOneStage(t *testing.T) {
+	items := make([]entity, 0, 30)
+	for index := 0; index < 30; index++ {
+		items = append(items, entity{
+			Key: fmt.Sprintf("item-%02d", index),
+			Tag: "beer",
+			In:  "player",
+		})
+	}
+	posted := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read action body: %v", err)
+		}
+		posted = string(body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.width = 80
+	m.height = 24
+	m.streamActive = true
+	m.client = apiClient{
+		baseURL: server.URL,
+		http:    server.Client(),
+		perf:    &perfRecorder{source: "charm"},
+	}
+	m.popup = &popupState{
+		kind:   popupQuaff,
+		title:  "Quaff what?",
+		stage:  popupStageItems,
+		items:  items,
+		marked: map[string]bool{},
+	}
+	for range 3 {
+		next, cmd := m.handlePopupKey("]")
+		if cmd != nil {
+			t.Fatalf("page navigation returned command %#v", cmd)
+		}
+		m = next.(model)
+	}
+	if m.popup == nil || m.popup.page != 3 {
+		t.Fatalf("popup page = %#v, want final page", m.popup)
+	}
+	next, cmd := m.handlePopupKey("f")
+	m = next.(model)
+	if cmd == nil || m.popup != nil {
+		t.Fatalf("paged quaff should dispatch immediately: cmd=%#v popup=%#v", cmd, m.popup)
+	}
+	msg := cmd().(actionDoneMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	if !strings.Contains(posted, `"keys":["item-29"]`) {
+		t.Fatalf("paged quaff payload = %q, want item-29", posted)
 	}
 }
 
@@ -2187,7 +2245,7 @@ func TestLootPopupSwitchesBetweenTakeAndPutLists(t *testing.T) {
 	}
 }
 
-func TestViewKeepsDropInterfaceBelowStatus(t *testing.T) {
+func TestViewUsesUnifiedBoundedDropRegion(t *testing.T) {
 	m := newModel()
 	m.world = []entity{
 		{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
@@ -2205,14 +2263,14 @@ func TestViewKeepsDropInterfaceBelowStatus(t *testing.T) {
 	inventoryIndex := strings.Index(view, "inventory")
 	dropIndex := strings.Index(view, "Drop what?")
 	statusIndex := strings.Index(view, "Player: you")
-	if inventoryIndex < 0 || !strings.Contains(view, "beer") {
-		t.Fatalf("drop popup should not replace inventory sidebar: %q", view)
+	if inventoryIndex >= 0 || !strings.Contains(view, "beer") {
+		t.Fatalf("drop popup should replace the inventory region: %q", view)
 	}
 	if dropIndex < 0 {
 		t.Fatalf("drop popup missing from view: %q", view)
 	}
-	if statusIndex < 0 || dropIndex < statusIndex {
-		t.Fatalf("drop popup should remain below status; drop index %d, status index %d", dropIndex, statusIndex)
+	if statusIndex < 0 || dropIndex > statusIndex {
+		t.Fatalf("drop popup should remain in the bounded main region; drop index %d, status index %d", dropIndex, statusIndex)
 	}
 }
 
@@ -2227,7 +2285,7 @@ func TestViewRendersEventLogAtTopAboveMap(t *testing.T) {
 	view := m.View()
 	eventIndex := strings.Index(view, "top event")
 	mapIndex := strings.Index(view, "@")
-	controlsIndex := strings.Index(view, "Flag Hack Charmbracelet UI")
+	controlsIndex := strings.Index(view, "Flag Hack · ? help")
 	if eventIndex < 0 {
 		t.Fatalf("event log message missing from view: %q", view)
 	}
@@ -2334,8 +2392,16 @@ func TestCampgroundOverviewStatusLookAndHelpUseServerProjection(t *testing.T) {
 	}
 	m = next.(model)
 	view := m.View()
-	if !m.overviewOpen || !strings.Contains(view, "Campground overview") || !strings.Contains(view, "t talk") || !strings.Contains(view, "_ landmark/map travel") {
-		t.Fatalf("overview/help missing from view: %q", view)
+	if !m.overviewOpen || !strings.Contains(view, "Campground overview") || !strings.Contains(view, "_ chooses a destination") {
+		t.Fatalf("overview missing from view: %q", view)
+	}
+	next, _ = m.handleKey(charmRuneKey('O'))
+	m = next.(model)
+	next, _ = m.handleKey(charmRuneKey('?'))
+	m = next.(model)
+	view = m.View()
+	if !m.helpOpen || !strings.Contains(view, "t then move: talk") || !strings.Contains(view, "O overview · _ travel") {
+		t.Fatalf("help overlay missing campground controls: %q", view)
 	}
 }
 
@@ -2388,12 +2454,12 @@ func TestLandmarkTravelPopupOffersDestinationsAndMapCursor(t *testing.T) {
 		t.Fatal("landmark choice did not start travel")
 	}
 	m = next.(model)
-	if m.landmarkPopup != nil || m.autoCancel == nil {
-		t.Fatalf("landmark travel state = popup %#v cancel %#v", m.landmarkPopup, m.autoCancel)
+	if m.landmarkPopup != nil || m.activeAuto == nil {
+		t.Fatalf("landmark travel state = popup %#v auto %#v", m.landmarkPopup, m.activeAuto)
 	}
 	next, _ = m.handleKey(charmRuneKey('x'))
 	m = next.(model)
-	if m.autoCancel != nil || !strings.Contains(m.messages[0], "automove canceled") {
+	if m.activeAuto == nil || !m.activeAuto.cancelRequested || !strings.Contains(m.messages[0], "automove stopping") {
 		t.Fatalf("landmark travel did not remain cancellable: %#v", m.messages)
 	}
 }
@@ -2443,7 +2509,7 @@ func TestViewRendersStatusBoxBelowMapAboveControls(t *testing.T) {
 	view := m.View()
 	mapIndex := strings.Index(view, "@")
 	statusIndex := strings.Index(view, "Player: Ada")
-	controlsIndex := strings.Index(view, "Flag Hack Charmbracelet UI")
+	controlsIndex := strings.Index(view, "Flag Hack · ? help")
 	for label, index := range map[string]int{
 		"map player glyph": mapIndex,
 		"status box":       statusIndex,
@@ -2463,6 +2529,375 @@ func TestViewRendersStatusBoxBelowMapAboveControls(t *testing.T) {
 	}
 	if statusIndex > controlsIndex {
 		t.Fatalf("status box should render above controls; status index %d, controls index %d", statusIndex, controlsIndex)
+	}
+}
+
+func assertViewFits(t *testing.T, view string, width int, height int) {
+	t.Helper()
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		t.Fatalf("view height = %d, exceeds terminal height %d", len(lines), height)
+	}
+	for index, line := range lines {
+		if lineWidth := ansi.StringWidth(line); lineWidth > width {
+			t.Fatalf("view line %d width = %d, exceeds terminal width %d: %q", index, lineWidth, width, line)
+		}
+	}
+}
+
+func responsiveTestWorld() []entity {
+	world := make([]entity, 0, boardWidth*boardHeight+4)
+	for y := 0; y < boardHeight; y++ {
+		for x := 0; x < boardWidth; x++ {
+			world = append(world, entity{
+				Key: fmt.Sprintf("floor-%d-%d", x, y),
+				Tag: "floor",
+				In:  "world",
+				At:  pos{X: x, Y: y, Z: 0},
+			})
+		}
+	}
+	world = append(world,
+		entity{Key: "road", Tag: "tunnel", In: "world", At: pos{X: 39, Y: 10, Z: 0}},
+		entity{Key: "player", Tag: "player", Name: "Ada", In: "world", At: pos{X: 40, Y: 10, Z: 0}},
+	)
+	return world
+}
+
+func TestViewFitsResponsiveTerminalSizes(t *testing.T) {
+	for _, size := range []struct {
+		width  int
+		height int
+	}{
+		{width: 80, height: 24},
+		{width: 100, height: 36},
+		{width: 120, height: 40},
+	} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			m := newModel()
+			m.setup = setupState{Phase: "complete"}
+			m.width = size.width
+			m.height = size.height
+			m.world = responsiveTestWorld()
+			m.inventory = []entity{{Key: "beer", Tag: "beer", In: "player"}}
+			m.messages = []string{"Rain rattles against the tents."}
+			m.campground = campgroundView{Weather: &campgroundWeather{Condition: "heavy-rain"}}
+
+			view := m.View()
+			assertViewFits(t, view, size.width, size.height)
+			for _, sentinel := range []string{
+				"Rain rattles",
+				"@",
+				"Player: Ada",
+				"Flag Hack",
+				"┌",
+				"└",
+			} {
+				if !strings.Contains(view, sentinel) {
+					t.Fatalf("responsive view missing %q: %q", sentinel, view)
+				}
+			}
+			if layoutForSize(size.width, size.height).showSidebar != strings.Contains(view, "inventory") {
+				t.Fatalf("sidebar visibility did not match layout at %dx%d: %q", size.width, size.height, view)
+			}
+		})
+	}
+}
+
+func TestViewUsesStableTooSmallFallback(t *testing.T) {
+	m := newModel()
+	m.width = minTerminalWidth - 1
+	m.height = minTerminalHeight - 1
+	m.setup = setupState{Phase: "complete"}
+	m.world = responsiveTestWorld()
+
+	view := m.View()
+	assertViewFits(t, view, m.width, m.height)
+	if !strings.Contains(view, "Flag Hack") || !strings.Contains(view, "terminal too small") {
+		t.Fatalf("too-small fallback missing guidance: %q", view)
+	}
+}
+
+func TestLargePopupRemainsInsideCompactView(t *testing.T) {
+	m := newModel()
+	m.width = 80
+	m.height = 24
+	m.setup = setupState{Phase: "complete"}
+	m.world = responsiveTestWorld()
+	m.popup = &popupState{
+		kind:   popupDrop,
+		title:  "Drop what?",
+		stage:  popupStageItems,
+		marked: map[string]bool{},
+	}
+	for index := 0; index < 30; index++ {
+		m.popup.items = append(m.popup.items, entity{
+			Key: fmt.Sprintf("item-%02d", index),
+			Tag: "absurdly-long-inventory-item-name",
+		})
+	}
+
+	view := m.View()
+	assertViewFits(t, view, m.width, m.height)
+	if !strings.Contains(view, "Drop what?") || !strings.Contains(view, "page 1/4") {
+		t.Fatalf("compact popup missing bounded page: %q", view)
+	}
+}
+
+func TestHelpOverlayAt80x24ListsEveryBindingAndFits(t *testing.T) {
+	m := newModel()
+	m.width = 80
+	m.height = 24
+	m.setup = setupState{Phase: "complete"}
+	m.world = responsiveTestWorld()
+
+	next, cmd := m.handleKey(charmRuneKey('?'))
+	m = next.(model)
+	if cmd != nil || !m.helpOpen {
+		t.Fatalf("help key state open=%v cmd=%#v", m.helpOpen, cmd)
+	}
+	view := m.View()
+	assertViewFits(t, view, m.width, m.height)
+	for _, expected := range []string{
+		"Flag Hack commands",
+		"hjklyubn move · . wait",
+		"; look",
+		"Shift+move run to block",
+		"t then move: talk",
+		"Ctrl+move run",
+		"o/c then move: doors",
+		"g rush · G run",
+		"< / > stairs",
+		"m+move no-pickup walk",
+		"M+move no-pickup run",
+		"O overview · _ travel",
+		", pickup · d drop",
+		"e eat · q quaff",
+		"Alt-l / M-l loot",
+		"[ / ] list pages",
+		"Enter/Space confirm",
+		"Esc cancel · q/r lists",
+		"#save / Ctrl-S save",
+		"#quit / Ctrl-Q quit",
+		"Ctrl-C exit · key cancels auto",
+		"?/q/Esc closes",
+	} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("help overlay missing %q: %q", expected, view)
+		}
+	}
+
+	next, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(model)
+	if m.helpOpen {
+		t.Fatal("Esc did not close help overlay")
+	}
+}
+
+func TestSetupErrorsAndOpeningExpositionFitSupportedSmallSizes(t *testing.T) {
+	for _, size := range []struct {
+		width  int
+		height int
+	}{{width: 40, height: 14}, {width: 80, height: 24}} {
+		t.Run(fmt.Sprintf("setup-%dx%d", size.width, size.height), func(t *testing.T) {
+			m := newModel()
+			m.width = size.width
+			m.height = size.height
+			m.messages = []string{
+				"initial connection failed: the campground server did not answer before the storm knocked the line out",
+			}
+
+			view := m.View()
+			assertViewFits(t, view, size.width, size.height)
+			if !strings.Contains(view, "Loading game...") || !strings.Contains(view, "initial connection failed") {
+				t.Fatalf("bounded setup error missing at %dx%d: %q", size.width, size.height, view)
+			}
+		})
+
+		t.Run(fmt.Sprintf("exposition-%dx%d", size.width, size.height), func(t *testing.T) {
+			m := newModel()
+			m.width = size.width
+			m.height = size.height
+			m.setup = setupState{Phase: "complete"}
+			m.world = responsiveTestWorld()
+			m.openingExposition = testOpeningExposition
+
+			view := m.View()
+			assertViewFits(t, view, size.width, size.height)
+			for _, expected := range []string{
+				"You wake in the mud",
+				"wake naked and face down",
+				"Enter/Space continues",
+			} {
+				if !strings.Contains(view, expected) {
+					t.Fatalf("bounded exposition missing %q at %dx%d: %q", expected, size.width, size.height, view)
+				}
+			}
+		})
+	}
+}
+
+func TestAnsiUnicodeBarkWrapsInsideExactBoxBorders(t *testing.T) {
+	bark := "\x1b[31m" + strings.Repeat("营地🙂 hippies laugh and grumble nearby · ", 12) + "\x1b[0m"
+	got := renderMessagesSized([]string{bark}, 28, 6)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 6 || !strings.HasPrefix(lines[0], "┌") || !strings.HasPrefix(lines[len(lines)-1], "└") {
+		t.Fatalf("styled Unicode bark lost exact borders: lines=%d output=%q", len(lines), got)
+	}
+	for index, line := range lines {
+		if width := ansi.StringWidth(line); width != 28 {
+			t.Fatalf("styled Unicode bark line %d width=%d, want 28: %q", index, width, line)
+		}
+	}
+	plain := ansi.Strip(got)
+	if !strings.Contains(plain, "营地🙂") || !strings.Contains(plain, "…") {
+		t.Fatalf("styled Unicode bark did not wrap with continuation: %q", got)
+	}
+	if !strings.Contains(got, "\x1b[31m") {
+		t.Fatalf("styled Unicode bark lost ANSI styling: %q", got)
+	}
+}
+
+func TestCompactLookKeepsAddressAndExitControlVisible(t *testing.T) {
+	m := newModel()
+	m.width = 80
+	m.height = 24
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{
+		{Key: "floor", Tag: "floor", In: "world", At: pos{}},
+		{Key: "player", Tag: "player", Name: "Ada", In: "world", At: pos{}},
+	}
+	m.lookTarget = ptr(pos{})
+	m.campground = campgroundView{
+		CurrentAddress: "N-1, Lantern Road",
+		Weather:        &campgroundWeather{Condition: "heavy-rain"},
+	}
+
+	view := m.View()
+	assertViewFits(t, view, m.width, m.height)
+	for _, expected := range []string{"muddy ground", "Address: N-1, Lantern Road", "Esc exits"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("compact look panel missing %q: %q", expected, view)
+		}
+	}
+}
+
+func TestCrowdedCampgroundOverviewKeepsCloseControlAndContinuation(t *testing.T) {
+	m := newModel()
+	m.width = 80
+	m.height = 24
+	m.setup = setupState{Phase: "complete"}
+	m.world = responsiveTestWorld()
+	m.overviewOpen = true
+	m.campground.CurrentAddress = "N-1, Lantern Road"
+	for index := 0; index < 30; index++ {
+		m.campground.DiscoveredLandmarks = append(
+			m.campground.DiscoveredLandmarks,
+			campgroundLandmark{
+				ID:      fmt.Sprintf("landmark-%02d", index),
+				Name:    fmt.Sprintf("A Very Crowded Landmark Number %02d", index),
+				Kind:    "camp",
+				Address: "Somewhere beyond the rain-soaked tents",
+			},
+		)
+	}
+
+	view := m.View()
+	assertViewFits(t, view, m.width, m.height)
+	for _, expected := range []string{
+		"Campground overview",
+		"O/q/Esc closes · _ chooses a destination",
+		"…",
+	} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("crowded overview missing %q: %q", expected, view)
+		}
+	}
+}
+
+func TestDynamicBoardUsesProjectedBoundsAndExactDisplaySize(t *testing.T) {
+	world := make([]entity, 0, boardWidth*boardHeight+1)
+	for y := 40; y < 40+boardHeight; y++ {
+		for x := 100; x < 100+boardWidth; x++ {
+			world = append(world, entity{
+				Key: fmt.Sprintf("floor-%d-%d", x, y),
+				Tag: "floor",
+				In:  "world",
+				At:  pos{X: x, Y: y, Z: 0},
+			})
+		}
+	}
+	world = append(world, entity{
+		Key: "player", Tag: "player", In: "world", At: pos{X: 140, Y: 50, Z: 0},
+	})
+
+	grid := drawWorldGridWithTileFor(world, nil, 50, 10, tileFor)
+	if got := grid.cells[5*50+25].char; got != "@" {
+		t.Fatalf("projected player tile = %q, want centered @", got)
+	}
+	rendered := renderTileGrid(grid)
+	lines := strings.Split(rendered, "\n")
+	if len(lines) != 10 {
+		t.Fatalf("dynamic board height = %d, want 10", len(lines))
+	}
+	for index, line := range lines {
+		if got := ansi.StringWidth(line); got != 50 {
+			t.Fatalf("dynamic board line %d width = %d, want 50", index, got)
+		}
+	}
+
+	target := pos{X: 140, Y: 50, Z: 0}
+	for range 100 {
+		target = moveTravelTarget(target, "W", world)
+		target = moveTravelTarget(target, "N", world)
+	}
+	if target != (pos{X: 100, Y: 40, Z: 0}) {
+		t.Fatalf("projected cursor minimum = %#v, want 100,40", target)
+	}
+	for range 200 {
+		target = moveTravelTarget(target, "E", world)
+		target = moveTravelTarget(target, "S", world)
+	}
+	if target != (pos{X: 179, Y: 59, Z: 0}) {
+		t.Fatalf("projected cursor maximum = %#v, want 179,59", target)
+	}
+}
+
+func TestFlatZBufferIsDeterministicForEqualLayers(t *testing.T) {
+	position := pos{X: 1, Y: 1, Z: 0}
+	tests := []struct {
+		name  string
+		left  entity
+		right entity
+		want  string
+	}{
+		{
+			name:  "tent post beats wall",
+			left:  entity{Key: "wall", Tag: "wall", In: "world", At: position, Variant: "vertical"},
+			right: entity{Key: "post", Tag: "tent-post", In: "world", At: position},
+			want:  "┼",
+		},
+		{
+			name:  "door beats tent wall",
+			left:  entity{Key: "tent-wall", Tag: "tent-wall", In: "world", At: position, Variant: "horizontal"},
+			right: entity{Key: "door", Tag: "door", In: "world", At: position, Variant: "vertical"},
+			want:  "│",
+		},
+		{
+			name:  "stable key breaks item tie",
+			left:  entity{Key: "z-beer", Tag: "beer", In: "world", At: position},
+			right: entity{Key: "a-hammer", Tag: "hammer", In: "world", At: position},
+			want:  "T",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			forward := drawWorld([]entity{test.left, test.right}, nil)[1][1].char
+			reverse := drawWorld([]entity{test.right, test.left}, nil)[1][1].char
+			if forward != test.want || reverse != test.want {
+				t.Fatalf("forward/reverse = %q/%q, want %q", forward, reverse, test.want)
+			}
+		})
 	}
 }
 
@@ -2534,6 +2969,853 @@ func TestHandleKeyShowsDebugMessagesWhenEnabled(t *testing.T) {
 	m = next.(model)
 	if len(m.messages) != 1 || m.messages[0] != "doing ?" {
 		t.Fatalf("messages = %#v, want doing debug message", m.messages)
+	}
+}
+
+func TestNormalActionsRunThroughBoundedFIFOInInputOrder(t *testing.T) {
+	postedDirections := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/act" {
+			http.NotFound(w, r)
+			return
+		}
+		var payload actionPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		postedDirections = append(postedDirections, payload.Action.Dir)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = true
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{}}}
+
+	next, firstCmd := m.handleKey(charmRuneKey('l'))
+	m = next.(model)
+	if firstCmd == nil || m.activeAction == nil || m.pendingActionCount() != 1 {
+		t.Fatalf("first action state = active %#v pending %d cmd %#v", m.activeAction, m.pendingActionCount(), firstCmd)
+	}
+	next, secondCmd := m.handleKey(charmRuneKey('j'))
+	m = next.(model)
+	if secondCmd != nil || len(m.queuedActions) != 1 || m.pendingActionCount() != 2 {
+		t.Fatalf("second action should queue: queued=%#v pending=%d cmd=%#v", m.queuedActions, m.pendingActionCount(), secondCmd)
+	}
+	if len(postedDirections) != 0 {
+		t.Fatalf("queued commands posted before the active command ran: %#v", postedDirections)
+	}
+	if !strings.Contains(m.View(), "Pending:2") {
+		t.Fatalf("pending action count missing from status: %q", m.View())
+	}
+
+	firstDone := firstCmd().(actionDoneMsg)
+	next, secondCmd = m.Update(firstDone)
+	m = next.(model)
+	if secondCmd == nil || len(postedDirections) != 1 || postedDirections[0] != "E" {
+		t.Fatalf("after first completion directions=%#v secondCmd=%#v", postedDirections, secondCmd)
+	}
+	secondDone := secondCmd().(actionDoneMsg)
+	next, trailingCmd := m.Update(secondDone)
+	m = next.(model)
+	if trailingCmd != nil || m.pendingActionCount() != 0 || strings.Join(postedDirections, ",") != "E,S" {
+		t.Fatalf("finished FIFO directions=%#v pending=%d cmd=%#v", postedDirections, m.pendingActionCount(), trailingCmd)
+	}
+}
+
+func TestNormalActionFIFOIsBoundedAndRejectsStaleCompletion(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = true
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{}}}
+
+	next, firstCmd := m.handleKey(charmRuneKey('l'))
+	m = next.(model)
+	activeID := m.activeAction.requestID
+	for range maxQueuedActions + 4 {
+		next, _ = m.handleKey(charmRuneKey('h'))
+		m = next.(model)
+	}
+	if len(m.queuedActions) != maxQueuedActions || m.pendingActionCount() != maxQueuedActions+1 {
+		t.Fatalf("bounded queue length=%d pending=%d", len(m.queuedActions), m.pendingActionCount())
+	}
+	if len(m.messages) == 0 || m.messages[0] != "input queue full" {
+		t.Fatalf("queue overflow message = %#v", m.messages)
+	}
+
+	next, staleCmd := m.Update(actionDoneMsg{requestID: activeID + 100, streamed: true})
+	m = next.(model)
+	if staleCmd != nil || m.activeAction == nil || m.activeAction.requestID != activeID || len(m.queuedActions) != maxQueuedActions {
+		t.Fatalf("stale completion changed queue: active=%#v queued=%d cmd=%#v", m.activeAction, len(m.queuedActions), staleCmd)
+	}
+	_ = firstCmd
+}
+
+func TestTerminalLifecycleDefersBehindActiveActionAndClearsQueue(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		terminalPath string
+		request      func(model) (tea.Model, tea.Cmd)
+	}{
+		{
+			name:         "save",
+			terminalPath: "/save",
+			request: func(m model) (tea.Model, tea.Cmd) {
+				return m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+			},
+		},
+		{
+			name:         "quit",
+			terminalPath: "/quit",
+			request: func(m model) (tea.Model, tea.Cmd) {
+				next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+				return next.(model).handleKey(charmRuneKey('y'))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := []string{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			m := newModel()
+			m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+			m.setup = setupState{Phase: "complete"}
+			m.streamActive = true
+			m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{}}}
+			next, actionCmd := m.handleKey(charmRuneKey('l'))
+			m = next.(model)
+			next, _ = m.handleKey(charmRuneKey('j'))
+			m = next.(model)
+
+			next, terminalCmd := tc.request(m)
+			m = next.(model)
+			if terminalCmd != nil || !m.pendingTerminalAction || len(m.queuedActions) != 0 {
+				t.Fatalf("deferred terminal state pending=%v queued=%d cmd=%#v", m.pendingTerminalAction, len(m.queuedActions), terminalCmd)
+			}
+			next, ignored := m.handleKey(charmRuneKey('h'))
+			m = next.(model)
+			if ignored != nil || len(m.queuedActions) != 0 {
+				t.Fatalf("input after terminal intent was not suppressed: queued=%d cmd=%#v", len(m.queuedActions), ignored)
+			}
+
+			done := actionCmd().(actionDoneMsg)
+			next, terminalCmd = m.Update(done)
+			m = next.(model)
+			if terminalCmd == nil || strings.Join(paths, ",") != "/act" {
+				t.Fatalf("terminal launched before action completion: paths=%#v cmd=%#v", paths, terminalCmd)
+			}
+			_ = terminalCmd()
+			if strings.Join(paths, ",") != "/act,"+tc.terminalPath {
+				t.Fatalf("lifecycle request order = %#v", paths)
+			}
+		})
+	}
+}
+
+func TestTerminalLifecycleWaitsForBlockedAutoAction(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		terminalPath string
+		request      func(model) (tea.Model, tea.Cmd)
+	}{
+		{
+			name:         "save",
+			terminalPath: "/save",
+			request: func(m model) (tea.Model, tea.Cmd) {
+				return m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+			},
+		},
+		{
+			name:         "quit",
+			terminalPath: "/quit",
+			request: func(m model) (tea.Model, tea.Cmd) {
+				next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+				return next.(model).handleKey(charmRuneKey('y'))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actStarted := make(chan struct{}, 2)
+			releaseAct := make(chan struct{}, 1)
+			terminalCalled := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/act":
+					actStarted <- struct{}{}
+					<-releaseAct
+					w.WriteHeader(http.StatusNoContent)
+				case "/client-state":
+					_, _ = w.Write([]byte(landmarkClientStateJSON(1, "", 0)))
+				case "/save", "/quit":
+					terminalCalled <- r.URL.Path
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer func() {
+				select {
+				case releaseAct <- struct{}{}:
+				default:
+				}
+				server.Close()
+			}()
+
+			m := newModel()
+			m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+			m.setup = setupState{Phase: "complete"}
+			m.streamActive = false
+			m.streamConnecting = false
+			m.world = []entity{
+				{Key: "floor-0", Tag: "floor", In: "world", At: pos{}},
+				{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1}},
+				{Key: "player", Tag: "player", In: "world", At: pos{}},
+			}
+			next, autoCmd := m.startRepeatedMovement(moveCommand{tag: "run", dir: "E"})
+			m = next.(model)
+			autoDone := runTestCommand(autoCmd)
+			awaitTestSignal(t, actStarted, "blocked auto action")
+
+			next, terminalCmd := tc.request(m)
+			m = next.(model)
+			if terminalCmd != nil || !m.pendingTerminalAction || m.activeAuto == nil || !m.activeAuto.cancelRequested {
+				t.Fatalf("terminal did not wait for auto: pending=%v auto=%#v cmd=%#v", m.pendingTerminalAction, m.activeAuto, terminalCmd)
+			}
+			select {
+			case path := <-terminalCalled:
+				t.Fatalf("terminal request %s raced blocked /act", path)
+			default:
+			}
+
+			releaseAct <- struct{}{}
+			next, terminalCmd = m.Update(awaitTestMessage(t, autoDone, "auto completion"))
+			m = next.(model)
+			if terminalCmd == nil || m.activeAuto != nil {
+				t.Fatalf("auto completion did not launch deferred terminal: auto=%#v cmd=%#v", m.activeAuto, terminalCmd)
+			}
+			_ = terminalCmd()
+			select {
+			case path := <-terminalCalled:
+				if path != tc.terminalPath {
+					t.Fatalf("terminal path = %q, want %q", path, tc.terminalPath)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("deferred terminal request was not sent")
+			}
+		})
+	}
+}
+
+func TestRapidMovementWhileBlockedAutoStopsDoesNotDispatch(t *testing.T) {
+	actCalls := make(chan struct{}, 3)
+	releaseAct := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/act":
+			actCalls <- struct{}{}
+			<-releaseAct
+			w.WriteHeader(http.StatusNoContent)
+		case "/client-state":
+			_, _ = w.Write([]byte(landmarkClientStateJSON(1, "", 0)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer func() {
+		select {
+		case releaseAct <- struct{}{}:
+		default:
+		}
+		server.Close()
+	}()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = false
+	m.streamConnecting = false
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1}},
+		{Key: "player", Tag: "player", In: "world", At: pos{}},
+	}
+	next, autoCmd := m.startRepeatedMovement(moveCommand{tag: "run", dir: "E"})
+	m = next.(model)
+	autoDone := runTestCommand(autoCmd)
+	awaitTestSignal(t, actCalls, "blocked auto action")
+
+	next, firstCmd := m.handleKey(charmRuneKey('h'))
+	m = next.(model)
+	next, secondCmd := m.handleKey(charmRuneKey('l'))
+	m = next.(model)
+	if firstCmd != nil || secondCmd != nil || m.activeAuto == nil || !m.activeAuto.cancelRequested || len(m.queuedActions) != 0 {
+		t.Fatalf("rapid input raced stopping auto: auto=%#v queued=%d cmds=%#v/%#v", m.activeAuto, len(m.queuedActions), firstCmd, secondCmd)
+	}
+
+	releaseAct <- struct{}{}
+	next, completionCmd := m.Update(awaitTestMessage(t, autoDone, "auto completion"))
+	m = next.(model)
+	if completionCmd != nil || m.activeAuto != nil || len(m.queuedActions) != 0 {
+		t.Fatalf("stopped auto dispatched rapid input: auto=%#v queued=%d cmd=%#v", m.activeAuto, len(m.queuedActions), completionCmd)
+	}
+	select {
+	case <-actCalls:
+		t.Fatal("rapid movement sent a second /act while auto was stopping")
+	default:
+	}
+}
+
+func TestTerminalFailureResumesOneSuppressedStreamRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		intent terminalIntent
+		failed tea.Msg
+	}{
+		{name: "save", intent: terminalIntentSave, failed: saveDoneMsg{err: fmt.Errorf("save unavailable")}},
+		{name: "quit", intent: terminalIntentQuit, failed: quitDoneMsg{err: fmt.Errorf("quit unavailable")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel()
+			m.setup = setupState{Phase: "complete"}
+			m.streamGeneration = 8
+			m.streamActive = false
+			m.streamConnecting = false
+			m.streamRetryScheduled = true
+			m.pendingTerminalAction = true
+			m.terminalIntent = tc.intent
+
+			next, retryCmd := m.Update(streamReconnectMsg{generation: 8})
+			m = next.(model)
+			if retryCmd != nil || m.streamRetryScheduled {
+				t.Fatalf("terminal-suppressed retry was not cleared: scheduled=%v cmd=%#v", m.streamRetryScheduled, retryCmd)
+			}
+
+			next, recoveryCmd := m.Update(tc.failed)
+			m = next.(model)
+			if recoveryCmd == nil || m.pendingTerminalAction || !m.streamRetryScheduled || m.streamRetryAttempt != 1 {
+				t.Fatalf("terminal failure recovery state pending=%v scheduled=%v attempt=%d cmd=%#v", m.pendingTerminalAction, m.streamRetryScheduled, m.streamRetryAttempt, recoveryCmd)
+			}
+			batch, ok := recoveryCmd().(tea.BatchMsg)
+			if !ok || len(batch) != 2 {
+				t.Fatalf("terminal failure recovery command = %T len=%d, want one refresh and one retry", batch, len(batch))
+			}
+			next, duplicateCmd := m.Update(tc.failed)
+			m = next.(model)
+			if duplicateCmd != nil || m.streamRetryAttempt != 1 {
+				t.Fatalf("duplicate terminal failure scheduled recovery: attempt=%d cmd=%#v", m.streamRetryAttempt, duplicateCmd)
+			}
+		})
+	}
+}
+
+func TestStreamFailureDuringAutoDoesNotStartFallbackRefresh(t *testing.T) {
+	clientStateCalls := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/client-state" {
+			clientStateCalls <- struct{}{}
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.streamGeneration = 5
+	m.streamActive = true
+	m.streamConnecting = false
+	failedStream := &clientStateStream{cancel: func() {}}
+	m.stream = failedStream
+	cancel := make(chan struct{})
+	m.activeAuto = &activeAutoState{id: 2, cancel: cancel, mutationSerial: 3, streamed: true}
+
+	next, recoveryCmd := m.Update(clientStateStreamMsg{generation: 5, stream: failedStream, err: fmt.Errorf("disconnected")})
+	m = next.(model)
+	if recoveryCmd == nil || !m.streamRetryScheduled || m.activeAuto == nil {
+		t.Fatalf("auto stream recovery state scheduled=%v auto=%#v cmd=%#v", m.streamRetryScheduled, m.activeAuto, recoveryCmd)
+	}
+	retry, ok := recoveryCmd().(streamReconnectMsg)
+	if !ok || retry.generation != 5 {
+		t.Fatalf("auto stream recovery command = %#v, want reconnect tick", retry)
+	}
+	select {
+	case <-clientStateCalls:
+		t.Fatal("stream failure started fallback GET while auto was active")
+	default:
+	}
+}
+
+func TestDelayedSetupRefreshCannotOverwriteNewerStreamMovement(t *testing.T) {
+	refreshStarted := make(chan struct{}, 1)
+	releaseRefresh := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/setup/role", "/setup/confirm":
+			w.WriteHeader(http.StatusNoContent)
+		case "/client-state":
+			refreshStarted <- struct{}{}
+			<-releaseRefresh
+			_, _ = w.Write([]byte(landmarkClientStateJSON(0, "", 0)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer func() {
+		select {
+		case releaseRefresh <- struct{}{}:
+		default:
+		}
+		server.Close()
+	}()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "confirm", SelectedRoleID: "virgin"}
+	m.roles = []role{{ID: "virgin", Letter: "v", Name: "virgin"}}
+	m.streamActive = true
+	m.streamConnecting = false
+	next, setupCmd := m.handleKey(charmRuneKey('y'))
+	m = next.(model)
+	setupDone := runTestCommand(setupCmd)
+	awaitTestSignal(t, refreshStarted, "delayed setup refresh")
+
+	setupEvent := testClientStateStreamEvent(1, 0)
+	setupEvent.Source = "setup"
+	next, _ = m.Update(clientStateStreamMsg{generation: m.streamGeneration, event: setupEvent})
+	m = next.(model)
+	m.mutationSerial++
+	next, _ = m.Update(clientStateStreamMsg{generation: m.streamGeneration, event: testClientStateStreamEvent(2, 2)})
+	m = next.(model)
+
+	releaseRefresh <- struct{}{}
+	next, cmd := m.Update(awaitTestMessage(t, setupDone, "setup completion"))
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if cmd != nil || player.At.X != 2 || !m.setup.complete() {
+		t.Fatalf("delayed setup refresh overwrote stream: player=%#v setup=%#v cmd=%#v", player, m.setup, cmd)
+	}
+}
+
+func TestAutoRunAndTravelDoNotStartWhileNormalActionIsPending(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = true
+	m.world = []entity{
+		{Key: "floor-0", Tag: "floor", In: "world", At: pos{}},
+		{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1}},
+		{Key: "player", Tag: "player", In: "world", At: pos{}},
+	}
+
+	next, _ := m.handleKey(charmRuneKey('l'))
+	m = next.(model)
+	if m.pendingActionCount() != 1 {
+		t.Fatalf("normal action pending count = %d", m.pendingActionCount())
+	}
+
+	next, cmd := m.startRepeatedMovement(moveCommand{tag: "run", dir: "E"})
+	m = next.(model)
+	if cmd != nil || m.activeAuto != nil {
+		t.Fatalf("autorun started while action pending: auto=%#v cmd=%#v", m.activeAuto, cmd)
+	}
+	next, cmd = m.startTravel(pos{X: 1})
+	m = next.(model)
+	if cmd != nil || m.activeAuto != nil || len(m.messages) == 0 || m.messages[0] != "finish pending actions first" {
+		t.Fatalf("travel started while action pending: auto=%#v cmd=%#v messages=%#v", m.activeAuto, cmd, m.messages)
+	}
+}
+
+func TestStreamReconnectResetsRevisionEpochAndRejectsStaleGeneration(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 9}}}
+	m.streamGeneration = 3
+	m.lastStreamRevision = 9
+	m.streamConnecting = true
+	currentStream := &clientStateStream{cancel: func() {}}
+
+	next, nextEventCmd := m.Update(clientStateStreamMsg{
+		generation: 3,
+		initial:    true,
+		stream:     currentStream,
+		event:      testClientStateStreamEvent(0, 0),
+	})
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if nextEventCmd == nil || !m.streamActive || m.stream != currentStream || m.lastStreamRevision != 0 || player.At.X != 0 {
+		t.Fatalf("reconnected state active=%v stream=%p revision=%d player=%#v cmd=%#v", m.streamActive, m.stream, m.lastStreamRevision, player, nextEventCmd)
+	}
+
+	staleCanceled := false
+	staleStream := &clientStateStream{cancel: func() { staleCanceled = true }}
+	next, staleCmd := m.Update(clientStateStreamMsg{
+		generation: 2,
+		stream:     staleStream,
+		event:      testClientStateStreamEvent(10, 99),
+	})
+	m = next.(model)
+	player, _ = findPlayer(m.world)
+	if staleCmd != nil || !staleCanceled || !m.streamActive || m.stream != currentStream || m.lastStreamRevision != 0 || player.At.X != 0 {
+		t.Fatalf("stale generation changed current stream: canceled=%v active=%v revision=%d player=%#v cmd=%#v", staleCanceled, m.streamActive, m.lastStreamRevision, player, staleCmd)
+	}
+}
+
+func TestStreamFailureSchedulesOneRetryAndFallbackCannotOverwriteRecovery(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 1}}}
+	m.streamGeneration = 1
+	m.streamConnecting = false
+	m.streamActive = true
+	failedStream := &clientStateStream{cancel: func() {}}
+	m.stream = failedStream
+
+	next, recoveryBatch := m.Update(clientStateStreamMsg{
+		generation: 1,
+		stream:     failedStream,
+		err:        fmt.Errorf("disconnected"),
+	})
+	m = next.(model)
+	if recoveryBatch == nil || m.streamActive || !m.streamRetryScheduled || m.connectionStatus() != "Retrying" {
+		t.Fatalf("failure recovery state active=%v scheduled=%v status=%q cmd=%#v", m.streamActive, m.streamRetryScheduled, m.connectionStatus(), recoveryBatch)
+	}
+	next, duplicateRecovery := m.Update(clientStateStreamMsg{generation: 1, err: fmt.Errorf("again")})
+	m = next.(model)
+	if duplicateRecovery != nil || !m.streamRetryScheduled {
+		t.Fatalf("duplicate failure scheduled another retry: scheduled=%v cmd=%#v", m.streamRetryScheduled, duplicateRecovery)
+	}
+
+	next, reconnectCmd := m.Update(streamReconnectMsg{generation: 1})
+	m = next.(model)
+	if reconnectCmd == nil || m.streamGeneration != 2 || !m.streamConnecting || m.streamRetryScheduled || m.connectionStatus() != "Connecting" {
+		t.Fatalf("retry tick state generation=%d connecting=%v scheduled=%v status=%q cmd=%#v", m.streamGeneration, m.streamConnecting, m.streamRetryScheduled, m.connectionStatus(), reconnectCmd)
+	}
+
+	next, _ = m.Update(stateLoadedMsg{generation: 1, snapshot: testSnapshotAtX(8)})
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if player.At.X != 1 {
+		t.Fatalf("stale generation fallback changed player to %#v", player)
+	}
+
+	recoveredStream := &clientStateStream{cancel: func() {}}
+	next, _ = m.Update(clientStateStreamMsg{
+		generation: 2,
+		initial:    true,
+		stream:     recoveredStream,
+		event:      testClientStateStreamEvent(0, 2),
+	})
+	m = next.(model)
+	next, _ = m.Update(stateLoadedMsg{generation: 2, snapshot: testSnapshotAtX(7)})
+	m = next.(model)
+	player, _ = findPlayer(m.world)
+	if !m.streamActive || player.At.X != 2 {
+		t.Fatalf("fallback overwrote recovered stream: active=%v player=%#v", m.streamActive, player)
+	}
+}
+
+func TestStreamedAutoCompletionCannotRollbackPrimaryStream(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 11}}}
+	m.streamActive = true
+	m.autoID = 4
+	m.mutationSerial = 7
+	cancel := make(chan struct{})
+	m.activeAuto = &activeAutoState{id: 4, cancel: cancel, mutationSerial: 7, streamed: true}
+
+	next, cmd := m.Update(autoDoneMsg{
+		id:             4,
+		cancel:         cancel,
+		mutationSerial: 7,
+		result:         autoRunResult{label: "run", kind: "blocked", steps: 1},
+		snapshot:       testSnapshotAtX(10),
+		streamed:       true,
+	})
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if cmd != nil || player.At.X != 11 {
+		t.Fatalf("streamed auto completion rolled primary state back: player=%#v cmd=%#v", player, cmd)
+	}
+
+	m.streamActive = false
+	m.activeAuto = &activeAutoState{id: 4, cancel: cancel, mutationSerial: 7, streamed: true}
+	next, cmd = m.Update(autoDoneMsg{
+		id:             4,
+		cancel:         cancel,
+		mutationSerial: 7,
+		result:         autoRunResult{label: "run", kind: "blocked", steps: 1},
+		snapshot:       testSnapshotAtX(9),
+		streamed:       true,
+	})
+	m = next.(model)
+	player, _ = findPlayer(m.world)
+	if cmd == nil || player.At.X != 11 {
+		t.Fatalf("dropped primary stream should refresh instead of applying auto snapshot: player=%#v cmd=%#v", player, cmd)
+	}
+}
+
+func TestPickupShowsLoadingAndDisablesSelectionUntilDelayedResponse(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/getPickupFor" {
+			http.NotFound(w, r)
+			return
+		}
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(`[["beer-1",{"key":"beer-1","_tag":"beer","in":"world","at":{"x":0,"y":0,"z":0}}]]`))
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{}}}
+	next, loadCmd := m.handleKey(charmRuneKey(','))
+	m = next.(model)
+	if loadCmd == nil || m.popup == nil || m.popup.loadState != popupLoadLoading || !strings.Contains(m.View(), "Loading...") || strings.Contains(m.View(), "nothing available") {
+		t.Fatalf("pickup loading state popup=%#v cmd=%#v view=%q", m.popup, loadCmd, m.View())
+	}
+	next, earlyCmd := m.handlePopupKey("a")
+	m = next.(model)
+	if earlyCmd != nil || m.mutationSerial != 0 || len(m.popup.marked) != 0 {
+		t.Fatalf("early pickup selection dispatched: mutation=%d marked=%#v cmd=%#v", m.mutationSerial, m.popup.marked, earlyCmd)
+	}
+	next, earlyCmd = m.handlePopupKey(" ")
+	m = next.(model)
+	if earlyCmd != nil || m.mutationSerial != 0 {
+		t.Fatalf("early pickup submit dispatched: mutation=%d cmd=%#v", m.mutationSerial, earlyCmd)
+	}
+
+	result := make(chan pickupLoadedMsg, 1)
+	go func() { result <- loadCmd().(pickupLoadedMsg) }()
+	<-started
+	if m.popup.loadState != popupLoadLoading {
+		t.Fatalf("popup left loading before delayed response: %#v", m.popup)
+	}
+	close(release)
+	next, _ = m.Update(<-result)
+	m = next.(model)
+	if m.popup == nil || m.popup.loadState != popupLoadReady || len(m.popup.items) != 1 || !strings.Contains(m.View(), "beer") {
+		t.Fatalf("pickup response state popup=%#v view=%q", m.popup, m.View())
+	}
+}
+
+func TestPopupLoadErrorsRetryAndEmptySubmitNeverDispatches(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{}}}
+
+	next, _ := m.handleKey(charmRuneKey(','))
+	m = next.(model)
+	next, _ = m.Update(pickupLoadedMsg{requestID: m.pickupRequestID, err: fmt.Errorf("pickup offline")})
+	m = next.(model)
+	if m.popup == nil || m.popup.loadState != popupLoadError || !strings.Contains(m.View(), "Load failed") || !strings.Contains(m.View(), "Enter retries") {
+		t.Fatalf("pickup error state popup=%#v view=%q", m.popup, m.View())
+	}
+	previousPickupID := m.pickupRequestID
+	next, retryCmd := m.handlePopupKey("enter")
+	m = next.(model)
+	if retryCmd == nil || m.popup.loadState != popupLoadLoading || m.pickupRequestID != previousPickupID+1 {
+		t.Fatalf("pickup retry state popup=%#v request=%d cmd=%#v", m.popup, m.pickupRequestID, retryCmd)
+	}
+
+	m.popup = &popupState{
+		kind:      popupPickup,
+		title:     "Pickup what?",
+		stage:     popupStageItems,
+		items:     []entity{},
+		marked:    map[string]bool{},
+		loadState: popupLoadReady,
+	}
+	beforeMutation := m.mutationSerial
+	next, emptyCmd := m.handlePopupKey(" ")
+	m = next.(model)
+	if emptyCmd != nil || m.popup == nil || m.mutationSerial != beforeMutation || len(m.messages) == 0 || m.messages[0] != "select at least one item" {
+		t.Fatalf("empty submit state popup=%#v mutation=%d cmd=%#v messages=%#v", m.popup, m.mutationSerial, emptyCmd, m.messages)
+	}
+
+	m.popup = nil
+	next, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}, Alt: true})
+	m = next.(model)
+	if m.popup == nil || m.popup.kind != popupLoot || m.popup.loadState != popupLoadLoading {
+		t.Fatalf("loot did not open a loading popup: %#v", m.popup)
+	}
+	next, earlyLootCmd := m.handlePopupKey("t")
+	m = next.(model)
+	if earlyLootCmd != nil || m.popup.stage != popupStageAction {
+		t.Fatalf("loot action accepted while loading: popup=%#v cmd=%#v", m.popup, earlyLootCmd)
+	}
+	next, _ = m.Update(lootContainersLoadedMsg{requestID: m.lootRequestID, err: fmt.Errorf("loot offline")})
+	m = next.(model)
+	if m.popup == nil || m.popup.loadState != popupLoadError || m.popup.loadKind != popupLoadLootContainers {
+		t.Fatalf("loot error state = %#v", m.popup)
+	}
+	previousLootID := m.lootRequestID
+	next, retryCmd = m.handlePopupKey("enter")
+	m = next.(model)
+	if retryCmd == nil || m.popup.loadState != popupLoadLoading || m.lootRequestID != previousLootID+1 {
+		t.Fatalf("loot retry state popup=%#v request=%d cmd=%#v", m.popup, m.lootRequestID, retryCmd)
+	}
+}
+
+func TestFallbackLoadStartedBeforeMutationCannotOverwriteNewerState(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/client-state" {
+			http.NotFound(w, r)
+			return
+		}
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(`{"world":[["player",{"key":"player","_tag":"player","in":"world","at":{"x":8,"y":0,"z":0}}]],"inventory":[],"setup":{"phase":"complete"}}`))
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = false
+	m.streamGeneration = 1
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 1}}}
+	loadCmd := loadStateCmd(m.client, m.streamGeneration, m.mutationSerial)
+	result := make(chan stateLoadedMsg, 1)
+	go func() { result <- loadCmd().(stateLoadedMsg) }()
+	<-started
+
+	next, actionCmd := m.handleKey(charmRuneKey('l'))
+	m = next.(model)
+	if actionCmd == nil || m.mutationSerial != 1 || m.activeAction == nil {
+		t.Fatalf("mutation did not start while fallback was in flight: serial=%d active=%#v cmd=%#v", m.mutationSerial, m.activeAction, actionCmd)
+	}
+	close(release)
+	next, _ = m.Update(<-result)
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if player.At.X != 1 {
+		t.Fatalf("stale fallback overwrote state after mutation: %#v", player)
+	}
+}
+
+func TestRenderBoundedBoxPreservesBothBordersWhenContentOverflows(t *testing.T) {
+	content := []string{"one", "two", "three", "four", "five", "six"}
+	for _, tc := range []struct {
+		name       string
+		style      lipgloss.Style
+		topPrefix  string
+		lastPrefix string
+	}{
+		{name: "normal", style: messageStyle, topPrefix: "┌", lastPrefix: "└"},
+		{name: "rounded", style: popupStyle, topPrefix: "╭", lastPrefix: "╰"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderBoundedBox(tc.style, content, 20, 5)
+			lines := strings.Split(got, "\n")
+			if len(lines) != 5 || !strings.HasPrefix(lines[0], tc.topPrefix) || !strings.HasPrefix(lines[len(lines)-1], tc.lastPrefix) {
+				t.Fatalf("overfull box lost borders or height: lines=%d output=%q", len(lines), got)
+			}
+			if strings.Contains(got, "four") || strings.Contains(got, "six") {
+				t.Fatalf("overfull content was not capped before rendering: %q", got)
+			}
+		})
+	}
+}
+
+func TestDefaultPopupInputPageSizeMatchesRenderedPage(t *testing.T) {
+	posted := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		posted = string(body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	items := make([]entity, 20)
+	for index := range items {
+		items[index] = entity{Key: fmt.Sprintf("item-%02d", index), Tag: fmt.Sprintf("tag-%02d", index), In: "player"}
+	}
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "complete"}
+	m.streamActive = true
+	m.popup = &popupState{
+		kind:   popupEat,
+		title:  "Eat what?",
+		stage:  popupStageItems,
+		page:   1,
+		items:  items,
+		marked: map[string]bool{},
+	}
+	if got := m.popupItemPageSize(); got != 13 {
+		t.Fatalf("default popup input page size = %d, want rendered default 13", got)
+	}
+	if rendered := renderPopup(*m.popup); !strings.Contains(rendered, "a - tag-13") || strings.Contains(rendered, "a - tag-00") {
+		t.Fatalf("default popup rendered the wrong page: %q", rendered)
+	}
+	next, cmd := m.handlePopupKey("a")
+	m = next.(model)
+	if cmd == nil || m.popup != nil {
+		t.Fatalf("visible page selection did not dispatch: popup=%#v cmd=%#v", m.popup, cmd)
+	}
+	_ = cmd()
+	if !strings.Contains(posted, `"keys":["item-13"]`) {
+		t.Fatalf("visible a row dispatched the wrong item: %s", posted)
+	}
+}
+
+func testSnapshotAtX(x int) snapshot {
+	return snapshot{
+		setup: setupState{Phase: "complete"},
+		world: []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: x}}},
+	}
+}
+
+func testClientStateStreamEvent(revision int, playerX int) clientStateStreamEvent {
+	key, _ := json.Marshal("player")
+	player, _ := json.Marshal(entity{Key: "player", Tag: "player", In: "world", At: pos{X: playerX}})
+	return clientStateStreamEvent{
+		Revision: revision,
+		Source:   "action",
+		ClientState: clientStateResponse{
+			World: [][]json.RawMessage{{key, player}},
+			Setup: setupState{Phase: "complete"},
+		},
+	}
+}
+
+func runTestCommand(cmd tea.Cmd) <-chan tea.Msg {
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- cmd()
+	}()
+	return done
+}
+
+func awaitTestMessage(t *testing.T, messages <-chan tea.Msg, label string) tea.Msg {
+	t.Helper()
+	select {
+	case msg := <-messages:
+		return msg
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", label)
+		return nil
+	}
+}
+
+func awaitTestSignal(t *testing.T, signals <-chan struct{}, label string) {
+	t.Helper()
+	select {
+	case <-signals:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", label)
 	}
 }
 

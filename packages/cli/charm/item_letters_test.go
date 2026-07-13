@@ -64,6 +64,24 @@ func TestLetteredItemsLeavesOverflowUnassigned(t *testing.T) {
 	}
 }
 
+func TestLetteredItemsPageMakesOverflowReachable(t *testing.T) {
+	items := makeLetterTestItems(30)
+	entries, page, pageCount := letteredItemsPage(items, 3, 8)
+	if page != 3 || pageCount != 4 || len(entries) != 6 {
+		t.Fatalf("last page = page %d/%d entries %d, want page 3/4 entries 6", page, pageCount, len(entries))
+	}
+	if entries[0].letter != "a" || entries[0].item.Key != string(rune('a'+24)) {
+		t.Fatalf("last page first entry = %#v", entries[0])
+	}
+	key, ok := itemKeyForLetterPage(items, "f", 3, 8)
+	if !ok || key != string(rune('a'+29)) {
+		t.Fatalf("last paged item = %q, %v; want final key", key, ok)
+	}
+	if _, ok := itemKeyForLetterPage(items, "g", 3, 8); ok {
+		t.Fatal("letter beyond the final page should remain unassigned")
+	}
+}
+
 func makeLetterTestItems(count int) []entity {
 	items := make([]entity, 0, count)
 	for i := 0; i < count; i++ {

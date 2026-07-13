@@ -126,7 +126,7 @@ Starts a disposable server with `pnpm exec tsx packages/server/src/server.ts`, w
 pnpm test:e2e:tmux:bot
 ```
 
-Requires `tmux`. The runner creates a unique session, starts the server in one pane with an isolated temporary save file, waits for API readiness, starts the default Charmbracelet CLI in another pane, automatically completes fresh role setup, sends a movement key, captures terminal output to a temporary path outside the repo, and kills the session in cleanup. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise a custom Charm launch command.
+Requires `tmux`. The runner creates a unique session, starts the server in one window with an isolated temporary save file, waits for API readiness, and starts the default Charmbracelet CLI in a separate, full-size `120x40` window. It records and verifies the CLI dimensions, automatically completes fresh role setup, sends a movement key, and checks a rich layout, an `80x24` compact resize, and a restored `120x40` layout before cleanup. Captures and a dimensions artifact are written to a temporary path outside the repo. The bot variant sets `FLAGHACK_TEST_PORT=3100`; the tmux runner propagates that port to both `FLAGHACK_PORT` for the server and exports `FLAGHACK_API_URL` before running the CLI command, including custom `FLAGHACK_TMUX_CLI_COMMAND` overrides. Set `FLAGHACK_TMUX_CLI_COMMAND` to exercise a custom Charm launch command.
 
 ### Feature-specific tmux gate
 
@@ -144,6 +144,7 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 - `FLAGHACK_TMUX_AUTO_SETUP`: optional boolean for the default Charm CLI; defaults to `true` so generic feature gates automatically pass the role-selection prompt. Set to `false` when the feature being verified is the setup prompt itself.
 - `FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION`: optional boolean; when true, automatic setup stops at the fresh-game exposition pane so staged checks can inspect it. Otherwise the runner dismisses the pane with Enter before continuing.
 - `FLAGHACK_TMUX_ALLOW_CLI_EXIT`: optional boolean for save/quit scenarios where a successful terminal lifecycle is expected to close the CLI pane.
+- `FLAGHACK_TMUX_WINDOW_WIDTH` and `FLAGHACK_TMUX_WINDOW_HEIGHT`: exact dimensions for the full-size CLI window; defaults are `120x40`. The server runs in a separate tmux window and does not consume any of the requested CLI width.
 - `FLAGHACK_GAME_FIXTURE=door` or `FLAGHACK_DOOR_FIXTURE=1`: start the server with the deterministic door fixture for door interaction scenarios.
 - `FLAGHACK_TMUX_KEY_WAIT_MS` and `FLAGHACK_TMUX_FINAL_WAIT_MS`: optional timing controls.
 
@@ -155,7 +156,7 @@ Campground terminal verification has a focused bot-port gate:
 pnpm test:feature:tmux:campground:bot
 ```
 
-It uses one disposable server and Charm session to verify the one-time blocking brutal-arrival exposition, its dismissal into an empty inventory and visible mud-puddle spawn beside the gate, heavy-rain projection, and the absence of a current-address readout in playing status. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
+It uses one disposable server and Charm session to verify the one-time blocking brutal-arrival exposition, its dismissal into an empty inventory and visible mud-puddle spawn beside the gate, heavy-rain projection, and the absence of a current-address readout in playing status. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks in an exact `120x40` CLI window.
 
 Loot-specific terminal verification has a focused bot-port gate:
 

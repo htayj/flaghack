@@ -4,7 +4,7 @@ const noTrackerHiddenDestinationsOrStatusAddress = String
   .raw`Objective:|[Qq]uest(?:-| )tracker|Campground Directory|Water Station|The Effigy|The Temple|Address:`
 
 process.env.FLAGHACK_TMUX_LABEL ??= "campground"
-process.env.FLAGHACK_TMUX_WINDOW_WIDTH ??= "240"
+process.env.FLAGHACK_TMUX_WINDOW_WIDTH ??= "120"
 process.env.FLAGHACK_TMUX_PAUSE_AT_OPENING_EXPOSITION = "true"
 process.env.FLAGHACK_TMUX_STEPS = JSON.stringify([
   {

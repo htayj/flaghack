@@ -355,17 +355,20 @@ const chooseReachableLootTarget = (worldValues: ReadonlyArray<Entity>) => {
   throw new Error("no reachable floor cooler with contents found")
 }
 
-const waitForPaneOutput = async (pane: string) => {
+const waitForGameplayReady = async (pane: string) => {
   const startedAt = Date.now()
+  let lastCapture = ""
   while (Date.now() - startedAt < WAIT_TIMEOUT_MS) {
     if (paneDead(pane)) {
       throw new Error("CLI tmux pane exited before rendering output")
     }
-    const capture = stripAnsi(capturePane(pane))
-    if (capture.trim().length > 0) return
+    lastCapture = stripAnsi(capturePane(pane))
+    if (lastCapture.includes("Flag Hack · ? help")) return
     await delay(POLL_INTERVAL_MS)
   }
-  throw new Error("timed out waiting for CLI pane output")
+  throw new Error(
+    `timed out waiting for CLI gameplay screen: ${lastCapture}`
+  )
 }
 
 const sendKeys = async (
@@ -476,7 +479,7 @@ const run = async () => {
       `${session}:0.0`,
       "#{pane_id}"
     ]).trim()
-    await waitForPaneOutput(cliPane)
+    await waitForGameplayReady(cliPane)
 
     await sendKeys(cliPane, ["M-l"], 1_500)
     await delay(1_000)

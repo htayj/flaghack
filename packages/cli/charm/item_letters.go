@@ -42,12 +42,53 @@ func letteredItems(items []entity) []letteredItem {
 	return lettered
 }
 
+func itemPageCount(itemCount int, pageSize int) int {
+	pageSize = max(1, min(pageSize, len(itemLetterAlphabet)))
+	return max(1, (itemCount+pageSize-1)/pageSize)
+}
+
+func letteredItemsPage(
+	items []entity,
+	page int,
+	pageSize int,
+) ([]letteredItem, int, int) {
+	pageSize = max(1, min(pageSize, len(itemLetterAlphabet)))
+	sorted := sortedItemsByKey(items)
+	pageCount := itemPageCount(len(sorted), pageSize)
+	page = min(max(0, page), pageCount-1)
+	start := min(len(sorted), page*pageSize)
+	end := min(len(sorted), start+pageSize)
+	lettered := make([]letteredItem, 0, end-start)
+	for index, item := range sorted[start:end] {
+		lettered = append(lettered, letteredItem{
+			letter: string(itemLetterAlphabet[index]),
+			item:   item,
+		})
+	}
+	return lettered, page, pageCount
+}
+
 func itemKeyForLetter(items []entity, input string) (string, bool) {
+	return itemKeyForLetterPage(
+		items,
+		input,
+		0,
+		len(itemLetterAlphabet),
+	)
+}
+
+func itemKeyForLetterPage(
+	items []entity,
+	input string,
+	page int,
+	pageSize int,
+) (string, bool) {
 	letter := strings.ToLower(input)
 	if len(letter) != 1 {
 		return "", false
 	}
-	for _, entry := range letteredItems(items) {
+	entries, _, _ := letteredItemsPage(items, page, pageSize)
+	for _, entry := range entries {
 		if entry.letter == letter {
 			return entry.item.Key, true
 		}

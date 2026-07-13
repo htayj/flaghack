@@ -647,7 +647,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case stateLoadedMsg:
-		if msg.generation != m.streamGeneration || m.streamActive || msg.mutationSerial != m.mutationSerial {
+		if msg.generation != m.streamGeneration || m.streamActive || m.setupPending || msg.mutationSerial != m.mutationSerial {
 			return m, nil
 		}
 		if msg.err != nil {
@@ -731,7 +731,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.lastStreamRevision = msg.event.Revision
 			m.applySnapshot(snap)
-			if msg.event.Source == "setup" {
+			if msg.event.Source == "setup" || (m.setupPending && m.setup.complete()) {
 				m.setupPending = false
 			}
 		}
@@ -850,6 +850,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.perf.markResponseReceived("setup", msg.caseName, msg.perfTraceID, msg.responseReceived)
 		if m.streamActive {
+			setupWasComplete := m.setup.complete()
+			m.setup = normalizeSetup(msg.snapshot.setup)
+			m.setupPending = false
+			m.applyGameplayEvents(
+				msg.snapshot.gameplayEvents,
+				!setupWasComplete && m.setup.complete(),
+			)
 			return m, nil
 		}
 		if msg.generation != m.streamGeneration || msg.mutationSerial != m.mutationSerial {
@@ -1144,6 +1151,7 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 		m.setup = setupState{Phase: "confirm", SelectedRoleID: selected.ID}
 		m.setupPending = true
 		m.setupRequestID++
+		m.mutationSerial++
 		return m, selectRoleCmd(
 			m.client,
 			selected.ID,
@@ -1158,6 +1166,7 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 			m.setup = setupState{Phase: "selectRole"}
 			m.setupPending = true
 			m.setupRequestID++
+			m.mutationSerial++
 			return m, confirmSetupCmd(
 				m.client,
 				selectedRoleID,
@@ -1173,6 +1182,7 @@ func (m model) handleSetupKey(input string) (tea.Model, tea.Cmd) {
 			}
 			m.setupPending = true
 			m.setupRequestID++
+			m.mutationSerial++
 			return m, confirmSetupCmd(
 				m.client,
 				selectedRoleID,
@@ -1889,7 +1899,7 @@ func (m *model) streamRecoveryCmd(generation int) tea.Cmd {
 	delay := streamReconnectDelay(m.streamRetryAttempt)
 	m.streamRetryAttempt++
 	reconnectCmd := streamReconnectAfterCmd(generation, delay)
-	if m.pendingActionCount() > 0 || m.activeAuto != nil {
+	if m.setupPending || m.pendingActionCount() > 0 || m.activeAuto != nil {
 		return reconnectCmd
 	}
 	return tea.Batch(

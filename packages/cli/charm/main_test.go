@@ -3351,6 +3351,124 @@ func TestStreamFailureDuringAutoDoesNotStartFallbackRefresh(t *testing.T) {
 	}
 }
 
+func TestSetupMutationRejectsFallbackAndRecoveryDoesNotRefresh(t *testing.T) {
+	clientStateCalls := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/client-state" {
+			clientStateCalls <- struct{}{}
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	m := newModel()
+	m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+	m.setup = setupState{Phase: "selectRole"}
+	m.roles = []role{{ID: "virgin", Letter: "v", Name: "virgin"}}
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 1}}}
+	m.streamGeneration = 5
+	m.streamActive = true
+	m.streamConnecting = false
+	m.mutationSerial = 3
+	failedStream := &clientStateStream{cancel: func() {}}
+	m.stream = failedStream
+
+	next, _ := m.handleKey(charmRuneKey('v'))
+	m = next.(model)
+	if !m.setupPending || m.mutationSerial != 4 {
+		t.Fatalf("setup mutation pending=%v serial=%d, want pending serial 4", m.setupPending, m.mutationSerial)
+	}
+
+	next, _ = m.Update(stateLoadedMsg{
+		generation:     5,
+		mutationSerial: 3,
+		snapshot:       testSnapshotAtX(8),
+	})
+	m = next.(model)
+	next, _ = m.Update(stateLoadedMsg{
+		generation:     5,
+		mutationSerial: 4,
+		snapshot:       testSnapshotAtX(9),
+	})
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if player.At.X != 1 || m.setup.Phase != "confirm" {
+		t.Fatalf("fallback changed pending setup state: player=%#v setup=%#v", player, m.setup)
+	}
+
+	next, recoveryCmd := m.Update(clientStateStreamMsg{
+		generation: 5,
+		stream:     failedStream,
+		err:        fmt.Errorf("disconnected"),
+	})
+	m = next.(model)
+	if recoveryCmd == nil || !m.streamRetryScheduled {
+		t.Fatalf("setup stream recovery scheduled=%v cmd=%#v", m.streamRetryScheduled, recoveryCmd)
+	}
+	retry, ok := recoveryCmd().(streamReconnectMsg)
+	if !ok || retry.generation != 5 {
+		t.Fatalf("setup stream recovery command = %#v, want reconnect tick", retry)
+	}
+	select {
+	case <-clientStateCalls:
+		t.Fatal("stream failure started fallback GET while setup was pending")
+	default:
+	}
+}
+
+func TestStreamedSetupResponseClearsPendingWithoutRollingBackWorld(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "confirm", SelectedRoleID: "virgin"}
+	m.setupPending = true
+	m.setupRequestID = 2
+	m.mutationSerial = 4
+	m.streamActive = true
+	m.world = []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 7}}}
+
+	next, cmd := m.Update(setupDoneMsg{
+		requestID:      2,
+		generation:     m.streamGeneration,
+		mutationSerial: 4,
+		snapshot: snapshot{
+			setup: setupState{Phase: "complete", SelectedRoleID: "virgin"},
+			world: []entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 1}}},
+			gameplayEvents: []gameplayEvent{{
+				ID: 1, Kind: "arrival-narration", Message: testOpeningExposition,
+			}},
+		},
+	})
+	m = next.(model)
+	player, _ := findPlayer(m.world)
+	if cmd != nil || m.setupPending || !m.setup.complete() || player.At.X != 7 {
+		t.Fatalf("streamed setup response pending=%v setup=%#v player=%#v cmd=%#v", m.setupPending, m.setup, player, cmd)
+	}
+	if m.openingExposition != testOpeningExposition {
+		t.Fatalf("streamed setup response exposition = %q", m.openingExposition)
+	}
+}
+
+func TestReconnectInitialSetupCompletionClearsPending(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "confirm", SelectedRoleID: "virgin"}
+	m.setupPending = true
+	m.streamGeneration = 3
+	m.streamConnecting = true
+	stream := &clientStateStream{cancel: func() {}}
+	event := testClientStateStreamEvent(0, 0)
+	event.Source = "initial"
+
+	next, cmd := m.Update(clientStateStreamMsg{
+		generation: 3,
+		initial:    true,
+		stream:     stream,
+		event:      event,
+	})
+	m = next.(model)
+	if cmd == nil || m.setupPending || !m.setup.complete() {
+		t.Fatalf("reconnect setup pending=%v setup=%#v cmd=%#v", m.setupPending, m.setup, cmd)
+	}
+}
+
 func TestDelayedSetupRefreshCannotOverwriteNewerStreamMovement(t *testing.T) {
 	refreshStarted := make(chan struct{}, 1)
 	releaseRefresh := make(chan struct{}, 1)

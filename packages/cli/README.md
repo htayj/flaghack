@@ -28,7 +28,8 @@ current role. During play:
   Control, and `g`/`G`/`m`/`M` prefixes provide repeated/no-pickup movement.
 - `o` or `c` followed by a direction opens or closes a door. Walking into a
   closed door opens it instead of moving through it.
-- `,` picks up floor items, `d` drops, `e` eats, and `q` quaffs.
+- `,` picks up floor items and `d` drops them with multi-select popups. `e`
+  eats and `q` quaffs by immediately using the single item letter selected.
 - `M-l` / Alt-l loots a floor container under the player. The loot panel
   opens in the inventory slot: `t` chooses taking contents out of the
   container, `p` chooses putting inventory into it, `,` marks all visible

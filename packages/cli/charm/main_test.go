@@ -1721,41 +1721,166 @@ func TestRenderSidebarShowsStableInventoryLetters(t *testing.T) {
 	}
 }
 
-func TestEatAndQuaffOpenFilteredInventoryPopups(t *testing.T) {
-	m := newModel()
-	m.inventory = []entity{
-		{Key: "hotdog-1", Tag: "hotdog", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
-		{Key: "beer-1", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
-		{Key: "flag-1", Tag: "flag", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+func TestEatAndQuaffSelectExactlyOneFilteredItemImmediately(t *testing.T) {
+	tests := []struct {
+		name        string
+		command     rune
+		kind        popupKind
+		title       string
+		inventory   []entity
+		wantKey     string
+		wantTag     string
+		wantPayload string
+	}{
+		{
+			name:    "eat",
+			command: 'e',
+			kind:    popupEat,
+			title:   "Eat what?",
+			inventory: []entity{
+				{Key: "food-a", Tag: "hotdog", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "drink-a", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "food-b", Tag: "cheese", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "flag-a", Tag: "flag", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+			},
+			wantKey:     "food-b",
+			wantTag:     "eatMulti",
+			wantPayload: `{"action":{"_tag":"eatMulti","keys":["food-b"]}}`,
+		},
+		{
+			name:    "quaff",
+			command: 'q',
+			kind:    popupQuaff,
+			title:   "Quaff what?",
+			inventory: []entity{
+				{Key: "drink-a", Tag: "beer", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "food-a", Tag: "hotdog", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "drink-b", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "flag-a", Tag: "flag", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+			},
+			wantKey:     "drink-b",
+			wantTag:     "quaffMulti",
+			wantPayload: `{"action":{"_tag":"quaffMulti","keys":["drink-b"]}}`,
+		},
 	}
 
-	next, cmd := m.handleKey(charmRuneKey('e'))
-	if cmd != nil {
-		t.Fatalf("eat key returned command %#v, want nil", cmd)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			posted := ""
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/act" {
+					http.NotFound(w, r)
+					return
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read action body: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				posted = string(body)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			m := newModel()
+			m.client = apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+			m.streamActive = true
+			m.inventory = tc.inventory
+
+			next, cmd := m.handleKey(charmRuneKey(tc.command))
+			if cmd != nil {
+				t.Fatalf("%s key returned command %#v, want selection prompt", tc.name, cmd)
+			}
+			m = next.(model)
+			if m.popup == nil || m.popup.kind != tc.kind || m.popup.title != tc.title {
+				t.Fatalf("%s popup = %#v, want %s", tc.name, m.popup, tc.title)
+			}
+			if len(m.popup.items) != 2 {
+				t.Fatalf("%s popup items = %#v, want two filtered choices", tc.name, m.popup.items)
+			}
+			view := renderSidebarPopup(*m.popup)
+			if !strings.Contains(view, "letter selects") || !strings.Contains(view, "immediately") {
+				t.Fatalf("%s popup missing immediate-selection help: %q", tc.name, view)
+			}
+			for _, forbidden := range []string{"letters toggle", "· , all", "space ok", "[ ]"} {
+				if strings.Contains(view, forbidden) {
+					t.Fatalf("%s popup still advertises multiselect %q: %q", tc.name, forbidden, view)
+				}
+			}
+
+			for _, ignored := range []string{",", "space"} {
+				next, cmd = m.handlePopupKey(ignored)
+				if cmd != nil {
+					t.Fatalf("%s %q returned a command before item choice", tc.name, ignored)
+				}
+				m = next.(model)
+				if m.popup == nil || len(m.popup.marked) != 0 {
+					t.Fatalf("%s %q changed single-item selection: %#v", tc.name, ignored, m.popup)
+				}
+			}
+
+			next, cmd = m.handlePopupKey("b")
+			if cmd == nil {
+				t.Fatalf("%s item letter should dispatch immediately", tc.name)
+			}
+			m = next.(model)
+			if m.popup != nil || m.mutationSerial != 1 {
+				t.Fatalf("%s selection left popup=%#v mutation=%d", tc.name, m.popup, m.mutationSerial)
+			}
+			msg := cmd().(actionDoneMsg)
+			if msg.err != nil {
+				t.Fatal(msg.err)
+			}
+			if msg.caseName != tc.wantTag || posted != tc.wantPayload {
+				t.Fatalf("%s selected %s; case=%q payload=%s", tc.name, tc.wantKey, msg.caseName, posted)
+			}
+		})
 	}
-	m = next.(model)
-	if m.popup == nil || m.popup.kind != popupEat || m.popup.title != "Eat what?" {
-		t.Fatalf("eat popup = %#v, want Eat what?", m.popup)
-	}
-	if len(m.popup.items) != 1 || m.popup.items[0].Key != "hotdog-1" {
-		t.Fatalf("eat popup items = %#v, want only hotdog", m.popup.items)
+}
+
+func TestEatAndQuaffEmptyOrCanceledSelectionDoesNotDispatch(t *testing.T) {
+	tests := []struct {
+		command      rune
+		eligibleItem entity
+		emptyMessage string
+	}{
+		{
+			command:      'e',
+			eligibleItem: entity{Key: "food", Tag: "hotdog", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+			emptyMessage: "nothing to eat",
+		},
+		{
+			command:      'q',
+			eligibleItem: entity{Key: "drink", Tag: "water", In: "player", At: pos{X: 0, Y: 0, Z: 0}},
+			emptyMessage: "nothing to quaff",
+		},
 	}
 
-	next, cmd = m.handleKey(charmRuneKey('q'))
-	if cmd == nil {
-		// q cancels the active eat popup; press q again at top-level for quaff.
-		m = next.(model)
-		next, cmd = m.handleKey(charmRuneKey('q'))
-	}
-	if cmd != nil {
-		t.Fatalf("quaff key returned command %#v, want nil", cmd)
-	}
-	m = next.(model)
-	if m.popup == nil || m.popup.kind != popupQuaff || m.popup.title != "Quaff what?" {
-		t.Fatalf("quaff popup = %#v, want Quaff what?", m.popup)
-	}
-	if len(m.popup.items) != 1 || m.popup.items[0].Key != "beer-1" {
-		t.Fatalf("quaff popup items = %#v, want only beer", m.popup.items)
+	for _, tc := range tests {
+		t.Run(string(tc.command), func(t *testing.T) {
+			m := newModel()
+			m.setup = setupState{Phase: "complete"}
+			m.inventory = []entity{{Key: "flag", Tag: "flag", In: "player", At: pos{X: 0, Y: 0, Z: 0}}}
+
+			next, cmd := m.handleKey(charmRuneKey(tc.command))
+			m = next.(model)
+			if cmd != nil || m.popup != nil || m.mutationSerial != 0 || len(m.messages) == 0 || m.messages[0] != tc.emptyMessage {
+				t.Fatalf("empty %q flow: cmd=%#v popup=%#v mutation=%d messages=%#v", tc.command, cmd, m.popup, m.mutationSerial, m.messages)
+			}
+
+			m.inventory = []entity{tc.eligibleItem}
+			next, cmd = m.handleKey(charmRuneKey(tc.command))
+			if cmd != nil {
+				t.Fatalf("%q prompt returned command %#v", tc.command, cmd)
+			}
+			m = next.(model)
+			next, cmd = m.handlePopupKey("escape")
+			m = next.(model)
+			if cmd != nil || m.popup != nil || m.mutationSerial != 0 {
+				t.Fatalf("canceled %q flow: cmd=%#v popup=%#v mutation=%d", tc.command, cmd, m.popup, m.mutationSerial)
+			}
+		})
 	}
 }
 

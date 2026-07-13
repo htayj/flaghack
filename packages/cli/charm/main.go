@@ -787,12 +787,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "e":
 		m.pendingMovementPrefix = ""
-		m.popup = &popupState{kind: popupEat, title: "Eat what?", stage: popupStageItems, items: filterFoodItems(m.inventory), marked: map[string]bool{}}
+		items := filterFoodItems(m.inventory)
+		if len(items) == 0 {
+			m.addMessage("nothing to eat")
+			return m, nil
+		}
+		m.popup = &popupState{kind: popupEat, title: "Eat what?", stage: popupStageItems, items: items, marked: map[string]bool{}}
 		m.addMessage("eating")
 		return m, nil
 	case "q":
 		m.pendingMovementPrefix = ""
-		m.popup = &popupState{kind: popupQuaff, title: "Quaff what?", stage: popupStageItems, items: filterDrinkItems(m.inventory), marked: map[string]bool{}}
+		items := filterDrinkItems(m.inventory)
+		if len(items) == 0 {
+			m.addMessage("nothing to quaff")
+			return m, nil
+		}
+		m.popup = &popupState{kind: popupQuaff, title: "Quaff what?", stage: popupStageItems, items: items, marked: map[string]bool{}}
 		m.addMessage("quaffing")
 		return m, nil
 	}
@@ -1068,6 +1078,29 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 	if popup == nil {
 		return m, nil
 	}
+	if popupIsSingleItemAction(popup.kind) {
+		if input == "q" || input == "r" || input == "escape" {
+			kind := popup.kind
+			m.popup = nil
+			if kind == popupEat {
+				m.addMessage("canceling eating")
+			} else {
+				m.addMessage("canceling quaffing")
+			}
+			return m, nil
+		}
+		key, ok := itemKeyForLetter(popupVisibleItems(*popup), input)
+		if !ok {
+			return m, nil
+		}
+		tag := "eatMulti"
+		if popup.kind == popupQuaff {
+			tag = "quaffMulti"
+		}
+		m.popup = nil
+		m.mutationSerial++
+		return m, actionCmd(m.client, action{Tag: tag, Keys: []string{key}}, m.streamActive)
+	}
 	switch input {
 	case "q", "r", "escape":
 		kind := popup.kind
@@ -1132,12 +1165,6 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		if kind == popupPickup {
 			return m, actionCmd(m.client, action{Tag: "pickupMulti", Keys: keys}, m.streamActive)
 		}
-		if kind == popupEat {
-			return m, actionCmd(m.client, action{Tag: "eatMulti", Keys: keys}, m.streamActive)
-		}
-		if kind == popupQuaff {
-			return m, actionCmd(m.client, action{Tag: "quaffMulti", Keys: keys}, m.streamActive)
-		}
 		if kind == popupLoot {
 			if mode == lootPut {
 				return m, actionCmd(m.client, action{Tag: "lootPutMulti", ContainerKey: containerKey, Keys: keys}, m.streamActive)
@@ -1149,6 +1176,10 @@ func (m model) handlePopupKey(input string) (tea.Model, tea.Cmd) {
 		togglePopupLetter(popup, input)
 		return m, nil
 	}
+}
+
+func popupIsSingleItemAction(kind popupKind) bool {
+	return kind == popupEat || kind == popupQuaff
 }
 
 func togglePopupLetter(popup *popupState, input string) {
@@ -1633,7 +1664,11 @@ func formatAttributeStatus(a attributes) string {
 }
 
 func renderPopup(popup popupState) string {
-	lines := []string{popup.title, mutedStyle.Render("letters toggle, , marks all, space submits, q/r/Esc cancels")}
+	instructions := "letters toggle, , marks all, space submits, q/r/Esc cancels"
+	if popupIsSingleItemAction(popup.kind) {
+		instructions = "letter selects immediately, q/r/Esc cancels"
+	}
+	lines := []string{popup.title, mutedStyle.Render(instructions)}
 	if popup.stage == popupStageAction {
 		lines = append(lines, "t - take", "p - put")
 		return popupStyle.Render(strings.Join(lines, "\n"))
@@ -1643,7 +1678,8 @@ func renderPopup(popup popupState) string {
 		lines = append(lines, mutedStyle.Render("(nothing available)"))
 	} else {
 		for _, entry := range letteredItems(items) {
-			lines = append(lines, renderLetteredItem(entry, popup.marked[entry.item.Key], true))
+			single := popupIsSingleItemAction(popup.kind)
+			lines = append(lines, renderLetteredItem(entry, !single && popup.marked[entry.item.Key], !single))
 		}
 	}
 	return popupStyle.Render(strings.Join(lines, "\n"))
@@ -1739,7 +1775,9 @@ func renderSidebarPopup(popup popupState) string {
 		lines = append(lines, mutedStyle.Render("choose action"), "t - take", "p - put", mutedStyle.Render("q/r/Esc cancels"))
 		return sidebarStyle.Render(strings.Join(lines, "\n"))
 	}
-	if popup.kind == popupLoot {
+	if popupIsSingleItemAction(popup.kind) {
+		lines = append(lines, mutedStyle.Render("letter selects immediately · q/r/Esc cancels"))
+	} else if popup.kind == popupLoot {
 		modeLabel := "take"
 		if popup.mode == lootPut {
 			modeLabel = "put"
@@ -1757,7 +1795,8 @@ func renderSidebarPopup(popup popupState) string {
 		}
 	} else {
 		for _, entry := range letteredItems(items) {
-			lines = append(lines, renderLetteredItem(entry, popup.marked[entry.item.Key], false))
+			single := popupIsSingleItemAction(popup.kind)
+			lines = append(lines, renderLetteredItem(entry, !single && popup.marked[entry.item.Key], false))
 		}
 	}
 	return sidebarStyle.Render(strings.Join(lines, "\n"))

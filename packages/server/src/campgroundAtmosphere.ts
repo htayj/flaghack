@@ -14,6 +14,7 @@ import {
   normalizeCampgroundState
 } from "./campgroundState.js"
 import { appendGameplayEvent } from "./gameplayEvents.js"
+import { isCampgroundShelterPosition } from "./world.js"
 
 type GameState = typeof GameStateSchema.Type
 type CampgroundState = NonNullable<GameState["campground"]>
@@ -477,13 +478,12 @@ const playerIsSheltered = (
   state: GameState,
   player: NonNullable<ReturnType<typeof playerFrom>>
 ): boolean =>
-  Array.from(state.world.pipe(HashMap.values)).some((entity) =>
+  isCampgroundShelterPosition(state.world, player.at)
+  || Array.from(state.world.pipe(HashMap.values)).some((entity) =>
     entity.in === "world"
     && positionDistance(entity.at, player.at) === 0
-    && (
-      entity._tag === "tent"
-      || (entity._tag === "camp-prop" && entity.kind === "arrival-gate")
-    )
+    && entity._tag === "camp-prop"
+    && entity.kind === "arrival-gate"
   )
 
 const surfaceZone = (state: GameState): SurfaceZone => {

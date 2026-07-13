@@ -63,7 +63,9 @@ import {
   effigy,
   floor,
   isCampPropPassable,
-  mud,
+  makeFloor,
+  makeMud,
+  makeTunnel,
   sign,
   stairsDown,
   stairsUp,
@@ -166,14 +168,21 @@ export const isCampgroundShelterPosition = (
   world: World,
   position: TPos
 ): boolean => {
+  let templeCenter: TPos | undefined
   for (const entity of world.pipe(HashMap.values)) {
     if (
       entity.in === "world"
       && entity._tag === "tent"
       && collideP(position)(entity.at)
     ) return true
+    if (entity.in === "world" && entity._tag === "temple") {
+      templeCenter = entity.at
+    }
   }
-  return false
+  return templeCenter !== undefined
+    && templeCenter.z === position.z
+    && Math.abs(templeCenter.x - position.x) < 6
+    && Math.abs(templeCenter.y - position.y) < 4
 }
 export const itemsAt = (world: World) => (pos: TPos) =>
   world.pipe(filter(isItem), filter(isAt(pos)))
@@ -896,7 +905,6 @@ type ThemeCampLayout = {
   readonly name: string
   readonly signPosition: GridPosition
   readonly structures: ReadonlyArray<TentStructureSpec>
-  readonly coolerPosition: GridPosition
 }
 
 const gridKey = ({ x, y }: GridPosition): string => `${x},${y}`
@@ -1193,7 +1201,7 @@ const makeCampgroundGeometry: Effect.Effect<
   )
   const middleRadiusY = yield* randomIntInclusive(
     46,
-    50,
+    49,
     "middle road loop height"
   )
   const innerRadiusX = yield* randomIntInclusive(
@@ -1339,6 +1347,68 @@ const campgroundObjectiveSpineCoordinates = (
       )
   )
 
+const roadJunctionPlazaCoordinates = (
+  roadCoordinates: ReadonlyArray<GridPosition>
+): Array<GridPosition> => {
+  const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
+  const junctions = roadCoordinates.filter((coordinate) =>
+    cardinalGridNeighbors(coordinate).filter((neighbor) =>
+      roadKeys.has(gridKey(neighbor))
+    ).length >= 3
+  )
+
+  return uniqueGridPositions(
+    junctions.flatMap(({ x, y }) =>
+      rectangleCoordinates(x - 1, x + 1, y - 1, y + 1)
+    )
+  ).filter(isInCampgroundBounds)
+}
+
+const landmarkRoadPlazaCoordinates = (
+  geometry: CampgroundGeometry
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    rectangularLoopCoordinates(
+      geometry.centerX - 4,
+      geometry.centerX + 4,
+      geometry.centerY - 3,
+      geometry.centerY + 3
+    ).concat(
+      rectangleCoordinates(
+        geometry.templeCenterX - 1,
+        geometry.templeCenterX + 1,
+        geometry.templeCenterY,
+        geometry.templeBottom + 4
+      )
+    ).concat(
+      rectangleCoordinates(
+        geometry.templeCenterX - 3,
+        geometry.templeCenterX + 3,
+        geometry.templeBottom + 1,
+        geometry.templeBottom + 3
+      )
+    )
+  ).filter(isInCampgroundBounds)
+
+const campgroundLandmarkProtectedCoordinates = (
+  geometry: CampgroundGeometry
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    rectangleCoordinates(
+      geometry.centerX - 5,
+      geometry.centerX + 5,
+      geometry.centerY - 4,
+      geometry.centerY + 4
+    ).concat(
+      rectangleCoordinates(
+        geometry.templeLeft - 2,
+        geometry.templeRight + 2,
+        geometry.templeTop - 2,
+        geometry.templeBottom + 5
+      )
+    )
+  ).filter(isInCampgroundBounds)
+
 const arrivalDirectoryCoordinate: GridPosition = {
   x: CAMPGROUND_RESERVED_CORRIDOR_START_X + 4,
   y: CAMPGROUND_RESERVED_CORRIDOR_Y - 3
@@ -1351,13 +1421,13 @@ const arrivalGateCoordinate: GridPosition = {
   x: CAMPGROUND_RESERVED_CORRIDOR_START_X,
   y: CAMPGROUND_RESERVED_CORRIDOR_Y
 }
-const arrivalWaterSignCoordinate: GridPosition = {
-  x: CAMPGROUND_RESERVED_CORRIDOR_START_X + 4,
-  y: CAMPGROUND_RESERVED_CORRIDOR_Y + 3
+const arrivalWaterStationCoordinate: GridPosition = {
+  x: CAMPGROUND_RESERVED_CORRIDOR_START_X + 9,
+  y: CAMPGROUND_RESERVED_CORRIDOR_Y + 2
 }
 const arrivalWaterLabelCoordinate: GridPosition = {
-  x: arrivalWaterSignCoordinate.x,
-  y: arrivalWaterSignCoordinate.y + 1
+  x: CAMPGROUND_RESERVED_CORRIDOR_START_X + 4,
+  y: CAMPGROUND_RESERVED_CORRIDOR_Y + 4
 }
 const arrivalGreeterCoordinate: GridPosition = {
   x: CAMPGROUND_RESERVED_CORRIDOR_START_X + 7,
@@ -1382,11 +1452,21 @@ const arrivalWaterCoordinates: ReadonlyArray<GridPosition> = [
   }
 ]
 const arrivalCanopyCoordinates: ReadonlyArray<GridPosition> =
-  rectangleCoordinates(
-    arrivalGreeterCoordinate.x - 1,
-    arrivalGreeterCoordinate.x + 1,
-    arrivalGreeterCoordinate.y,
-    arrivalGreeterCoordinate.y + 2
+  uniqueGridPositions(
+    rectangleCoordinates(
+      arrivalGreeterCoordinate.x - 1,
+      arrivalGreeterCoordinate.x + 1,
+      arrivalGreeterCoordinate.y,
+      arrivalGreeterCoordinate.y + 2
+    ).concat(
+      rectangleCoordinates(
+        arrivalWaterLabelCoordinate.x - 1,
+        arrivalWaterCoordinates.at(-1)?.x
+          ?? arrivalWaterStationCoordinate.x,
+        arrivalWaterStationCoordinate.y,
+        arrivalWaterLabelCoordinate.y
+      )
+    )
   )
 
 const objectiveSpineLanternCoordinates = (
@@ -1473,6 +1553,7 @@ const campStructuresForBand = (
   )
   const popupWidth = definition.kind === "flagship" ? 9 : 7
   const popupHeight = definition.kind === "flagship" ? 6 : 5
+  const primaryShelterGap = 3
   const popupStructures = Array.from(
     { length: popupCanopies },
     (_, index): TentStructureSpec => {
@@ -1485,13 +1566,13 @@ const campStructuresForBand = (
           ? {
             x: signPosition.x + along - Math.floor(popupWidth / 2),
             y: band === "north"
-              ? signPosition.y + 8
-              : signPosition.y - 8 - popupHeight
+              ? signPosition.y + primaryShelterGap
+              : signPosition.y - primaryShelterGap - popupHeight + 1
           }
           : {
             x: band === "west"
-              ? signPosition.x + 8
-              : signPosition.x - 8 - popupHeight,
+              ? signPosition.x + primaryShelterGap
+              : signPosition.x - primaryShelterGap - popupHeight + 1,
             y: signPosition.y + along - Math.floor(popupWidth / 2)
           },
         postSpacing: 3,
@@ -1500,13 +1581,15 @@ const campStructuresForBand = (
     }
   )
   const carportLength = definition.kind === "flagship" ? 7 : 6
+  const carportInteriorSpan = 3
+  const carportGap = popupCanopies === 0 ? primaryShelterGap : 12
   const carportStructures = Array.from(
     { length: carports },
     (_, index): TentStructureSpec => {
       const along = centeredStructureOffset(index, carports, 9)
 
       return {
-        interiorSpan: 3,
+        interiorSpan: carportInteriorSpan,
         kind: "carport",
         length: carportLength,
         orientation: horizontal ? "horizontal" : "vertical",
@@ -1514,13 +1597,13 @@ const campStructuresForBand = (
           ? {
             x: signPosition.x + along - Math.floor(carportLength / 2),
             y: band === "north"
-              ? signPosition.y + 15
-              : signPosition.y - 19
+              ? signPosition.y + carportGap - 1
+              : signPosition.y - carportGap - carportInteriorSpan
           }
           : {
             x: band === "west"
-              ? signPosition.x + 15
-              : signPosition.x - 19,
+              ? signPosition.x + carportGap - 1
+              : signPosition.x - carportGap - carportInteriorSpan,
             y: signPosition.y + along - Math.floor(carportLength / 2)
           }
       }
@@ -1552,10 +1635,6 @@ const makeThemeCampLayout = (
 
   return {
     band: anchor.band,
-    coolerPosition: {
-      x: signPosition.x + (anchor.band === "east" ? -1 : 1),
-      y: signPosition.y + (anchor.band === "north" ? 1 : -1)
-    },
     definition,
     entranceCoordinates: [0, 1, 2].map((distance) => ({
       x: anchor.position.x + inward.x * distance,
@@ -1671,7 +1750,7 @@ const themeCampRoadAnchors = (
   {
     band: "west",
     roadRing: "inner",
-    position: { x: geometry.innerLeft, y: geometry.centerY + 18 }
+    position: { x: geometry.innerLeft, y: geometry.centerY + 4 }
   },
   {
     band: "west",
@@ -1691,7 +1770,7 @@ const themeCampRoadAnchors = (
   {
     band: "east",
     roadRing: "inner",
-    position: { x: geometry.innerRight, y: geometry.centerY + 18 }
+    position: { x: geometry.innerRight, y: geometry.centerY + 4 }
   },
   {
     band: "east",
@@ -1769,35 +1848,6 @@ const campPropCandidateCoordinates = (
   }))
 }
 
-const makeCampPropPlacements = (
-  layouts: ReadonlyArray<ThemeCampLayout>,
-  unavailableCoordinates: ReadonlyArray<GridPosition>
-): Array<CampPropPlacement> => {
-  const unavailable = new globalThis.Set(
-    unavailableCoordinates.map(gridKey)
-  )
-  const placements: Array<CampPropPlacement> = []
-
-  for (const layout of layouts) {
-    const count = layout.definition.kind === "flagship" ? 3 : 1
-    const kinds = motifCampPropKinds(layout.definition)
-    const candidates = campPropCandidateCoordinates(layout).filter(
-      (coordinate) =>
-        isInCampgroundBounds(coordinate)
-        && !unavailable.has(gridKey(coordinate))
-    )
-
-    for (const [index, position] of candidates.slice(0, count).entries()) {
-      const kind = kinds.at(index)
-      if (kind === undefined) continue
-      placements.push({ kind, position })
-      unavailable.add(gridKey(position))
-    }
-  }
-
-  return placements
-}
-
 const selectPatrolAwningCoordinates = (
   anchors: ReadonlyArray<GridPosition>,
   roadCoordinates: ReadonlyArray<GridPosition>,
@@ -1833,8 +1883,10 @@ const selectPatrolAwningCoordinates = (
 
 type OwnedTentStructure = {
   readonly band: ThemeCampBand
+  readonly campId: string
   readonly doorApproach?: GridPosition
   readonly id: string
+  readonly signPosition: GridPosition
   readonly spec: TentStructureSpec
   readonly tiles: TentStructureTiles
 }
@@ -1851,7 +1903,9 @@ const ownedTentStructures = (
   layouts.flatMap((layout) =>
     layout.structures.map((spec, index) => ({
       band: layout.band,
+      campId: layout.definition.id,
       id: `${layout.definition.id}-${index}`,
+      signPosition: layout.signPosition,
       spec,
       tiles: tentStructureTiles(spec)
     }))
@@ -1880,12 +1934,12 @@ const tentStructureClearanceCoordinates = (
     ])
   )
 
-const personalTentPlacementOffsets = (): ReadonlyArray<{
+const tentStructurePlacementOffsets = (): ReadonlyArray<{
   readonly inward: number
   readonly tangent: number
 }> => {
-  const offsets = range(0, 18).flatMap((inward) =>
-    range(-28, 28).map((tangent) => ({ inward, tangent }))
+  const offsets = range(0, 14).flatMap((inward) =>
+    range(-20, 20).map((tangent) => ({ inward, tangent }))
   )
 
   return offsets.sort((left, right) =>
@@ -1896,13 +1950,14 @@ const personalTentPlacementOffsets = (): ReadonlyArray<{
   )
 }
 
-const translatePersonalTentSpec = (
-  spec: Extract<TentStructureSpec, { readonly kind: "personal" }>,
+const CAMPGROUND_CAMP_LOT_RADIUS = 32
+
+const tentStructureTranslation = (
   band: ThemeCampBand,
   tangent: number,
   inward: number
-): Extract<TentStructureSpec, { readonly kind: "personal" }> => {
-  const offset = band === "north"
+): GridPosition =>
+  band === "north"
     ? { x: tangent, y: inward }
     : band === "south"
     ? { x: tangent, y: -inward }
@@ -1910,12 +1965,34 @@ const translatePersonalTentSpec = (
     ? { x: inward, y: tangent }
     : { x: -inward, y: tangent }
 
+const translateTentStructureSpec = (
+  spec: TentStructureSpec,
+  offset: GridPosition
+): TentStructureSpec => {
   return {
     ...spec,
     origin: {
       x: spec.origin.x + offset.x,
       y: spec.origin.y + offset.y
     }
+  }
+}
+
+const translateTentStructureTiles = (
+  tiles: TentStructureTiles,
+  offset: GridPosition
+): TentStructureTiles => {
+  const translate = (coordinate: GridPosition): GridPosition => ({
+    x: coordinate.x + offset.x,
+    y: coordinate.y + offset.y
+  })
+
+  return {
+    doorCoordinates: tiles.doorCoordinates.map(translate),
+    floorCoordinates: tiles.floorCoordinates.map(translate),
+    postCoordinates: tiles.postCoordinates.map(translate),
+    roofCoordinates: tiles.roofCoordinates.map(translate),
+    wallCoordinates: tiles.wallCoordinates.map(translate)
   }
 }
 
@@ -1938,62 +2015,62 @@ const personalTentDoorApproachCoordinate = (
   }
 }
 
-const resolvePersonalTentStructures = (
+const resolveTentStructures = (
   layouts: ReadonlyArray<ThemeCampLayout>,
   roadCoordinates: ReadonlyArray<GridPosition>,
   reservedCoordinates: ReadonlyArray<GridPosition>
 ): Effect.Effect<Array<OwnedTentStructure>, LevelGenerationError> =>
   Effect.gen(function*() {
     const authoredStructures = ownedTentStructures(layouts)
-    const fixedStructures = authoredStructures.filter(({ spec }) =>
+    const placementOrder = authoredStructures.filter(({ spec }) =>
       spec.kind !== "personal"
+    ).concat(
+      authoredStructures.filter(({ spec }) => spec.kind === "personal")
     )
     const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
     const reservedKeys = new globalThis.Set(
       reservedCoordinates.map(gridKey)
     )
-    const occupiedStructureKeys = new globalThis.Set(
-      fixedStructures.flatMap(({ tiles }) =>
-        tentStructureFootprintCoordinates(tiles)
-      ).map(gridKey)
-    )
-    const structureClearanceKeys = new globalThis.Set(
-      tentStructureClearanceCoordinates(
-        fixedStructures.flatMap(({ tiles }) =>
-          tentStructureFootprintCoordinates(tiles)
-        )
-      ).map(gridKey)
-    )
+    const occupiedStructureKeys = new globalThis.Set<string>()
+    const structureClearanceKeys = new globalThis.Set<string>()
     const reservedApproachKeys = new globalThis.Set<string>()
     const resolvedStructures: Array<OwnedTentStructure> = []
-    const offsets = personalTentPlacementOffsets()
+    const offsets = tentStructurePlacementOffsets()
 
-    for (const structure of authoredStructures) {
-      if (structure.spec.kind !== "personal") {
-        resolvedStructures.push(structure)
-        continue
-      }
-
+    for (const structure of placementOrder) {
       let resolved: OwnedTentStructure | undefined
       let resolvedApproach: GridPosition | undefined
       for (const { inward, tangent } of offsets) {
-        const spec = translatePersonalTentSpec(
-          structure.spec,
+        const offset = tentStructureTranslation(
           structure.band,
           tangent,
           inward
         )
-        const tiles = tentStructureTiles(spec)
+        const spec = translateTentStructureSpec(
+          structure.spec,
+          offset
+        )
+        const tiles = translateTentStructureTiles(structure.tiles, offset)
         const footprint = tentStructureFootprintCoordinates(tiles)
-        const approach = personalTentDoorApproachCoordinate(spec, tiles)
+        const approach = spec.kind === "personal"
+          ? personalTentDoorApproachCoordinate(spec, tiles)
+          : undefined
         if (
-          approach === undefined
-          || !isInCampgroundBounds(approach)
-          || reservedKeys.has(gridKey(approach))
-          || occupiedStructureKeys.has(gridKey(approach))
-          || reservedApproachKeys.has(gridKey(approach))
+          (spec.kind === "personal"
+            && (
+              approach === undefined
+              || !isInCampgroundBounds(approach)
+              || reservedKeys.has(gridKey(approach))
+              || occupiedStructureKeys.has(gridKey(approach))
+              || structureClearanceKeys.has(gridKey(approach))
+              || reservedApproachKeys.has(gridKey(approach))
+            ))
           || footprint.some((coordinate) =>
             !isInCampgroundBounds(coordinate)
+            || campgroundGridDistance(
+                coordinate,
+                structure.signPosition
+              ) > CAMPGROUND_CAMP_LOT_RADIUS
             || roadKeys.has(gridKey(coordinate))
             || reservedKeys.has(gridKey(coordinate))
             || structureClearanceKeys.has(gridKey(coordinate))
@@ -2003,14 +2080,20 @@ const resolvePersonalTentStructures = (
           continue
         }
 
-        resolved = { ...structure, doorApproach: approach, spec, tiles }
+        resolved = approach === undefined
+          ? { ...structure, spec, tiles }
+          : { ...structure, doorApproach: approach, spec, tiles }
         resolvedApproach = approach
         break
       }
 
-      if (resolved === undefined || resolvedApproach === undefined) {
+      if (
+        resolved === undefined
+        || (structure.spec.kind === "personal"
+          && resolvedApproach === undefined)
+      ) {
         return yield* Effect.fail(
-          levelGenerationError(`personal tent ${structure.id}`)
+          levelGenerationError(`tent structure ${structure.id}`)
         )
       }
 
@@ -2023,7 +2106,9 @@ const resolvePersonalTentStructures = (
       ) {
         structureClearanceKeys.add(gridKey(coordinate))
       }
-      reservedApproachKeys.add(gridKey(resolvedApproach))
+      if (resolvedApproach !== undefined) {
+        reservedApproachKeys.add(gridKey(resolvedApproach))
+      }
       resolvedStructures.push(resolved)
     }
 
@@ -2153,6 +2238,183 @@ const chooseRandomCoordinates = (
     return Array.from(shuffledCoordinates).slice(0, count)
   })
 
+const chooseSpreadCoordinates = (
+  availableCoordinates: ReadonlyArray<GridPosition>,
+  count: number,
+  minimumDistance: number,
+  description: string
+): Effect.Effect<Array<GridPosition>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    if (!Number.isSafeInteger(count) || count < 0) {
+      return yield* Effect.fail(
+        levelGenerationError(
+          `${description} has invalid selection count ${count}`
+        )
+      )
+    }
+    if (count === 0) return []
+
+    const shuffledCoordinates = yield* Random.shuffle(
+      availableCoordinates
+    )
+    const selected: Array<GridPosition> = []
+
+    for (const coordinate of shuffledCoordinates) {
+      if (
+        selected.every((existing) =>
+          campgroundGridDistance(existing, coordinate) >= minimumDistance
+        )
+      ) {
+        selected.push(coordinate)
+        if (selected.length === count) return selected
+      }
+    }
+
+    return yield* Effect.fail(
+      levelGenerationError(
+        `${description} needs ${count} spaced coordinates, but only ${selected.length} were available`
+      )
+    )
+  })
+
+const weatherSensitiveCampPropKinds = new globalThis.Set<CampPropKind>([
+  "speaker",
+  "stage",
+  "table",
+  "water-station",
+  "workbench"
+])
+
+type CampFeatureLayout = {
+  readonly communalShelterCoordinates: ReadonlyArray<GridPosition>
+  readonly coolerPosition: GridPosition
+  readonly layout: ThemeCampLayout
+  readonly propPlacements: ReadonlyArray<CampPropPlacement>
+}
+
+const makeCampFeatureLayouts = (
+  layouts: ReadonlyArray<ThemeCampLayout>,
+  structures: ReadonlyArray<OwnedTentStructure>,
+  outdoorUnavailableCoordinates: ReadonlyArray<GridPosition>
+): Effect.Effect<Array<CampFeatureLayout>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    const outdoorUnavailable = new globalThis.Set(
+      outdoorUnavailableCoordinates.map(gridKey)
+    )
+    const usedFeatureKeys = new globalThis.Set<string>()
+    const features: Array<CampFeatureLayout> = []
+
+    for (const layout of layouts) {
+      const communalShelterCoordinates = uniqueGridPositions(
+        structures.filter((structure) =>
+          structure.campId === layout.definition.id
+          && structure.spec.kind !== "personal"
+        ).flatMap(({ tiles }) => tiles.roofCoordinates)
+      )
+      const communalShelterKeys = new globalThis.Set(
+        communalShelterCoordinates.map(gridKey)
+      )
+      const shelteredCandidates = communalShelterCoordinates.filter(
+        (coordinate) =>
+          !usedFeatureKeys.has(gridKey(coordinate))
+          && cardinalGridNeighbors(coordinate).filter((neighbor) =>
+              communalShelterKeys.has(gridKey(neighbor))
+            ).length >= 2
+      )
+      const sortedShelteredCandidates = [...shelteredCandidates].sort(
+        (left, right) =>
+          campgroundGridDistance(left, layout.signPosition)
+            - campgroundGridDistance(right, layout.signPosition)
+          || left.y - right.y
+          || left.x - right.x
+      )
+      const nearestShelterDistance =
+        sortedShelteredCandidates[0] === undefined
+          ? undefined
+          : campgroundGridDistance(
+            sortedShelteredCandidates[0],
+            layout.signPosition
+          )
+      const nearestShelteredCandidates = sortedShelteredCandidates.filter(
+        (coordinate) =>
+          campgroundGridDistance(coordinate, layout.signPosition)
+            === nearestShelterDistance
+      )
+      const [coolerPosition] = yield* chooseRandomCoordinates(
+        nearestShelteredCandidates,
+        1,
+        `${layout.definition.id} sheltered cooler`
+      )
+      if (coolerPosition === undefined) {
+        return yield* Effect.fail(
+          levelGenerationError(
+            `${layout.definition.id} sheltered cooler position`
+          )
+        )
+      }
+      usedFeatureKeys.add(gridKey(coolerPosition))
+
+      const propCount = layout.definition.kind === "flagship" ? 3 : 2
+      const propKinds = motifCampPropKinds(layout.definition).slice(
+        0,
+        propCount
+      )
+      const shelteredKinds = propKinds.filter((kind) =>
+        weatherSensitiveCampPropKinds.has(kind)
+      )
+      const outdoorKinds = propKinds.filter((kind) =>
+        !weatherSensitiveCampPropKinds.has(kind)
+      )
+      const shelteredPositions = yield* chooseSpreadCoordinates(
+        shelteredCandidates.filter((coordinate) =>
+          !usedFeatureKeys.has(gridKey(coordinate))
+          && campgroundGridDistance(coordinate, coolerPosition) >= 2
+        ),
+        shelteredKinds.length,
+        3,
+        `${layout.definition.id} sheltered activity props`
+      )
+      const outdoorCandidates = campPropCandidateCoordinates(layout)
+        .filter(
+          (coordinate) =>
+            isInCampgroundBounds(coordinate)
+            && !outdoorUnavailable.has(gridKey(coordinate))
+            && !usedFeatureKeys.has(gridKey(coordinate))
+        )
+      const outdoorPositions = yield* chooseRandomCoordinates(
+        outdoorCandidates,
+        outdoorKinds.length,
+        `${layout.definition.id} outdoor activity props`
+      )
+      let shelteredPositionIndex = 0
+      let outdoorPositionIndex = 0
+      const propPlacements = propKinds.flatMap((kind) => {
+        const position = weatherSensitiveCampPropKinds.has(kind)
+          ? shelteredPositions[shelteredPositionIndex++]
+          : outdoorPositions[outdoorPositionIndex++]
+        return position === undefined ? [] : [{ kind, position }]
+      })
+
+      for (
+        const position of [
+          coolerPosition,
+          ...propPlacements.map((placement) => placement.position)
+        ]
+      ) {
+        usedFeatureKeys.add(gridKey(position))
+        outdoorUnavailable.add(gridKey(position))
+      }
+      features.push({
+        communalShelterCoordinates,
+        coolerPosition,
+        layout,
+        propPlacements
+      })
+    }
+
+    return features
+  })
+
 const campgroundHumanDisplayNameAt = (offset: number): string =>
   campgroundHumanDisplayNames.at(
     offset % campgroundHumanDisplayNames.length
@@ -2162,6 +2424,68 @@ const campgroundGridDistance = (
   a: GridPosition,
   b: GridPosition
 ): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+
+const CAMPGROUND_RESIDENT_HIPPIE_COUNT = 56
+const CAMPGROUND_TRAVELER_COUNT = 8
+
+const campgroundRoadTravelerCount = (
+  layouts: ReadonlyArray<ThemeCampLayout>
+): number => {
+  const travelerRouteWeight = layouts.reduce(
+    (count, layout) => count + layout.definition.npcMix.travelers,
+    0
+  )
+
+  return Math.min(
+    CAMPGROUND_TRAVELER_COUNT / 2,
+    Math.max(1, Math.ceil(travelerRouteWeight / 10))
+  )
+}
+
+const campgroundResidentHippieCounts = (
+  layouts: ReadonlyArray<ThemeCampLayout>
+): ReadonlyMap<string, number> => {
+  const minimumPerCamp = 1
+  const remainingBudget = Math.max(
+    0,
+    CAMPGROUND_RESIDENT_HIPPIE_COUNT
+      - layouts.length * minimumPerCamp
+  )
+  const totalWeight = layouts.reduce(
+    (total, layout) => total + layout.definition.npcMix.hippies,
+    0
+  )
+  const weighted = layouts.map((layout) => {
+    const exactShare = totalWeight === 0
+      ? 0
+      : remainingBudget * layout.definition.npcMix.hippies / totalWeight
+    const wholeShare = Math.floor(exactShare)
+    return {
+      count: minimumPerCamp + wholeShare,
+      id: layout.definition.id,
+      remainder: exactShare - wholeShare,
+      slot: layout.definition.slot
+    }
+  })
+  let unassigned = CAMPGROUND_RESIDENT_HIPPIE_COUNT
+    - weighted.reduce((total, allocation) => total + allocation.count, 0)
+
+  for (
+    const allocation of [...weighted].sort((left, right) =>
+      right.remainder - left.remainder
+      || left.slot - right.slot
+      || left.id.localeCompare(right.id)
+    )
+  ) {
+    if (unassigned <= 0) break
+    allocation.count += 1
+    unassigned -= 1
+  }
+
+  return new globalThis.Map(
+    weighted.map(({ count, id }) => [id, count] as const)
+  )
+}
 
 const cardinalGridNeighbors = (
   coordinate: GridPosition
@@ -2192,7 +2516,11 @@ const makeCampgroundNpcs = (
   layouts: ReadonlyArray<ThemeCampLayout>,
   availableCoordinates: ReadonlyArray<GridPosition>,
   roadKeys: ReadonlySet<string>,
-  residentShelterKeys: ReadonlySet<string>,
+  residentShelterCoordinatesByCamp: ReadonlyMap<
+    string,
+    ReadonlyArray<GridPosition>
+  >,
+  travelerShelterCoordinates: ReadonlyArray<GridPosition>,
   patrolShelterCoordinates: ReadonlyArray<GridPosition>,
   dlvl: number
 ): Effect.Effect<Array<Entity>, LevelGenerationError, KeyGenerator> =>
@@ -2211,20 +2539,27 @@ const makeCampgroundNpcs = (
       "campground human display name offset"
     )
     const residents: Array<Entity> = []
+    const residentHippieCounts = campgroundResidentHippieCounts(layouts)
     let namedHumanOffset = 0
 
     for (const layout of layouts) {
-      const hippieResidentCount = layout.definition.kind === "flagship"
-        ? 3
-        : 2
+      const hippieResidentCount = residentHippieCounts.get(
+        layout.definition.id
+      ) ?? 1
       const residentCount = hippieResidentCount
         + layout.definition.npcMix.rangers
-      const nearbyCandidates = Array.from(available.values()).filter(
-        (coordinate) =>
-          residentShelterKeys.has(gridKey(coordinate))
-          && campgroundGridDistance(coordinate, layout.signPosition)
-            <= 12
-      )
+      const residentShelterCoordinates =
+        residentShelterCoordinatesByCamp.get(
+          layout.definition.id
+        ) ?? []
+      const nearbyCandidates = residentShelterCoordinates.filter(
+        (coordinate) => available.has(gridKey(coordinate))
+      ).sort((left, right) =>
+        campgroundGridDistance(left, layout.signPosition)
+          - campgroundGridDistance(right, layout.signPosition)
+        || left.y - right.y
+        || left.x - right.x
+      ).slice(0, Math.max(residentCount * 4, residentCount))
       const residentCoordinates = yield* takeCampgroundNpcCoordinates(
         available,
         nearbyCandidates,
@@ -2263,15 +2598,7 @@ const makeCampgroundNpcs = (
       }
     }
 
-    const travelerRouteWeight = layouts.reduce(
-      (count, layout) => count + layout.definition.npcMix.travelers,
-      0
-    )
-    const travelerCount = 8
-    const roadTravelerCount = Math.min(
-      travelerCount / 2,
-      Math.max(1, Math.ceil(travelerRouteWeight / 10))
-    )
+    const roadTravelerCount = campgroundRoadTravelerCount(layouts)
     const roadTravelerCoordinates = yield* takeCampgroundNpcCoordinates(
       available,
       Array.from(available.values()).filter((coordinate) =>
@@ -2281,24 +2608,17 @@ const makeCampgroundNpcs = (
       roadTravelerCount,
       "campground road travelers"
     )
-    const openTravelerCoordinates = yield* takeCampgroundNpcCoordinates(
-      available,
-      Array.from(available.values()).filter((coordinate) =>
-        !roadKeys.has(gridKey(coordinate))
-        && !patrolShelterKeys.has(gridKey(coordinate))
-        && residentShelterKeys.has(gridKey(coordinate))
-        && cardinalGridNeighbors(coordinate).some((neighbor) =>
-          roadKeys.has(gridKey(neighbor))
-        )
-        && layouts.every((layout) =>
-          campgroundGridDistance(coordinate, layout.signPosition) > 14
-        )
-      ),
-      travelerCount - roadTravelerCount,
-      "campground open-playa travelers"
-    )
+    const shelteredTravelerCoordinates =
+      yield* takeCampgroundNpcCoordinates(
+        available,
+        travelerShelterCoordinates.filter((coordinate) =>
+          available.has(gridKey(coordinate))
+        ),
+        CAMPGROUND_TRAVELER_COUNT - roadTravelerCount,
+        "campground sheltered roadside travelers"
+      )
     const travelers = yield* Effect.forEach(
-      roadTravelerCoordinates.concat(openTravelerCoordinates),
+      roadTravelerCoordinates.concat(shelteredTravelerCoordinates),
       ({ x, y }) => hippie(x, y, dlvl, "traveler"),
       { concurrency: 1 }
     )
@@ -2408,6 +2728,67 @@ const allCampgroundCoordinates = (): Array<GridPosition> =>
     range(0, CAMPGROUND_WIDTH - 1).map((x) => ({ x, y }))
   )
 
+const RAIN_RUNOFF_CLUSTER_COUNT = 18
+const rainRunoffClusterOffsets: ReadonlyArray<GridPosition> = [
+  { x: 0, y: 0 },
+  { x: -1, y: 0 },
+  { x: 1, y: 0 },
+  { x: 0, y: -1 },
+  { x: 0, y: 1 },
+  { x: 1, y: 1 }
+]
+
+const rainRunoffClusterCoordinates = (
+  center: GridPosition
+): Array<GridPosition> =>
+  rainRunoffClusterOffsets.map((offset) => ({
+    x: center.x + offset.x,
+    y: center.y + offset.y
+  }))
+
+const makeRainRunoffMudCoordinates = (
+  roadCoordinates: ReadonlyArray<GridPosition>,
+  unavailableKeys: ReadonlySet<string>
+): Effect.Effect<Array<GridPosition>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
+    const candidateCenters = uniqueGridPositions(
+      roadCoordinates.flatMap(({ x, y }) => [
+        { x: x - 2, y },
+        { x: x + 2, y },
+        { x, y: y - 2 },
+        { x, y: y + 2 }
+      ])
+    ).filter(
+      (center) => {
+        if (
+          campgroundGridDistance(center, campgroundWakeUpCoordinate) < 20
+        ) return false
+
+        const cluster = rainRunoffClusterCoordinates(center)
+        return cluster.every((coordinate) =>
+          isInCampgroundBounds(coordinate)
+          && !roadKeys.has(gridKey(coordinate))
+          && !unavailableKeys.has(gridKey(coordinate))
+        ) && cluster.some((coordinate) =>
+          cardinalGridNeighbors(coordinate).some((neighbor) =>
+            roadKeys.has(gridKey(neighbor))
+          )
+        )
+      }
+    )
+    const centers = yield* chooseSpreadCoordinates(
+      candidateCenters,
+      RAIN_RUNOFF_CLUSTER_COUNT,
+      10,
+      "campground rain runoff"
+    )
+
+    return uniqueGridPositions(
+      centers.flatMap(rainRunoffClusterCoordinates)
+    )
+  })
+
 export const makeCampgroundLevel = (
   dlvl: number
 ): Effect.Effect<World, LevelGenerationError, KeyGenerator> =>
@@ -2417,16 +2798,21 @@ export const makeCampgroundLevel = (
     const objectiveSpineCoordinates = campgroundObjectiveSpineCoordinates(
       geometry
     )
-    const puddleKeys = new globalThis.Set(
+    const wakePuddleKeys = new globalThis.Set(
       campgroundMudPuddleCoordinates().map(gridKey)
     )
-    const roadCoordinates = uniqueGridPositions(
+    const baseRoadCoordinates = uniqueGridPositions(
       connectedRoadLoopCoordinates(geometry)
         .concat(objectiveSpineCoordinates)
         .concat(
           themeCamps.flatMap((layout) => layout.entranceCoordinates)
         )
-    ).filter((coordinate) => !puddleKeys.has(gridKey(coordinate)))
+    )
+    const roadCoordinates = uniqueGridPositions(
+      baseRoadCoordinates
+        .concat(roadJunctionPlazaCoordinates(baseRoadCoordinates))
+        .concat(landmarkRoadPlazaCoordinates(geometry))
+    ).filter((coordinate) => !wakePuddleKeys.has(gridKey(coordinate)))
     const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
     const roadSignCoordinates = [
       { x: geometry.centerX, y: geometry.innerTop },
@@ -2440,11 +2826,13 @@ export const makeCampgroundLevel = (
     const templeStairsDown = templeStairsDownCoordinate(
       geometry
     )
-    const structureReservedCoordinates = effigyCoordinates
+    const landmarkProtectedCoordinates =
+      campgroundLandmarkProtectedCoordinates(geometry)
+    const structureReservedCoordinates = landmarkProtectedCoordinates
+      .concat(effigyCoordinates)
       .concat(templeWalls)
       .concat([templeMarker, templeStairsDown])
       .concat(themeCamps.map((layout) => layout.signPosition))
-      .concat(themeCamps.map((layout) => layout.coolerPosition))
       .concat(
         themeCamps.flatMap((layout) => layout.entranceCoordinates)
       )
@@ -2455,20 +2843,17 @@ export const makeCampgroundLevel = (
         arrivalGateCoordinate,
         arrivalDirectoryCoordinate,
         arrivalDirectorySignCoordinate,
-        arrivalWaterSignCoordinate,
+        arrivalWaterStationCoordinate,
         arrivalWaterLabelCoordinate,
         arrivalGreeterCoordinate,
         campgroundWakeUpCoordinate
       ])
       .concat(arrivalWaterCoordinates)
       .concat(campgroundMudPuddleCoordinates())
-    const structures = yield* resolvePersonalTentStructures(
+    const structures = yield* resolveTentStructures(
       themeCamps,
       roadCoordinates,
       structureReservedCoordinates
-    )
-    const structureReservedKeys = new globalThis.Set(
-      structureReservedCoordinates.map(gridKey)
     )
     const structureTiles = structures.map(({ tiles }) => tiles)
     const rawStructureRoofCoordinates = campRoofCoordinates(structureTiles)
@@ -2484,49 +2869,19 @@ export const makeCampgroundLevel = (
       structures
     )
     const rawStructurePostCoordinates = campPostCoordinates(structureTiles)
-    const structureRoofCoordinates = rawStructureRoofCoordinates.filter(
-      (coordinate) =>
-        !roadKeys.has(gridKey(coordinate))
-        && !structureReservedKeys.has(gridKey(coordinate))
-    )
-    const structureRoofKeys = new globalThis.Set(
-      structureRoofCoordinates.map(gridKey)
-    )
-    const structureDoorPlacements = rawStructureDoorPlacements.filter(
-      ({ position }) =>
-        !roadKeys.has(gridKey(position))
-        && !structureReservedKeys.has(gridKey(position))
-        && !structureRoofKeys.has(gridKey(position))
-    )
+    const structureRoofCoordinates = rawStructureRoofCoordinates
+    const structureDoorPlacements = rawStructureDoorPlacements
     const structureDoorCoordinates = structureDoorPlacements.map(
       ({ position }) => position
     )
-    const structureDoorKeys = new globalThis.Set(
-      structureDoorCoordinates.map(gridKey)
-    )
-    const structureWallPlacements = rawStructureWallPlacements.filter(
-      ({ position }) =>
-        !roadKeys.has(gridKey(position))
-        && !structureReservedKeys.has(gridKey(position))
-        && !structureRoofKeys.has(gridKey(position))
-        && !structureDoorKeys.has(gridKey(position))
-    )
+    const structureWallPlacements = rawStructureWallPlacements
     const structureWallCoordinates = structureWallPlacements.map(
       ({ position }) => position
     )
-    const structureWallKeys = new globalThis.Set(
-      structureWallCoordinates.map(gridKey)
-    )
-    const structurePostCoordinates = rawStructurePostCoordinates.filter(
-      (coordinate) =>
-        !roadKeys.has(gridKey(coordinate))
-        && !structureReservedKeys.has(gridKey(coordinate))
-        && !structureRoofKeys.has(gridKey(coordinate))
-        && !structureDoorKeys.has(gridKey(coordinate))
-        && !structureWallKeys.has(gridKey(coordinate))
-    )
-    const campPropPlacements = makeCampPropPlacements(
+    const structurePostCoordinates = rawStructurePostCoordinates
+    const campFeatureLayouts = yield* makeCampFeatureLayouts(
       themeCamps,
+      structures,
       roadCoordinates
         .concat(rawStructureRoofCoordinates)
         .concat(rawStructureWallCoordinates)
@@ -2536,8 +2891,14 @@ export const makeCampgroundLevel = (
         .concat(effigyCoordinates)
         .concat(templeWalls)
         .concat([templeMarker, templeStairsDown])
+        .concat(landmarkProtectedCoordinates)
         .concat(themeCamps.map((layout) => layout.signPosition))
-        .concat(themeCamps.map((layout) => layout.coolerPosition))
+    )
+    const campPropPlacements = campFeatureLayouts.flatMap(
+      ({ propPlacements }) => propPlacements
+    )
+    const campCoolerCoordinates = campFeatureLayouts.map(
+      ({ coolerPosition }) => coolerPosition
     )
     const campPropKeys = new globalThis.Set(
       campPropPlacements.map(({ position }) => gridKey(position))
@@ -2569,7 +2930,7 @@ export const makeCampgroundLevel = (
     const arrivalPropPlacements: ReadonlyArray<CampPropPlacement> = [
       { kind: "arrival-gate", position: arrivalGateCoordinate },
       { kind: "directory", position: arrivalDirectoryCoordinate },
-      { kind: "water-station", position: arrivalWaterSignCoordinate }
+      { kind: "water-station", position: arrivalWaterStationCoordinate }
     ]
     const propPlacements: ReadonlyArray<CampPropPlacement> = [
       ...arrivalPropPlacements,
@@ -2586,9 +2947,13 @@ export const makeCampgroundLevel = (
       effigyCoordinates[0] ?? templeMarker,
       templeMarker
     ])
-    const patrolAwningCoordinates = yield* selectPatrolAwningCoordinates(
-      patrolAwningAnchors,
-      roadCoordinates,
+    const patrolAwningCandidateCoordinates = uniqueGridPositions(
+      roadCoordinates.flatMap(cardinalGridNeighbors)
+    ).filter((coordinate) =>
+      isInCampgroundBounds(coordinate)
+      && !roadKeys.has(gridKey(coordinate))
+    )
+    const roadsideShelterUnavailableCoordinates =
       rawStructureRoofCoordinates
         .concat(rawStructureWallCoordinates)
         .concat(rawStructureDoorCoordinates)
@@ -2597,8 +2962,9 @@ export const makeCampgroundLevel = (
         .concat(effigyCoordinates)
         .concat(templeWalls)
         .concat([templeMarker, templeStairsDown])
+        .concat(landmarkProtectedCoordinates)
         .concat(themeCamps.map((layout) => layout.signPosition))
-        .concat(themeCamps.map((layout) => layout.coolerPosition))
+        .concat(campCoolerCoordinates)
         .concat(
           themeCamps.flatMap((layout) => layout.entranceCoordinates)
         )
@@ -2606,11 +2972,42 @@ export const makeCampgroundLevel = (
         .concat(propCoordinates)
         .concat(campgroundReservedTravelCorridorCoordinates())
         .concat(arrivalCanopyCoordinates)
+        .concat([arrivalDirectorySignCoordinate])
+        .concat(campgroundMudPuddleCoordinates())
+    const patrolAwningCoordinates = yield* selectPatrolAwningCoordinates(
+      patrolAwningAnchors,
+      patrolAwningCandidateCoordinates,
+      roadsideShelterUnavailableCoordinates
+    )
+    const roadsideShelterUnavailableKeys = new globalThis.Set(
+      roadsideShelterUnavailableCoordinates.concat(
+        patrolAwningCoordinates
+      ).map(gridKey)
+    )
+    const travelerAwningCoordinates = yield* chooseSpreadCoordinates(
+      patrolAwningCandidateCoordinates.filter((coordinate) =>
+        !roadsideShelterUnavailableKeys.has(gridKey(coordinate))
+        && campgroundGridDistance(
+            coordinate,
+            campgroundWakeUpCoordinate
+          ) >= 20
+        && patrolAwningCoordinates.every((patrolAwning) =>
+          campgroundGridDistance(coordinate, patrolAwning) >= 12
+        )
+        && themeCamps.every((layout) =>
+          campgroundGridDistance(coordinate, layout.signPosition) > 14
+        )
+      ),
+      CAMPGROUND_TRAVELER_COUNT
+        - campgroundRoadTravelerCount(themeCamps),
+      30,
+      "campground traveler roadside awnings"
     )
     const shelterCoordinates = uniqueGridPositions(
       structureRoofCoordinates
         .concat(arrivalCanopyCoordinates)
         .concat(patrolAwningCoordinates)
+        .concat(travelerAwningCoordinates)
     )
     const floorBlockerKeys = new globalThis.Set(
       effigyCoordinates
@@ -2621,33 +3018,57 @@ export const makeCampgroundLevel = (
         .concat(propCoordinates)
         .map(gridKey)
     )
-    const wakeUpDistanceFromRoad = 1
-    const fieldCoordinates = allCampgroundCoordinates().filter(
-      (coordinate) => {
-        const coordinateKey = gridKey(coordinate)
-        return !floorBlockerKeys.has(coordinateKey)
-          && !roadKeys.has(coordinateKey)
-          && !puddleKeys.has(coordinateKey)
-          && (
-            (coordinate.x - arrivalGateCoordinate.x) ** 2
-                + (coordinate.y - arrivalGateCoordinate.y) ** 2
-              > wakeUpDistanceFromRoad
-          )
-      }
-    )
     const reservedPlayerSpawnCoordinate = campgroundWakeUpCoordinate
     const arrivalMarkerCoordinates = [
       arrivalGateCoordinate,
       arrivalDirectoryCoordinate,
       arrivalDirectorySignCoordinate,
-      arrivalWaterSignCoordinate,
+      arrivalWaterStationCoordinate,
       arrivalWaterLabelCoordinate,
       arrivalGreeterCoordinate,
       ...arrivalWaterCoordinates
     ]
+    const runoffUnavailableKeys = new globalThis.Set(
+      structureRoofCoordinates
+        .concat(patrolAwningCoordinates)
+        .concat(travelerAwningCoordinates)
+        .concat(structureWallCoordinates)
+        .concat(structureDoorCoordinates)
+        .concat(structureDoorApproachCoordinates)
+        .concat(structurePostCoordinates)
+        .concat(propCoordinates)
+        .concat(campCoolerCoordinates)
+        .concat(themeCamps.map((layout) => layout.signPosition))
+        .concat(roadSignCoordinates)
+        .concat(landmarkProtectedCoordinates)
+        .concat(arrivalCanopyCoordinates)
+        .concat(arrivalMarkerCoordinates)
+        .concat(campgroundMudPuddleCoordinates())
+        .concat(
+          tentStructureClearanceCoordinates(objectiveSpineCoordinates)
+        )
+        .map(gridKey)
+    )
+    const rainRunoffCoordinates = yield* makeRainRunoffMudCoordinates(
+      roadCoordinates,
+      runoffUnavailableKeys
+    )
+    const mudCoordinates = uniqueGridPositions(
+      campgroundMudPuddleCoordinates().concat(rainRunoffCoordinates)
+    )
+    const mudKeys = new globalThis.Set(mudCoordinates.map(gridKey))
+    const fieldCoordinates = allCampgroundCoordinates().filter(
+      (coordinate) => {
+        const coordinateKey = gridKey(coordinate)
+        return !floorBlockerKeys.has(coordinateKey)
+          && !roadKeys.has(coordinateKey)
+          && !mudKeys.has(coordinateKey)
+      }
+    )
     const npcBlockerCoordinates = effigyCoordinates
       .concat(templeWalls)
       .concat([templeMarker, templeStairsDown])
+      .concat(landmarkProtectedCoordinates)
       .concat(structureWallCoordinates)
       .concat(structureDoorCoordinates)
       .concat(structureDoorApproachCoordinates)
@@ -2657,11 +3078,12 @@ export const makeCampgroundLevel = (
         themeCamps.flatMap((layout) => layout.entranceCoordinates)
       )
       .concat(roadSignCoordinates)
-      .concat(themeCamps.map((layout) => layout.coolerPosition))
+      .concat(campCoolerCoordinates)
       .concat(propCoordinates)
       .concat(campgroundReservedTravelCorridorCoordinates())
       .concat(arrivalMarkerCoordinates)
-      .concat(campgroundMudPuddleCoordinates())
+      .concat(arrivalCanopyCoordinates)
+      .concat(mudCoordinates)
       .concat([reservedPlayerSpawnCoordinate])
     const npcBlockerKeys = new globalThis.Set(
       npcBlockerCoordinates.map(gridKey)
@@ -2670,20 +3092,34 @@ export const makeCampgroundLevel = (
       fieldCoordinates.concat(roadCoordinates)
     ).filter((coordinate) => !npcBlockerKeys.has(gridKey(coordinate)))
 
-    const fields = yield* Effect.forEach(
-      fieldCoordinates,
-      ({ x, y }) => floor(x, y, dlvl),
-      { concurrency: 1 }
+    const campgroundGroundKey = (
+      tag: "floor" | "mud" | "tunnel",
+      coordinate: GridPosition
+    ): string =>
+      `campground:${tag}:${dlvl}:${coordinate.x}:${coordinate.y}`
+    const fields = fieldCoordinates.map(({ x, y }) =>
+      makeFloor(
+        campgroundGroundKey("floor", { x, y }),
+        x,
+        y,
+        dlvl
+      )
     )
-    const roads = yield* Effect.forEach(
-      roadCoordinates,
-      ({ x, y }) => tunnel(x, y, dlvl),
-      { concurrency: 1 }
+    const roads = roadCoordinates.map(({ x, y }) =>
+      makeTunnel(
+        campgroundGroundKey("tunnel", { x, y }),
+        x,
+        y,
+        dlvl
+      )
     )
-    const mudPuddle = yield* Effect.forEach(
-      campgroundMudPuddleCoordinates(),
-      ({ x, y }) => mud(x, y, dlvl),
-      { concurrency: 1 }
+    const mudPuddle = mudCoordinates.map(({ x, y }) =>
+      makeMud(
+        campgroundGroundKey("mud", { x, y }),
+        x,
+        y,
+        dlvl
+      )
     )
     const templeWallEntities = yield* Effect.forEach(
       templeWalls,
@@ -2775,11 +3211,11 @@ export const makeCampgroundLevel = (
       { concurrency: 1 }
     )
     const campCoolers = yield* Effect.forEach(
-      themeCamps,
-      (layout) =>
+      campFeatureLayouts,
+      ({ coolerPosition, layout }) =>
         cooler(
-          layout.coolerPosition.x,
-          layout.coolerPosition.y,
+          coolerPosition.x,
+          coolerPosition.y,
           dlvl
         ).pipe(
           Effect.map((container) => ({ container, layout }))
@@ -2812,11 +3248,20 @@ export const makeCampgroundLevel = (
       ({ x, y }) => waterbottle(x, y, dlvl),
       { concurrency: 1 }
     )
+    const residentShelterCoordinatesByCamp = new globalThis.Map(
+      campFeatureLayouts.map(({ communalShelterCoordinates, layout }) =>
+        [
+          layout.definition.id,
+          communalShelterCoordinates
+        ] as const
+      )
+    )
     const campgroundNpcs = yield* makeCampgroundNpcs(
       themeCamps,
       npcSpawnCoordinates,
       roadKeys,
-      structureRoofKeys,
+      residentShelterCoordinatesByCamp,
+      travelerAwningCoordinates,
       patrolAwningCoordinates,
       dlvl
     )
@@ -2868,12 +3313,18 @@ export const CampgroundGenLevel = (
   seed: number,
   dlvl: number
 ): Effect.Effect<World, LevelGenerationError> =>
-  makeCampgroundLevel(dlvl).pipe(
-    Effect.provide(CounterKeyGeneratorLive),
-    Effect.withRandom(
-      Random.make(levelRandomSeed("campground", seed, dlvl))
+  !Number.isSafeInteger(seed) || !Number.isSafeInteger(dlvl)
+    ? Effect.fail(
+      levelGenerationError(
+        `campground seed and level must be safe integers; received ${seed}/${dlvl}`
+      )
     )
-  )
+    : makeCampgroundLevel(dlvl).pipe(
+      Effect.provide(CounterKeyGeneratorLive),
+      Effect.withRandom(
+        Random.make(levelRandomSeed("campground", seed, dlvl))
+      )
+    )
 
 export const firstDungeonArrivalCoordinate: GridPosition = { x: 1, y: 1 }
 

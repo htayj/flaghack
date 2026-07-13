@@ -22,6 +22,7 @@ import {
 import {
   makeCampProp,
   makeFloor,
+  makeTemple,
   makeTent,
   makeTunnel
 } from "../src/terrain.js"
@@ -307,7 +308,7 @@ describe("campground ambient zones", () => {
     expect(eventMessageCount(second)).toBe(2)
   })
 
-  it("distinguishes outdoor rain from a tent roof or arrival gate", () => {
+  it("distinguishes outdoor rain from tents, the temple, and the arrival gate", () => {
     const due = campground({ surfaceAmbience: { nextTurn: 1 } })
     const outdoor = advanceCampgroundAtmosphere(
       stateOf({ x: 0, y: 0 }, due),
@@ -329,6 +330,14 @@ describe("campground ambient zones", () => {
       ),
       1
     )
+    const temple = advanceCampgroundAtmosphere(
+      stateOf(
+        { x: 0, y: 2 },
+        due,
+        [makeTemple("temple", 0, 0, 0)]
+      ),
+      1
+    )
     const underground = advanceCampgroundAtmosphere(
       stateOf(
         { x: 0, y: 0, z: 1 },
@@ -347,10 +356,16 @@ describe("campground ambient zones", () => {
     expect(campgroundHeavyRainShelterAmbient).toContain(
       latestGameplayEvent(gate)?.message
     )
+    expect(campgroundHeavyRainShelterAmbient).toContain(
+      latestGameplayEvent(temple)?.message
+    )
     expect(tent.campground?.surfaceAmbience?.zoneId).toContain(
       "rain:sheltered:"
     )
     expect(gate.campground?.surfaceAmbience?.zoneId).toContain(
+      "rain:sheltered:"
+    )
+    expect(temple.campground?.surfaceAmbience?.zoneId).toContain(
       "rain:sheltered:"
     )
     expect(underground.gameplayEvents).toBeUndefined()

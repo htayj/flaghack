@@ -43,6 +43,7 @@ export const CAMPGROUND_RETURN_STAIRS_POSITION = {
 
 const RETURN_STAIRS_KEY = "campground-return-stairs-1"
 const CURRENT_LANDMARK_RADIUS = 12
+const NPC_CAMP_ASSIGNMENT_RADIUS = 24
 
 type CampPlacement = NonNullable<CampgroundState["campPlacements"]>[number]
 type LandmarkPlacement = NonNullable<
@@ -314,8 +315,8 @@ export const deriveCampgroundNpcAssignments = (
       assignNearest(
         camp.signAt,
         { campId: camp.id, role: "host" },
-        () => true,
-        CURRENT_LANDMARK_RADIUS
+        (npc) => npc._tag === "hippie" && npc.name !== "traveler",
+        NPC_CAMP_ASSIGNMENT_RADIUS
       )
     }
   }
@@ -345,7 +346,11 @@ export const deriveCampgroundNpcAssignments = (
       continue
     }
 
-    const camp = nearestCampPlacement(camps, npc, CURRENT_LANDMARK_RADIUS)
+    const camp = nearestCampPlacement(
+      camps,
+      npc,
+      NPC_CAMP_ASSIGNMENT_RADIUS
+    )
     assignments.set(
       npc.key,
       camp === undefined

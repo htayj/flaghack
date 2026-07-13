@@ -106,6 +106,12 @@ Read the root `AGENTS.md` before changing package behavior, and use
 `docs/testing-gates.md` to choose focused server validation. Server work
 should preserve the shared `GameApi` contract consumed by the Charm client.
 
+Run `pnpm run serve` from the repository root for development. Nodemon watches
+the server and shared domain TypeScript sources, waits 200 milliseconds to
+coalesce related file writes, then gracefully restarts the server. The
+`SIGUSR2` restart path runs the normal shutdown autosave so the live game is
+available again after the reload.
+
 ## Audit and generated-file policy
 
 This README covers ownership items tracked in

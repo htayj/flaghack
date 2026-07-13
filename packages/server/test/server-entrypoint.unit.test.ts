@@ -33,6 +33,7 @@ describe("server entrypoint", () => {
     )
     expect(serverSource).toContain("process.argv[1]")
     expect(serverSource).toMatch(/resolve\s*\(\s*entrypointPath\s*\)/)
+    expect(serverSource).toContain("\"SIGUSR2\"")
   })
 
   it("does not read or validate process.env when imported", async () => {
@@ -52,5 +53,25 @@ describe("server entrypoint", () => {
     } finally {
       restoreEnvValue("FLAGHACK_PORT", originalFlaghackPort)
     }
+  })
+
+  it("keeps signal handlers installed until graceful shutdown finishes", () => {
+    const serverSource = readServerSource()
+    const onSignalStart = serverSource.indexOf("function onSignal()")
+    const observerStart = serverSource.indexOf(
+      "fiber.addObserver",
+      onSignalStart
+    )
+    const signalHandlerSource = serverSource.slice(
+      onSignalStart,
+      observerStart
+    )
+    const observerSource = serverSource.slice(observerStart)
+
+    expect(onSignalStart).toBeGreaterThanOrEqual(0)
+    expect(observerStart).toBeGreaterThan(onSignalStart)
+    expect(signalHandlerSource).toContain("if (receivedSignal) return")
+    expect(signalHandlerSource).not.toContain("cleanupSignalHandlers()")
+    expect(observerSource).toContain("cleanupSignalHandlers()")
   })
 })

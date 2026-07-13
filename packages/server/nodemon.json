@@ -1,6 +1,7 @@
 {
-  "watch": ["src"],
+  "watch": ["src", "../domain/src"],
   "ext": "ts,tsx",
-  "exec": "tsx src/server.ts",
-  "delay": "200"
+  "exec": "node --import tsx src/server.ts",
+  "signal": "SIGUSR2",
+  "delay": 200
 }

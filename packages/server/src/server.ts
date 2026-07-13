@@ -44,12 +44,14 @@ const serverExitCode = (exit: Exit.Exit<unknown, unknown>): number =>
 export const runServer = (env: ServerRuntimeEnv = process.env): void => {
   const keepAlive = setInterval(() => undefined, 2 ** 31 - 1)
   const fiber = Effect.runFork(Layer.launch(makeHttpLive(env)))
+  const shutdownSignals = ["SIGINT", "SIGTERM", "SIGUSR2"] as const
   let receivedSignal = false
   let signalExitCode = 0
 
   const cleanupSignalHandlers = () => {
-    process.removeListener("SIGINT", onSignal)
-    process.removeListener("SIGTERM", onSignal)
+    for (const signal of shutdownSignals) {
+      process.removeListener(signal, onSignal)
+    }
   }
 
   const shutdown = runRegisteredAutosaves.pipe(
@@ -69,7 +71,6 @@ export const runServer = (env: ServerRuntimeEnv = process.env): void => {
   function onSignal() {
     if (receivedSignal) return
     receivedSignal = true
-    cleanupSignalHandlers()
     Effect.runFork(shutdown)
   }
 
@@ -82,8 +83,9 @@ export const runServer = (env: ServerRuntimeEnv = process.env): void => {
     }
   })
 
-  process.on("SIGINT", onSignal)
-  process.on("SIGTERM", onSignal)
+  for (const signal of shutdownSignals) {
+    process.on(signal, onSignal)
+  }
 }
 
 const isDirectEntry = () => {

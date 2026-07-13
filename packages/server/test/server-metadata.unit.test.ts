@@ -8,6 +8,7 @@ const serverPackagePath = join(
   ".."
 )
 const serverPackageJsonPath = join(serverPackagePath, "package.json")
+const serverNodemonJsonPath = join(serverPackagePath, "nodemon.json")
 
 const directDependencySectionNames = [
   "dependencies",
@@ -27,12 +28,26 @@ type ServerPackageJson =
     readonly name?: unknown
     readonly private?: unknown
     readonly publishConfig?: unknown
+    readonly scripts?: Readonly<Record<string, unknown>>
   }
+
+type ServerNodemonJson = {
+  readonly delay?: unknown
+  readonly exec?: unknown
+  readonly ext?: unknown
+  readonly signal?: unknown
+  readonly watch?: unknown
+}
 
 const readServerPackageJson = (): ServerPackageJson =>
   JSON.parse(
     readFileSync(serverPackageJsonPath, "utf8")
   ) as ServerPackageJson
+
+const readServerNodemonJson = (): ServerNodemonJson =>
+  JSON.parse(
+    readFileSync(serverNodemonJsonPath, "utf8")
+  ) as ServerNodemonJson
 
 describe("server package metadata", () => {
   it("declares private publish intent unambiguously", () => {
@@ -111,5 +126,19 @@ describe("server package metadata", () => {
     )
 
     expect(scalaTsDependencySections).toEqual([])
+  })
+
+  it("hot reloads server and shared domain sources gracefully", () => {
+    const serverPackageJson = readServerPackageJson()
+    const nodemon = readServerNodemonJson()
+
+    expect(serverPackageJson.scripts?.dev).toBe(
+      "nodemon --config nodemon.json"
+    )
+    expect(nodemon.watch).toEqual(["src", "../domain/src"])
+    expect(nodemon.ext).toBe("ts,tsx")
+    expect(nodemon.exec).toBe("node --import tsx src/server.ts")
+    expect(nodemon.signal).toBe("SIGUSR2")
+    expect(nodemon.delay).toBe(200)
   })
 })

@@ -62,7 +62,15 @@ For agent/bot testing while a human server is already running on port 3000, use 
 #+END_SRC
 These use port 3100.
 
-*** TODO:  hotreloading
+*** server hot reloading
+The development server watches both server and shared domain TypeScript
+sources. Start it with:
+#+BEGIN_SRC bash
+  pnpm run serve
+#+END_SRC
+Changes are coalesced for 200 milliseconds and then restart the server through
+its nodemon-aware graceful shutdown path, including the normal shutdown
+autosave.
 
 ** exiting the game
 Use =C-s= or =#save= for a resumable save-and-exit. Use =C-q= or =#quit= for confirmed permanent quit. =C-c= disconnects the terminal client without saving; use =C-s= for durable progress. Autosave runs only when the server itself shuts down cleanly.

@@ -448,8 +448,10 @@ arrival, camps, props, effigy, temple, both stair directions, NPCs, and quest
 flag distinguishable without color. Keep Unicode line-drawing walls where
 supported; tests assert semantic glyph choice rather than terminal color.
 
-Add the current road/address to status space. Story guidance appears only as
-diegetic dialogue and ambient events, never as an objective line.
+Keep the current road/address in client state for navigation, overview, and
+look mode, but do not reveal it in status space; players identify camps from
+their signs. Story guidance appears only as diegetic dialogue and ambient
+events, never as an objective line.
 Look mode should show a camp's name/archetype/address, a road name, and a prop's
 description rather than only its raw tag. Update help text for talk, overview,
 landmark travel, and ascend without making the one-line help unreadable; a
@@ -559,7 +561,8 @@ These are separable work streams after Stage 0 and may proceed in parallel:
 1. Add return stairs, ascent, legacy level-1 safety hydration, and round-trip
    tests.
 2. Add Charm overview, landmark popup, authoritative repeated `travelStep`,
-   current address display, look text, glyph hierarchy, and help.
+   tracked current address without a status readout, look text, glyph
+   hierarchy, and help.
 
 Exit: a player can navigate to every discovered landmark and make a persistent
 dungeon round trip in the real Charm client. Return stairs must land before

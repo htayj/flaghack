@@ -154,7 +154,7 @@ Campground terminal verification has a focused bot-port gate:
 pnpm test:feature:tmux:campground:bot
 ```
 
-It uses one disposable server and Charm session to verify the one-time brutal-arrival narration, empty inventory, visible mud-puddle spawn beside the gate, and heavy-rain projection. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
+It uses one disposable server and Charm session to verify the one-time brutal-arrival narration, empty inventory, visible mud-puddle spawn beside the gate, heavy-rain projection, and the absence of a current-address readout in playing status. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
 
 Loot-specific terminal verification has a focused bot-port gate:
 

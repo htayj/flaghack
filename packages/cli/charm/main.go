@@ -1636,9 +1636,6 @@ func renderStatus(world []entity, campgroundViews ...campgroundView) string {
 	}
 	if len(campgroundViews) > 0 {
 		campground := campgroundViews[0]
-		if address := strings.TrimSpace(campground.CurrentAddress); address != "" {
-			lines = append(lines, "Address: "+address)
-		}
 		if weather := campgroundWeatherLabel(campground.Weather); weather != "" {
 			lines = append(lines, "Weather: "+weather)
 		}

@@ -2186,8 +2186,8 @@ func TestCampgroundOverviewStatusLookAndHelpUseServerProjection(t *testing.T) {
 		{Key: "player", Tag: "player", In: "world", At: pos{X: 96, Y: 120, Z: 0}},
 	}
 	status := renderStatus(world, campground)
-	if !strings.Contains(status, "Address: N-1, Lantern Road") {
-		t.Fatalf("status missing projected campground text: %q", status)
+	if strings.Contains(status, "Address:") || strings.Contains(status, campground.CurrentAddress) {
+		t.Fatalf("status exposed the tracked campground address: %q", status)
 	}
 	if !strings.Contains(status, "Weather: heavy rain") {
 		t.Fatalf("status missing projected weather: %q", status)

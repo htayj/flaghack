@@ -84,6 +84,22 @@ describe("authored campground dialogue", () => {
     )
   })
 
+  it("keeps repeated resident chatter compatible with the downpour", () => {
+    const lines = new Set(
+      Array.from({ length: 32 }, (_, turn) =>
+        repeatCampgroundDialogue(
+          "resident",
+          context({ turn }),
+          firstCamp
+        ).message)
+    )
+
+    expect(lines).toContain(
+      "The runoff keeps moving, but the camp is still here."
+    )
+    expect(Array.from(lines).join(" ")).not.toContain("dust keeps moving")
+  })
+
   it("prioritizes rumors and favors without volunteering discoveries", () => {
     const places: ReadonlyArray<DiscoverableCampgroundPlace> = [{
       _tag: "camp",

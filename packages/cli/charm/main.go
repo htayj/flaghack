@@ -1378,7 +1378,7 @@ func (m model) View() string {
 			cursorTarget = m.lookTarget
 		}
 		board := m.perf.measureString("frontend.component", "board", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
-			return renderBoard(m.world, cursorTarget)
+			return renderBoardWithCampground(m.world, cursorTarget, m.campground)
 		})
 		sidebar := m.perf.measureString("frontend.component", "sidebar", "", "", map[string]int{"inventorySize": len(m.inventory)}, func() string {
 			return renderSidebarArea(m.inventory, m.popup, m.landmarkPopup)
@@ -1411,7 +1411,14 @@ func (m model) View() string {
 }
 
 func renderBoard(world []entity, target *pos) string {
-	tiles := drawWorld(world, target)
+	return renderTiles(drawWorld(world, target))
+}
+
+func renderBoardWithCampground(world []entity, target *pos, campground campgroundView) string {
+	return renderTiles(drawWorldWithCampground(world, target, campground))
+}
+
+func renderTiles(tiles [][]tile) string {
 	lines := make([]string, 0, boardHeight)
 	for _, row := range tiles {
 		var b strings.Builder
@@ -3221,6 +3228,16 @@ func isVisibleScreenPos(p pos) bool {
 }
 
 func drawWorld(world []entity, target *pos) [][]tile {
+	return drawWorldWithTileFor(world, target, tileFor)
+}
+
+func drawWorldWithCampground(world []entity, target *pos, campground campgroundView) [][]tile {
+	return drawWorldWithTileFor(world, target, func(item entity) tile {
+		return tileForCampground(item, campground)
+	})
+}
+
+func drawWorldWithTileFor(world []entity, target *pos, tileForEntity func(entity) tile) [][]tile {
 	tiles := make([][]tile, boardHeight)
 	for y := 0; y < boardHeight; y++ {
 		tiles[y] = make([]tile, boardWidth)
@@ -3245,7 +3262,7 @@ func drawWorld(world []entity, target *pos) [][]tile {
 		}
 	}
 	for _, item := range chosen {
-		tiles[item.At.Y][item.At.X] = tileFor(item)
+		tiles[item.At.Y][item.At.X] = tileForEntity(item)
 	}
 	if target != nil && (!vp.hasZ || target.Z == vp.z) {
 		screenTarget := screenPos(*target, vp)
@@ -3254,6 +3271,17 @@ func drawWorld(world []entity, target *pos) [][]tile {
 		}
 	}
 	return tiles
+}
+
+func campgroundHasHeavyRain(campground campgroundView) bool {
+	return campground.Weather != nil && campground.Weather.Condition == "heavy-rain"
+}
+
+func tileForCampground(item entity, campground campgroundView) tile {
+	if item.Tag == "floor" && item.At.Z == 0 && campgroundHasHeavyRain(campground) {
+		return tile{char: ",", color: lipgloss.Color("3")}
+	}
+	return tileFor(item)
 }
 
 func tileFor(item entity) tile {
@@ -3402,8 +3430,10 @@ func zIndex(item entity) int {
 	switch item.Tag {
 	case "tent":
 		return -1
-	case "floor", "tunnel", "mud":
+	case "floor", "tunnel":
 		return 0
+	case "mud":
+		return 1
 	case "wall", "door", "tent-wall", "tent-post", "sign", "effigy", "temple", "stairs-down", "stairs-up", "camp-prop":
 		return 2
 	default:
@@ -3514,9 +3544,24 @@ func entitiesAtPosition(world []entity, p pos) []entity {
 }
 
 func describeLookTarget(world []entity, target pos) string {
+	return describeLookTargetWith(world, target, describeEntityForLook)
+}
+
+func describeLookTargetWith(
+	world []entity,
+	target pos,
+	describeEntity func(entity) string,
+) string {
 	items := entitiesAtPosition(world, target)
 	if len(items) == 0 {
 		return fmt.Sprintf("Look %d,%d: unexplored", target.X, target.Y)
+	}
+	hasMud := false
+	for _, item := range items {
+		if item.Tag == "mud" {
+			hasMud = true
+			break
+		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		left := zIndex(items[i])
@@ -3528,7 +3573,10 @@ func describeLookTarget(world []entity, target pos) string {
 	})
 	descriptions := make([]string, 0, len(items))
 	for _, item := range items {
-		descriptions = append(descriptions, describeEntityForLook(item))
+		if hasMud && item.Tag == "floor" {
+			continue
+		}
+		descriptions = append(descriptions, describeEntity(item))
 	}
 	return fmt.Sprintf("Look %d,%d: %s", target.X, target.Y, strings.Join(descriptions, "; "))
 }
@@ -3538,7 +3586,9 @@ func describeLookTargetWithCampground(
 	target pos,
 	campground campgroundView,
 ) string {
-	description := describeLookTarget(world, target)
+	description := describeLookTargetWith(world, target, func(item entity) string {
+		return describeEntityForCampgroundLook(item, campground)
+	})
 	for _, landmark := range campground.DiscoveredLandmarks {
 		if samePos(landmark.At, target) {
 			return fmt.Sprintf(
@@ -3551,6 +3601,13 @@ func describeLookTargetWithCampground(
 		}
 	}
 	return description
+}
+
+func describeEntityForCampgroundLook(item entity, campground campgroundView) string {
+	if item.Tag == "floor" && item.At.Z == 0 && campgroundHasHeavyRain(campground) {
+		return "muddy ground"
+	}
+	return describeEntityForLook(item)
 }
 
 func describeEntityForLook(item entity) string {

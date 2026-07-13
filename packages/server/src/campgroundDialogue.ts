@@ -272,7 +272,7 @@ const repeatLinePools: Readonly<
   ],
   resident: [
     "Good to see you again.",
-    "The dust keeps moving, but the camp is still here."
+    "The runoff keeps moving, but the camp is still here."
   ],
   ranger: [
     "Tell me a camp name or address and I can check the current route.",

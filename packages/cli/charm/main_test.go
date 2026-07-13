@@ -1232,6 +1232,53 @@ func TestMudIsVisiblePassableTerrainWithLookDescription(t *testing.T) {
 	}
 }
 
+func TestHeavyRainRendersSurfaceFloorAsMuddyGround(t *testing.T) {
+	rain := campgroundView{Weather: &campgroundWeather{Condition: "heavy-rain"}}
+	surfaceFloor := entity{Key: "surface-floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	puddle := entity{Key: "puddle", Tag: "mud", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	dungeonFloor := entity{Key: "dungeon-floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 1}}
+	road := entity{Key: "road", Tag: "tunnel", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+
+	if got := drawWorldWithCampground([]entity{surfaceFloor}, nil, rain)[2][1].char; got != "," {
+		t.Fatalf("rainy surface floor glyph = %q, want comma", got)
+	}
+	if got := describeEntityForCampgroundLook(surfaceFloor, rain); got != "muddy ground" {
+		t.Fatalf("rainy surface floor look text = %q, want muddy ground", got)
+	}
+
+	for _, world := range [][]entity{{surfaceFloor, puddle}, {puddle, surfaceFloor}} {
+		if got := drawWorldWithCampground(world, nil, rain)[2][1].char; got != ";" {
+			t.Fatalf("rainy floor/puddle glyph = %q, want semicolon", got)
+		}
+	}
+	if got := describeEntityForCampgroundLook(puddle, rain); got != "mud puddle" {
+		t.Fatalf("rainy puddle look text = %q, want mud puddle", got)
+	}
+	puddleLook := describeLookTargetWithCampground(
+		[]entity{surfaceFloor, puddle},
+		surfaceFloor.At,
+		rain,
+	)
+	if !strings.Contains(puddleLook, "mud puddle") || strings.Contains(puddleLook, "muddy ground") {
+		t.Fatalf("rainy puddle look did not hide its floor substrate: %q", puddleLook)
+	}
+
+	if got := drawWorldWithCampground([]entity{road}, nil, rain)[2][1].char; got != "#" {
+		t.Fatalf("rainy road glyph = %q, want hash", got)
+	}
+
+	if got := drawWorldWithCampground([]entity{dungeonFloor}, nil, rain)[2][1].char; got != "·" {
+		t.Fatalf("dungeon floor glyph = %q, want middle dot", got)
+	}
+	if got := describeEntityForCampgroundLook(dungeonFloor, rain); got != "dusty ground" {
+		t.Fatalf("dungeon floor look text = %q, want dusty ground", got)
+	}
+
+	if got := drawWorldWithCampground([]entity{surfaceFloor}, nil, campgroundView{})[2][1].char; got != "·" {
+		t.Fatalf("dry surface floor glyph = %q, want middle dot", got)
+	}
+}
+
 func TestCampPropTerrainPassabilityIsExplicitPerKind(t *testing.T) {
 	var decoded entity
 	if err := json.Unmarshal([]byte(`{"key":"prop-1","at":{"x":2,"y":3,"z":0},"in":"world","_tag":"camp-prop","kind":"bike-rack"}`), &decoded); err != nil {
@@ -2148,6 +2195,9 @@ func TestCampgroundOverviewStatusLookAndHelpUseServerProjection(t *testing.T) {
 	look := describeLookTargetWithCampground(world, pos{X: 96, Y: 120, Z: 0}, campground)
 	if !strings.Contains(look, "landmark: Arrival Plaza (civic) — Gate and Main Road") {
 		t.Fatalf("look missing projected landmark identity: %q", look)
+	}
+	if !strings.Contains(look, "muddy ground") || strings.Contains(look, "dusty ground") {
+		t.Fatalf("rainy campground look did not describe muddy ground: %q", look)
 	}
 	lookPanel := renderLookPanel(world, pos{X: 96, Y: 120, Z: 0}, campground)
 	if !strings.Contains(lookPanel, "Address: N-1, Lantern Road") {

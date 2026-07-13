@@ -662,13 +662,23 @@ describe("domain source schemas", () => {
       variant: "vertical"
     })
     const openDoor = { ...closedDoor, key: "door-2", open: true }
+    const tentDoor = Door.make({
+      at: { x: 3, y: 0, z: 0 },
+      in: "world",
+      key: "tent-door-1",
+      kind: "tent",
+      open: false,
+      variant: "horizontal"
+    })
 
-    expect(Either.isRight(S.validateEither(AnyTerrain)(closedDoor)))
-      .toBe(true)
-    expect(Either.isRight(S.validateEither(AnyTerrain)(openDoor)))
-      .toBe(true)
-    expect(Either.isRight(S.validateEither(Entity)(closedDoor))).toBe(
-      true
+    for (const terrain of [closedDoor, openDoor, tentDoor]) {
+      expect(Either.isRight(S.validateEither(AnyTerrain)(terrain)))
+        .toBe(true)
+      expect(Either.isRight(S.validateEither(Entity)(terrain))).toBe(true)
+    }
+    expect(tentDoor.kind).toBe("tent")
+    expect(expectRight(S.decodeUnknownEither(Door)(tentDoor))).toEqual(
+      tentDoor
     )
   })
 

@@ -9,7 +9,9 @@ import {
   isTerrain,
   makeCampProp,
   makeMud,
-  mud
+  makeTentDoor,
+  mud,
+  tentDoor
 } from "../src/terrain.js"
 
 const expectedPassability: Record<CampPropKind, boolean> = {
@@ -78,5 +80,41 @@ describe("mud", () => {
     )
 
     expect(terrain).toEqual(makeMud("entity-0", 4, 5, 0))
+  })
+})
+
+describe("tent doors", () => {
+  it("constructs a tent-kind door as schema terrain", () => {
+    const terrain = makeTentDoor(
+      "tent-door-1",
+      4,
+      5,
+      0,
+      false,
+      "horizontal"
+    )
+
+    expect(terrain).toEqual({
+      _tag: "door",
+      at: { x: 4, y: 5, z: 0 },
+      in: "world",
+      key: "tent-door-1",
+      kind: "tent",
+      open: false,
+      variant: "horizontal"
+    })
+    expect(isTerrain(terrain)).toBe(true)
+  })
+
+  it("allocates deterministic keys through the tent door factory", () => {
+    const terrain = Effect.runSync(
+      tentDoor(4, 5, 0, false, "horizontal").pipe(
+        Effect.provide(CounterKeyGeneratorLive)
+      )
+    )
+
+    expect(terrain).toEqual(
+      makeTentDoor("entity-0", 4, 5, 0, false, "horizontal")
+    )
   })
 })

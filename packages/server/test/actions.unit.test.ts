@@ -57,12 +57,14 @@ const doorAt = (
   key: string,
   x: number,
   y: number,
-  open: boolean
+  open: boolean,
+  kind?: "tent"
 ): Entity => ({
   _tag: "door",
   at: { x, y, z: 0 },
   in: "world",
   key,
+  ...(kind === undefined ? {} : { kind }),
   open,
   variant: "vertical"
 })
@@ -429,7 +431,7 @@ describe("server actions", () => {
 
   it("auto-opens a closed adjacent door when moving into it, then moves through the open door", () => {
     const actor = player(0, 0, 0)
-    const door = doorAt("door-1", 1, 0, false)
+    const door = doorAt("door-1", 1, 0, false, "tent")
     const gs = GameState.make({
       world: HashMap.fromIterable<string, Entity>([
         [actor.key, actor],
@@ -457,6 +459,8 @@ describe("server actions", () => {
     expect(openedDoor?._tag === "door" ? openedDoor.open : false).toBe(
       true
     )
+    expect(openedDoor?._tag === "door" ? openedDoor.kind : undefined)
+      .toBe("tent")
     expect(entityByKey(afterMove, actor.key)?.at).toEqual(door.at)
   })
 

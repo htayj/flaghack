@@ -69,6 +69,7 @@ import {
   stairsUp,
   temple,
   tent,
+  tentDoor,
   tentPost,
   tentWall,
   testWalls,
@@ -1785,23 +1786,256 @@ const selectPatrolAwningCoordinates = (
     return selected
   })
 
-const tentStructureTileGroups = (
+type OwnedTentStructure = {
+  readonly band: ThemeCampBand
+  readonly doorApproach?: GridPosition
+  readonly id: string
+  readonly spec: TentStructureSpec
+  readonly tiles: TentStructureTiles
+}
+
+type TentBoundaryPlacement = {
+  readonly ownerId: string
+  readonly position: GridPosition
+  readonly variant: typeof DirectionalVariantSchema.Type
+}
+
+const ownedTentStructures = (
   layouts: ReadonlyArray<ThemeCampLayout>
-): Array<TentStructureTiles> =>
-  layouts.flatMap((layout) => layout.structures.map(tentStructureTiles))
+): Array<OwnedTentStructure> =>
+  layouts.flatMap((layout) =>
+    layout.structures.map((spec, index) => ({
+      band: layout.band,
+      id: `${layout.definition.id}-${index}`,
+      spec,
+      tiles: tentStructureTiles(spec)
+    }))
+  )
+
+const tentStructureFootprintCoordinates = (
+  tiles: TentStructureTiles
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    tiles.roofCoordinates
+      .concat(tiles.wallCoordinates)
+      .concat(tiles.doorCoordinates)
+      .concat(tiles.postCoordinates)
+  )
+
+const tentStructureClearanceCoordinates = (
+  coordinates: ReadonlyArray<GridPosition>
+): Array<GridPosition> =>
+  uniqueGridPositions(
+    coordinates.flatMap((coordinate) => [
+      coordinate,
+      { x: coordinate.x - 1, y: coordinate.y },
+      { x: coordinate.x + 1, y: coordinate.y },
+      { x: coordinate.x, y: coordinate.y - 1 },
+      { x: coordinate.x, y: coordinate.y + 1 }
+    ])
+  )
+
+const personalTentPlacementOffsets = (): ReadonlyArray<{
+  readonly inward: number
+  readonly tangent: number
+}> => {
+  const offsets = range(0, 18).flatMap((inward) =>
+    range(-28, 28).map((tangent) => ({ inward, tangent }))
+  )
+
+  return offsets.sort((left, right) =>
+    Math.abs(left.tangent) + left.inward
+      - (Math.abs(right.tangent) + right.inward)
+    || left.inward - right.inward
+    || left.tangent - right.tangent
+  )
+}
+
+const translatePersonalTentSpec = (
+  spec: Extract<TentStructureSpec, { readonly kind: "personal" }>,
+  band: ThemeCampBand,
+  tangent: number,
+  inward: number
+): Extract<TentStructureSpec, { readonly kind: "personal" }> => {
+  const offset = band === "north"
+    ? { x: tangent, y: inward }
+    : band === "south"
+    ? { x: tangent, y: -inward }
+    : band === "west"
+    ? { x: inward, y: tangent }
+    : { x: -inward, y: tangent }
+
+  return {
+    ...spec,
+    origin: {
+      x: spec.origin.x + offset.x,
+      y: spec.origin.y + offset.y
+    }
+  }
+}
+
+const personalTentDoorApproachCoordinate = (
+  spec: Extract<TentStructureSpec, { readonly kind: "personal" }>,
+  tiles: TentStructureTiles
+): GridPosition | undefined => {
+  const door = tiles.doorCoordinates[0]
+  if (door === undefined) return undefined
+
+  switch (spec.doorSide ?? "south") {
+    case "north":
+      return { x: door.x, y: door.y - 1 }
+    case "south":
+      return { x: door.x, y: door.y + 1 }
+    case "west":
+      return { x: door.x - 1, y: door.y }
+    case "east":
+      return { x: door.x + 1, y: door.y }
+  }
+}
+
+const resolvePersonalTentStructures = (
+  layouts: ReadonlyArray<ThemeCampLayout>,
+  roadCoordinates: ReadonlyArray<GridPosition>,
+  reservedCoordinates: ReadonlyArray<GridPosition>
+): Effect.Effect<Array<OwnedTentStructure>, LevelGenerationError> =>
+  Effect.gen(function*() {
+    const authoredStructures = ownedTentStructures(layouts)
+    const fixedStructures = authoredStructures.filter(({ spec }) =>
+      spec.kind !== "personal"
+    )
+    const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
+    const reservedKeys = new globalThis.Set(
+      reservedCoordinates.map(gridKey)
+    )
+    const occupiedStructureKeys = new globalThis.Set(
+      fixedStructures.flatMap(({ tiles }) =>
+        tentStructureFootprintCoordinates(tiles)
+      ).map(gridKey)
+    )
+    const structureClearanceKeys = new globalThis.Set(
+      tentStructureClearanceCoordinates(
+        fixedStructures.flatMap(({ tiles }) =>
+          tentStructureFootprintCoordinates(tiles)
+        )
+      ).map(gridKey)
+    )
+    const reservedApproachKeys = new globalThis.Set<string>()
+    const resolvedStructures: Array<OwnedTentStructure> = []
+    const offsets = personalTentPlacementOffsets()
+
+    for (const structure of authoredStructures) {
+      if (structure.spec.kind !== "personal") {
+        resolvedStructures.push(structure)
+        continue
+      }
+
+      let resolved: OwnedTentStructure | undefined
+      let resolvedApproach: GridPosition | undefined
+      for (const { inward, tangent } of offsets) {
+        const spec = translatePersonalTentSpec(
+          structure.spec,
+          structure.band,
+          tangent,
+          inward
+        )
+        const tiles = tentStructureTiles(spec)
+        const footprint = tentStructureFootprintCoordinates(tiles)
+        const approach = personalTentDoorApproachCoordinate(spec, tiles)
+        if (
+          approach === undefined
+          || !isInCampgroundBounds(approach)
+          || reservedKeys.has(gridKey(approach))
+          || occupiedStructureKeys.has(gridKey(approach))
+          || reservedApproachKeys.has(gridKey(approach))
+          || footprint.some((coordinate) =>
+            !isInCampgroundBounds(coordinate)
+            || roadKeys.has(gridKey(coordinate))
+            || reservedKeys.has(gridKey(coordinate))
+            || structureClearanceKeys.has(gridKey(coordinate))
+            || reservedApproachKeys.has(gridKey(coordinate))
+          )
+        ) {
+          continue
+        }
+
+        resolved = { ...structure, doorApproach: approach, spec, tiles }
+        resolvedApproach = approach
+        break
+      }
+
+      if (resolved === undefined || resolvedApproach === undefined) {
+        return yield* Effect.fail(
+          levelGenerationError(`personal tent ${structure.id}`)
+        )
+      }
+
+      const footprint = tentStructureFootprintCoordinates(resolved.tiles)
+      for (const coordinate of footprint) {
+        occupiedStructureKeys.add(gridKey(coordinate))
+      }
+      for (
+        const coordinate of tentStructureClearanceCoordinates(footprint)
+      ) {
+        structureClearanceKeys.add(gridKey(coordinate))
+      }
+      reservedApproachKeys.add(gridKey(resolvedApproach))
+      resolvedStructures.push(resolved)
+    }
+
+    return resolvedStructures
+  })
+
+const uniqueTentBoundaryPlacements = (
+  placements: ReadonlyArray<TentBoundaryPlacement>
+): Array<TentBoundaryPlacement> => {
+  const unique = new globalThis.Map<string, TentBoundaryPlacement>()
+  for (const placement of placements) {
+    const key = gridKey(placement.position)
+    if (!unique.has(key)) unique.set(key, placement)
+  }
+  return Array.from(unique.values())
+}
+
+const campWallPlacements = (
+  structures: ReadonlyArray<OwnedTentStructure>
+): Array<TentBoundaryPlacement> =>
+  uniqueTentBoundaryPlacements(
+    structures.flatMap(({ id, tiles }) => {
+      const boundary = tiles.wallCoordinates.concat(tiles.doorCoordinates)
+      return tiles.wallCoordinates.map((position) => ({
+        ownerId: id,
+        position,
+        variant: tentWallVariant(boundary, position)
+      }))
+    })
+  )
+
+const campDoorPlacements = (
+  structures: ReadonlyArray<OwnedTentStructure>
+): Array<TentBoundaryPlacement> =>
+  uniqueTentBoundaryPlacements(
+    structures.flatMap(({ id, tiles }) => {
+      const boundary = tiles.wallCoordinates.concat(tiles.doorCoordinates)
+      return tiles.doorCoordinates.map((position) => ({
+        ownerId: id,
+        position,
+        variant: tentWallVariant(boundary, position)
+      }))
+    })
+  )
+
+const campDoorApproachCoordinates = (
+  structures: ReadonlyArray<OwnedTentStructure>
+): Array<GridPosition> =>
+  structures.flatMap(({ doorApproach }) =>
+    doorApproach === undefined ? [] : [doorApproach]
+  )
 
 const campRoofCoordinates = (
   structureTiles: ReadonlyArray<TentStructureTiles>
 ): Array<GridPosition> =>
   uniqueGridPositions(
     structureTiles.flatMap((tiles) => tiles.roofCoordinates)
-  )
-
-const campWallCoordinates = (
-  structureTiles: ReadonlyArray<TentStructureTiles>
-): Array<GridPosition> =>
-  uniqueGridPositions(
-    structureTiles.flatMap((tiles) => tiles.wallCoordinates)
   )
 
 const campPostCoordinates = (
@@ -2199,7 +2433,6 @@ export const makeCampgroundLevel = (
   Effect.gen(function*() {
     const geometry = yield* makeCampgroundGeometry
     const themeCamps = yield* makeThemeCampLayouts(geometry)
-    const structureTiles = tentStructureTileGroups(themeCamps)
     const objectiveSpineCoordinates = campgroundObjectiveSpineCoordinates(
       geometry
     )
@@ -2217,8 +2450,52 @@ export const makeCampgroundLevel = (
       { x: geometry.centerX, y: geometry.innerBottom },
       { x: geometry.innerLeft, y: geometry.centerY }
     ] as const
+    const effigyCoordinates = openAirEffigyCoordinates(geometry)
+    const templeWalls = templeWallCoordinates(geometry)
+    const templeMarker = templeMarkerCoordinate(geometry)
+    const templeStairsDown = templeStairsDownCoordinate(
+      geometry
+    )
+    const structureReservedCoordinates = effigyCoordinates
+      .concat(templeWalls)
+      .concat([templeMarker, templeStairsDown])
+      .concat(themeCamps.map((layout) => layout.signPosition))
+      .concat(themeCamps.map((layout) => layout.coolerPosition))
+      .concat(
+        themeCamps.flatMap((layout) => layout.entranceCoordinates)
+      )
+      .concat(roadSignCoordinates)
+      .concat(campgroundReservedTravelCorridorCoordinates())
+      .concat(arrivalCanopyCoordinates)
+      .concat([
+        arrivalGateCoordinate,
+        arrivalDirectoryCoordinate,
+        arrivalDirectorySignCoordinate,
+        arrivalWaterSignCoordinate,
+        arrivalWaterLabelCoordinate,
+        arrivalGreeterCoordinate,
+        campgroundWakeUpCoordinate
+      ])
+      .concat(arrivalWaterCoordinates)
+      .concat(campgroundMudPuddleCoordinates())
+    const structures = yield* resolvePersonalTentStructures(
+      themeCamps,
+      roadCoordinates,
+      structureReservedCoordinates
+    )
+    const structureTiles = structures.map(({ tiles }) => tiles)
     const rawStructureRoofCoordinates = campRoofCoordinates(structureTiles)
-    const rawStructureWallCoordinates = campWallCoordinates(structureTiles)
+    const rawStructureWallPlacements = campWallPlacements(structures)
+    const rawStructureWallCoordinates = rawStructureWallPlacements.map(
+      ({ position }) => position
+    )
+    const rawStructureDoorPlacements = campDoorPlacements(structures)
+    const rawStructureDoorCoordinates = rawStructureDoorPlacements.map(
+      ({ position }) => position
+    )
+    const structureDoorApproachCoordinates = campDoorApproachCoordinates(
+      structures
+    )
     const rawStructurePostCoordinates = campPostCoordinates(structureTiles)
     const structureRoofCoordinates = rawStructureRoofCoordinates.filter(
       (coordinate) => !roadKeys.has(gridKey(coordinate))
@@ -2226,28 +2503,40 @@ export const makeCampgroundLevel = (
     const structureRoofKeys = new globalThis.Set(
       structureRoofCoordinates.map(gridKey)
     )
-    const structureWallCoordinates = rawStructureWallCoordinates.filter(
-      (coordinate) =>
-        !roadKeys.has(gridKey(coordinate))
-        && !structureRoofKeys.has(gridKey(coordinate))
+    const structureDoorPlacements = rawStructureDoorPlacements.filter(
+      ({ position }) =>
+        !roadKeys.has(gridKey(position))
+        && !structureRoofKeys.has(gridKey(position))
+    )
+    const structureDoorCoordinates = structureDoorPlacements.map(
+      ({ position }) => position
+    )
+    const structureDoorKeys = new globalThis.Set(
+      structureDoorCoordinates.map(gridKey)
+    )
+    const structureWallPlacements = rawStructureWallPlacements.filter(
+      ({ position }) =>
+        !roadKeys.has(gridKey(position))
+        && !structureRoofKeys.has(gridKey(position))
+        && !structureDoorKeys.has(gridKey(position))
+    )
+    const structureWallCoordinates = structureWallPlacements.map(
+      ({ position }) => position
     )
     const structurePostCoordinates = rawStructurePostCoordinates.filter(
       (coordinate) =>
         !roadKeys.has(gridKey(coordinate))
         && !structureRoofKeys.has(gridKey(coordinate))
+        && !structureDoorKeys.has(gridKey(coordinate))
     )
     const structureFloorCoordinates = campFloorCoordinates(structureTiles)
-    const effigyCoordinates = openAirEffigyCoordinates(geometry)
-    const templeWalls = templeWallCoordinates(geometry)
-    const templeMarker = templeMarkerCoordinate(geometry)
-    const templeStairsDown = templeStairsDownCoordinate(
-      geometry
-    )
     const campPropPlacements = makeCampPropPlacements(
       themeCamps,
       roadCoordinates
         .concat(rawStructureRoofCoordinates)
         .concat(rawStructureWallCoordinates)
+        .concat(rawStructureDoorCoordinates)
+        .concat(structureDoorApproachCoordinates)
         .concat(rawStructurePostCoordinates)
         .concat(effigyCoordinates)
         .concat(templeWalls)
@@ -2267,6 +2556,12 @@ export const makeCampgroundLevel = (
         sameGridPosition(structureCoordinate, coordinate)
       )
       && !rawStructureWallCoordinates.some((structureCoordinate) =>
+        sameGridPosition(structureCoordinate, coordinate)
+      )
+      && !rawStructureDoorCoordinates.some((structureCoordinate) =>
+        sameGridPosition(structureCoordinate, coordinate)
+      )
+      && !structureDoorApproachCoordinates.some((structureCoordinate) =>
         sameGridPosition(structureCoordinate, coordinate)
       )
       && !rawStructurePostCoordinates.some((structureCoordinate) =>
@@ -2301,6 +2596,8 @@ export const makeCampgroundLevel = (
       roadCoordinates,
       rawStructureRoofCoordinates
         .concat(rawStructureWallCoordinates)
+        .concat(rawStructureDoorCoordinates)
+        .concat(structureDoorApproachCoordinates)
         .concat(rawStructurePostCoordinates)
         .concat(effigyCoordinates)
         .concat(templeWalls)
@@ -2370,6 +2667,8 @@ export const makeCampgroundLevel = (
       .concat(templeWalls)
       .concat([templeMarker, templeStairsDown])
       .concat(structureWallCoordinates)
+      .concat(structureDoorCoordinates)
+      .concat(structureDoorApproachCoordinates)
       .concat(structurePostCoordinates)
       .concat(themeCamps.map((layout) => layout.signPosition))
       .concat(
@@ -2411,14 +2710,15 @@ export const makeCampgroundLevel = (
       { concurrency: 1 }
     )
     const tentWalls = yield* Effect.forEach(
-      structureWallCoordinates,
-      ({ x, y }) =>
-        tentWall(
-          x,
-          y,
-          dlvl,
-          tentWallVariant(structureWallCoordinates, { x, y })
-        ),
+      structureWallPlacements,
+      ({ position, variant }) =>
+        tentWall(position.x, position.y, dlvl, variant),
+      { concurrency: 1 }
+    )
+    const tentDoors = yield* Effect.forEach(
+      structureDoorPlacements,
+      ({ position, variant }) =>
+        tentDoor(position.x, position.y, dlvl, false, variant),
       { concurrency: 1 }
     )
     const tentPosts = yield* Effect.forEach(
@@ -2550,6 +2850,7 @@ export const makeCampgroundLevel = (
       ...mudPuddle,
       ...templeWallEntities,
       ...tentWalls,
+      ...tentDoors,
       ...tentPosts,
       ...tentRoofs,
       ...signs,

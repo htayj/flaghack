@@ -27,6 +27,8 @@ import {
   isTerrain,
   itemsAt,
   makeBspLevel,
+  tentStructureTiles,
+  tentWallVariant,
   type World
 } from "../src/world.js"
 
@@ -164,7 +166,9 @@ const coolerContentTags = new Set([
   ...refrigeratedCampFoodTags
 ])
 type CampDefinition = typeof campgroundCamps[number]
+type DoorEntity = Extract<Entity, { readonly _tag: "door" }>
 type SignEntity = Extract<Entity, { readonly _tag: "sign" }>
+type TentWallEntity = Extract<Entity, { readonly _tag: "tent-wall" }>
 
 const campDefinitionBySignName: ReadonlyMap<string, CampDefinition> =
   new Map(
@@ -177,6 +181,8 @@ const campDefinitionBySignName: ReadonlyMap<string, CampDefinition> =
   )
 const isCampDefinitionSign = (entity: Entity): entity is SignEntity =>
   entity._tag === "sign" && campDefinitionBySignName.has(entity.name)
+const isTentDoor = (entity: Entity): entity is DoorEntity =>
+  entity._tag === "door" && entity.kind === "tent"
 const campgroundHumanDisplayNames = [
   "Alex",
   "Dusty",
@@ -289,6 +295,68 @@ describe("world entity predicates", () => {
   })
 })
 
+describe("personal tent geometry", () => {
+  it("keeps every door and wall segment connected to the local boundary", () => {
+    for (const interiorSpaces of [1, 2] as const) {
+      for (const doorSide of ["north", "south", "west", "east"] as const) {
+        const orientation = doorSide === "north" || doorSide === "south"
+          ? "horizontal"
+          : "vertical"
+        const tiles = tentStructureTiles({
+          doorSide,
+          interiorSpaces,
+          kind: "personal",
+          orientation,
+          origin: { x: 10, y: 20 }
+        })
+        const boundary = tiles.wallCoordinates.concat(
+          tiles.doorCoordinates
+        )
+        const xs = boundary.map(({ x }) => x)
+        const ys = boundary.map(({ y }) => y)
+        const left = Math.min(...xs)
+        const right = Math.max(...xs)
+        const top = Math.min(...ys)
+        const bottom = Math.max(...ys)
+        const expectedVariant = ({ x, y }: { x: number; y: number }) =>
+          x === left && y === top
+            ? "topLeft" as const
+            : x === right && y === top
+            ? "topRight" as const
+            : x === left && y === bottom
+            ? "bottomLeft" as const
+            : x === right && y === bottom
+            ? "bottomRight" as const
+            : y === top || y === bottom
+            ? "horizontal" as const
+            : "vertical" as const
+
+        expect(tiles.doorCoordinates).toHaveLength(1)
+        expect(boundary).toHaveLength(tiles.wallCoordinates.length + 1)
+        for (const coordinate of boundary) {
+          expect(tentWallVariant(boundary, coordinate)).toBe(
+            expectedVariant(coordinate)
+          )
+        }
+
+        const door = tiles.doorCoordinates[0]
+        expect(door).toBeDefined()
+        if (door === undefined) continue
+        expect(tentWallVariant(boundary, door)).toBe(
+          doorSide === "north" || doorSide === "south"
+            ? "horizontal"
+            : "vertical"
+        )
+        expect(
+          tiles.wallCoordinates.some(({ x, y }) =>
+            x === door.x && y === door.y
+          )
+        ).toBe(false)
+      }
+    }
+  })
+})
+
 describe("CampgroundGenLevel", () => {
   it("generates a deterministic 10x-area burn campground with many camps and looped roads", () => {
     const world = Effect.runSync(CampgroundGenLevel(777, 0))
@@ -349,8 +417,10 @@ describe("CampgroundGenLevel", () => {
     const tentPosts = entities.filter((entity) =>
       entity._tag === "tent-post"
     )
+    const tentDoors = entities.filter(isTentDoor)
     const structureBlockers: ReadonlyArray<Entity> = [
       ...tentWalls,
+      ...tentDoors,
       ...tentPosts
     ]
     const effigies = entities.filter((entity) => entity._tag === "effigy")
@@ -372,9 +442,35 @@ describe("CampgroundGenLevel", () => {
     expect(walls.length).toBeGreaterThan(0)
     expect(tentWalls.length).toBeGreaterThanOrEqual(100)
     expect(tentPosts.length).toBeGreaterThan(0)
-    expect(tentWalls.every((wall) => wall.variant !== "none")).toBe(true)
+    expect(tentDoors).toHaveLength(
+      campgroundCamps.reduce(
+        (count, camp) => count + camp.structure.personalTents,
+        0
+      )
+    )
+    expect(
+      tentWalls.every((wall) =>
+        [
+          "vertical",
+          "horizontal",
+          "bottomLeft",
+          "bottomRight",
+          "topLeft",
+          "topRight"
+        ].includes(wall.variant)
+      )
+    ).toBe(true)
+    expect(tentDoors.every((door) => door.open === false)).toBe(true)
+    expect(
+      tentDoors.every((door) =>
+        door.variant === "horizontal" || door.variant === "vertical"
+      )
+    ).toBe(true)
     for (const wall of structureBlockers) {
       expect(roadKeys.has(coordinateKey(wall))).toBe(false)
+    }
+    for (const door of tentDoors) {
+      expect(floorKeys.has(coordinateKey(door))).toBe(true)
     }
     for (const roof of roofs) {
       expect(
@@ -429,6 +525,7 @@ describe("CampgroundGenLevel", () => {
     const corridorBlockerKeys = new Set(
       entities.filter((entity) =>
         entity._tag === "wall"
+        || (entity._tag === "door" && !entity.open)
         || entity._tag === "tent-wall"
         || entity._tag === "tent-post"
         || entity._tag === "tent"
@@ -448,7 +545,12 @@ describe("CampgroundGenLevel", () => {
     }
   })
 
-  it("does not place impassable walls on road tiles across representative seeds", () => {
+  it("places every personal tent door away from roads and other structure terrain across representative seeds", () => {
+    const expectedDoorCount = campgroundCamps.reduce(
+      (count, camp) => count + camp.structure.personalTents,
+      0
+    )
+
     for (const seed of [1, 2, 3, 17, 777]) {
       const world = Effect.runSync(CampgroundGenLevel(seed, 0))
       const entities = Array.from(world.pipe(HashMap.values))
@@ -457,15 +559,179 @@ describe("CampgroundGenLevel", () => {
           coordinateKey
         )
       )
+      const floors = new Set(
+        entities.filter((entity) => entity._tag === "floor").map(
+          coordinateKey
+        )
+      )
+      const roofs = new Set(
+        entities.filter((entity) => entity._tag === "tent").map(
+          coordinateKey
+        )
+      )
+      const tentWallEntities = entities.filter(
+        (entity): entity is TentWallEntity => entity._tag === "tent-wall"
+      )
+      const tentWalls = new Set(tentWallEntities.map(coordinateKey))
+      const tentWallByCoordinate = new Map(
+        tentWallEntities.map((wall) => [coordinateKey(wall), wall])
+      )
+      const tentPosts = new Set(
+        entities.filter((entity) => entity._tag === "tent-post").map(
+          coordinateKey
+        )
+      )
+      const tentDoors = entities.filter(isTentDoor)
+      const tentDoorKeys = new Set(tentDoors.map(coordinateKey))
+      const entitiesByCoordinate = new Map<string, Array<Entity>>()
+      for (const entity of entities) {
+        const key = coordinateKey(entity)
+        const occupants = entitiesByCoordinate.get(key)
+        if (occupants === undefined) {
+          entitiesByCoordinate.set(key, [entity])
+        } else {
+          occupants.push(entity)
+        }
+      }
       const blockerRoadOverlaps = entities.filter((entity) =>
         (
           entity._tag === "wall"
+          || (entity._tag === "door" && !entity.open)
           || entity._tag === "tent-wall"
           || entity._tag === "tent-post"
         ) && roadKeys.has(coordinateKey(entity))
       )
 
       expect(blockerRoadOverlaps, `seed ${seed}`).toHaveLength(0)
+      expect(tentDoors, `seed ${seed}`).toHaveLength(expectedDoorCount)
+      expect(
+        new Set(tentDoors.map(coordinateKey)).size,
+        `seed ${seed}`
+      ).toBe(expectedDoorCount)
+      for (const door of tentDoors) {
+        const key = coordinateKey(door)
+        expect(floors.has(key), `floor under ${door.key}, seed ${seed}`)
+          .toBe(true)
+        expect(roofs.has(key), `roof over ${door.key}, seed ${seed}`)
+          .toBe(false)
+        expect(tentWalls.has(key), `wall at ${door.key}, seed ${seed}`)
+          .toBe(false)
+        expect(tentPosts.has(key), `post at ${door.key}, seed ${seed}`)
+          .toBe(false)
+
+        const perpendicularDirections = door.variant === "horizontal"
+          ? [{ x: 0, y: -1 }, { x: 0, y: 1 }]
+          : [{ x: -1, y: 0 }, { x: 1, y: 0 }]
+        const interiorCandidates = perpendicularDirections.map(
+          ({ x, y }) => ({ x: door.at.x + x, y: door.at.y + y })
+        ).filter(({ x, y }) => roofs.has(`${x},${y},${door.at.z}`))
+
+        expect(
+          interiorCandidates,
+          `interior beside ${door.key}, seed ${seed}`
+        ).toHaveLength(1)
+        const interior = interiorCandidates[0]
+        if (interior === undefined) continue
+
+        const lineDirection = door.variant === "horizontal"
+          ? { x: 1, y: 0 }
+          : { x: 0, y: 1 }
+        let firstRoof = interior
+        let lastRoof = interior
+        while (
+          roofs.has(
+            `${firstRoof.x - lineDirection.x},${
+              firstRoof.y - lineDirection.y
+            },${door.at.z}`
+          )
+        ) {
+          firstRoof = {
+            x: firstRoof.x - lineDirection.x,
+            y: firstRoof.y - lineDirection.y
+          }
+        }
+        while (
+          roofs.has(
+            `${lastRoof.x + lineDirection.x},${
+              lastRoof.y + lineDirection.y
+            },${door.at.z}`
+          )
+        ) {
+          lastRoof = {
+            x: lastRoof.x + lineDirection.x,
+            y: lastRoof.y + lineDirection.y
+          }
+        }
+
+        const left = Math.min(firstRoof.x, lastRoof.x) - 1
+        const right = Math.max(firstRoof.x, lastRoof.x) + 1
+        const top = Math.min(firstRoof.y, lastRoof.y) - 1
+        const bottom = Math.max(firstRoof.y, lastRoof.y) + 1
+        const boundary = Array.from(
+          { length: right - left + 1 },
+          (_, index) => ({ x: left + index, y: top })
+        ).concat(
+          Array.from(
+            { length: right - left + 1 },
+            (_, index) => ({ x: left + index, y: bottom })
+          ),
+          Array.from(
+            { length: Math.max(0, bottom - top - 1) },
+            (_, index) => ({ x: left, y: top + index + 1 })
+          ),
+          Array.from(
+            { length: Math.max(0, bottom - top - 1) },
+            (_, index) => ({ x: right, y: top + index + 1 })
+          )
+        )
+        const boundaryDoorKeys = boundary.filter(({ x, y }) =>
+          tentDoorKeys.has(`${x},${y},${door.at.z}`)
+        )
+        expect(
+          boundaryDoorKeys,
+          `boundary door count for ${door.key}, seed ${seed}`
+        ).toHaveLength(1)
+
+        for (const coordinate of boundary) {
+          const coordinateKey =
+            `${coordinate.x},${coordinate.y},${door.at.z}`
+          if (coordinateKey === key) {
+            expect(door.variant).toBe(
+              tentWallVariant(boundary, coordinate)
+            )
+            continue
+          }
+
+          const wall = tentWallByCoordinate.get(coordinateKey)
+          expect(
+            wall,
+            `wall at ${coordinateKey} for ${door.key}, seed ${seed}`
+          ).toBeDefined()
+          if (wall !== undefined) {
+            expect(wall.variant).toBe(
+              tentWallVariant(boundary, coordinate)
+            )
+          }
+        }
+
+        const approach = {
+          x: door.at.x + door.at.x - interior.x,
+          y: door.at.y + door.at.y - interior.y
+        }
+        const approachKey = `${approach.x},${approach.y},${door.at.z}`
+        const approachOccupants = entitiesByCoordinate.get(approachKey)
+          ?? []
+        expect(
+          approachOccupants.some((entity) =>
+            isImpassable(entity) || isCreature(entity)
+          ),
+          `blocked approach for ${door.key}, seed ${seed}`
+        ).toBe(false)
+        expect(
+          approachOccupants.some(isPassableTerrain),
+          `terrain at approach for ${door.key}, seed ${seed}`
+        ).toBe(true)
+      }
     }
   })
 

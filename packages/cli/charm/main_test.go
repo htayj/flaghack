@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const testOpeningExposition = "You wake naked and face down in a puddle of mud just off the road. Rain hammers down around you, and you cannot remember how you got here."
@@ -1280,6 +1281,60 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 	}
 }
 
+func TestWallCharUsesEveryDirectionalVariant(t *testing.T) {
+	tests := []struct {
+		variant string
+		want    string
+	}{
+		{variant: "vertical", want: "│"},
+		{variant: "horizontal", want: "─"},
+		{variant: "topLeft", want: "┌"},
+		{variant: "topRight", want: "┐"},
+		{variant: "bottomLeft", want: "└"},
+		{variant: "bottomRight", want: "┘"},
+		{variant: "cross", want: "┼"},
+		{variant: "t-up", want: "┴"},
+		{variant: "t-down", want: "┬"},
+		{variant: "t-left", want: "┤"},
+		{variant: "t-right", want: "├"},
+		{variant: "none", want: " "},
+	}
+
+	for _, tc := range tests {
+		if got := wallChar(tc.variant); got != tc.want {
+			t.Fatalf("wallChar(%q) = %q, want %q", tc.variant, got, tc.want)
+		}
+	}
+}
+
+func TestTentDoorUsesTentPresentationAndDoorPhysics(t *testing.T) {
+	closed := entity{Key: "tent-door-closed", Tag: "door", Kind: "tent", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "horizontal"}
+	open := entity{Key: "tent-door-open", Tag: "door", Kind: "tent", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "horizontal", Open: true}
+	ordinary := entity{Key: "door-ordinary", Tag: "door", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "horizontal"}
+
+	if got := tileFor(closed); got.char != "─" || got.color != lipgloss.Color("11") {
+		t.Fatalf("closed tent door tile = %#v, want horizontal tent-colored door", got)
+	}
+	if got := tileFor(open); got.char != "+" || got.color != lipgloss.Color("11") {
+		t.Fatalf("open tent door tile = %#v, want open tent-colored door", got)
+	}
+	if got := describeEntityForLook(closed); got != "closed tent door" {
+		t.Fatalf("closed tent door look text = %q", got)
+	}
+	if got := describeEntityForLook(open); got != "open tent door" {
+		t.Fatalf("open tent door look text = %q", got)
+	}
+	if got := describeEntityForLook(ordinary); got != "closed door" {
+		t.Fatalf("ordinary door look text = %q", got)
+	}
+	if isPassableTerrain(closed) {
+		t.Fatal("closed tent door should be impassable")
+	}
+	if !isPassableTerrain(open) {
+		t.Fatal("open tent door should be passable")
+	}
+}
+
 func TestMudIsVisiblePassableTerrainWithLookDescription(t *testing.T) {
 	mud := entity{Key: "mud", Tag: "mud", In: "world", At: pos{X: 2, Y: 3, Z: 0}}
 	if got := tileFor(mud).char; got != ";" {
@@ -1487,6 +1542,7 @@ func TestFindTravelDirectionsTreatsClosedDoorsAndWallsOverPassableTilesAsBlocked
 	blockers := []entity{
 		{Key: "wall-1", Tag: "wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 		{Key: "door-1", Tag: "door", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
+		{Key: "tent-door-1", Tag: "door", Kind: "tent", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
 		{Key: "tent-wall-1", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
 		{Key: "tent-post-1", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 	}

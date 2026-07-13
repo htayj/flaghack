@@ -86,6 +86,17 @@ export const makeDoor = (
   variant: variant ?? "none",
   key
 })
+export const makeTentDoor = (
+  key: string,
+  x: number,
+  y: number,
+  z: number,
+  open: boolean,
+  variant?: DirectionalVariant
+): Door => ({
+  ...makeDoor(key, x, y, z, open, variant),
+  kind: "tent"
+})
 export const makeTentWall = (
   key: string,
   x: number,
@@ -248,6 +259,19 @@ export const door = (
     const key = yield* keyGenerator.nextKey
 
     return makeDoor(key, x, y, z, open, variant)
+  })
+export const tentDoor = (
+  x: number,
+  y: number,
+  z: number,
+  open = false,
+  variant?: DirectionalVariant
+): Effect.Effect<Door, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeTentDoor(key, x, y, z, open, variant)
   })
 export const tentWall = (
   x: number,

@@ -203,8 +203,10 @@ export const Wall = S.TaggedStruct("wall", {
   ...EntityBaseFields,
   variant: DirectionalVariant
 })
+export const DoorKind = S.Literal("tent")
 export const Door = S.TaggedStruct("door", {
   ...EntityBaseFields,
+  kind: DoorKind.pipe(S.optional),
   open: S.Boolean,
   variant: DirectionalVariant
 })

@@ -3368,10 +3368,14 @@ func tileFor(item entity) tile {
 	case "wall":
 		return tile{char: wallChar(item.Variant), color: lipgloss.Color("15")}
 	case "door":
-		if item.Open {
-			return tile{char: "+", color: lipgloss.Color("3")}
+		color := lipgloss.Color("3")
+		if item.Kind == "tent" {
+			color = lipgloss.Color("11")
 		}
-		return tile{char: wallChar(item.Variant), color: lipgloss.Color("3")}
+		if item.Open {
+			return tile{char: "+", color: color}
+		}
+		return tile{char: wallChar(item.Variant), color: color}
 	case "tent-wall":
 		return tile{char: wallChar(item.Variant), color: lipgloss.Color("11")}
 	case "tent-post":
@@ -3690,10 +3694,14 @@ func describeEntityForLook(item entity) string {
 	case "wall":
 		return "wall"
 	case "door":
-		if item.Open {
-			return "open door"
+		name := "door"
+		if item.Kind == "tent" {
+			name = "tent door"
 		}
-		return "closed door"
+		if item.Open {
+			return "open " + name
+		}
+		return "closed " + name
 	case "tent-wall":
 		return "tent-wall"
 	case "tent-post":

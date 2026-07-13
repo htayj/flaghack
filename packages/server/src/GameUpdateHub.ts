@@ -6,16 +6,56 @@ import type {
   ClientStateStreamSource,
   ClientStateStreamTerminal
 } from "@flaghack/domain/GameStream"
-import { Effect, PubSub, Ref, Schema, Stream } from "effect"
+import { Effect, HashMap, PubSub, Ref, Stream } from "effect"
 
 type ClientState = ClientStateStreamEvent["clientState"]
+type HashMapEntries<T> = T extends HashMap.HashMap<infer K, infer V>
+  ? ReadonlyArray<readonly [K, V]>
+  : never
+type EncodedClientState = {
+  [K in keyof ClientState]: K extends "inventory" | "world"
+    ? HashMapEntries<ClientState[K]>
+    : ClientState[K]
+}
+type EncodedClientStateStreamEvent =
+  & Omit<
+    ClientStateStreamEvent,
+    "clientState"
+  >
+  & {
+    readonly clientState: EncodedClientState
+  }
 
 const textEncoder = new TextEncoder()
+
+/**
+ * ClientState's only non-JSON wire transforms are its two HashMaps. Keeping
+ * this conversion explicit avoids revalidating every viewport entity on each
+ * streamed turn; the schema-parity test must evolve with future transforms.
+ */
+const encodeClientStateStreamEvent = (
+  event: ClientStateStreamEvent
+): EncodedClientStateStreamEvent => ({
+  clientState: {
+    campground: event.clientState.campground,
+    gameplayEvents: event.clientState.gameplayEvents,
+    inventory: Array.from(event.clientState.inventory),
+    roles: event.clientState.roles,
+    setup: event.clientState.setup,
+    world: Array.from(event.clientState.world)
+  },
+  ...(event.previousRevision === undefined
+    ? {}
+    : { previousRevision: event.previousRevision }),
+  revision: event.revision,
+  source: event.source,
+  ...(event.terminal === undefined ? {} : { terminal: event.terminal })
+})
 
 export const encodeClientStateSseEvent = (
   event: ClientStateStreamEvent
 ): string => {
-  const payload = Schema.encodeSync(ClientStateStreamEvent)(event)
+  const payload = encodeClientStateStreamEvent(event)
   return [
     `id: ${event.revision}`,
     `event: ${ClientStateStreamEventName}`,

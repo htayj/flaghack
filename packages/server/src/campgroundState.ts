@@ -3,7 +3,7 @@ import type {
   CampgroundView as CampgroundViewSchema,
   GameState as GameStateSchema
 } from "@flaghack/domain/schemas"
-import { HashMap } from "effect"
+import { HashMap, Option } from "effect"
 import {
   campgroundCamps,
   campgroundLandmarks,
@@ -630,8 +630,12 @@ export const markCampgroundGreeting = (
   }
 }
 
-const playerFrom = (world: World): Entity | undefined =>
-  worldEntities(world).find(({ _tag }) => _tag === "player")
+const playerFrom = (world: World): Entity | undefined => {
+  const player = Option.getOrUndefined(world.pipe(HashMap.get("player")))
+  return player?._tag === "player" && player.in === "world"
+    ? player
+    : undefined
+}
 
 const currentLandmarkAddress = (
   player: Entity,
@@ -652,7 +656,8 @@ const currentLandmarkAddress = (
 
 const currentAddressFor = (
   state: GameState,
-  campground: CampgroundState
+  campground: CampgroundState,
+  positionWorld: World
 ): string | undefined => {
   const player = playerFrom(state.world)
   if (player === undefined || player.at.z !== 0) return undefined
@@ -677,7 +682,7 @@ const currentAddressFor = (
     return savedCampAddress ?? landmarkAddress
   }
 
-  const playerIsOnRoad = worldEntities(state.world).some((entity) =>
+  const playerIsOnRoad = worldEntities(positionWorld).some((entity) =>
     entity._tag === "tunnel"
     && entity.at.z === player.at.z
     && positionDistance(entity.at, player.at) === 0
@@ -762,13 +767,18 @@ const activeEventForView = (
 }
 
 export const campgroundViewForState = (
-  state: GameState
+  state: GameState,
+  positionWorld: World = state.world
 ): CampgroundView => {
   const normalized = normalizeCampgroundState(state)
   const campground = normalized.campground
   if (campground === undefined) return { discoveredLandmarks: [] }
   const player = playerFrom(normalized.world)
-  const currentAddress = currentAddressFor(normalized, campground)
+  const currentAddress = currentAddressFor(
+    normalized,
+    campground,
+    positionWorld
+  )
   const activeEvent = activeEventForView(campground)
 
   return {

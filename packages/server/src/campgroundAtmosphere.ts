@@ -1,5 +1,5 @@
 import type { GameState as GameStateSchema } from "@flaghack/domain/schemas"
-import { HashMap } from "effect"
+import { HashMap, Option } from "effect"
 import {
   deterministicCampgroundChoice,
   getCampgroundCamp,
@@ -90,10 +90,14 @@ const positionDistance = (
     ? Math.abs(left.x - right.x) + Math.abs(left.y - right.y)
     : Number.POSITIVE_INFINITY
 
-const playerFrom = (state: GameState) =>
-  Array.from(state.world.pipe(HashMap.values)).find((entity) =>
-    entity._tag === "player" && entity.in === "world"
+const playerFrom = (state: GameState) => {
+  const player = Option.getOrUndefined(
+    state.world.pipe(HashMap.get("player"))
   )
+  return player?._tag === "player" && player.in === "world"
+    ? player
+    : undefined
+}
 
 const deterministicIntInclusive = (
   minimum: number,

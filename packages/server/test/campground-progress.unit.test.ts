@@ -505,6 +505,39 @@ describe("legacy progress entity repair", () => {
       .toBeUndefined()
   })
 
+  it("defers keyless flag repair until the player enters the dungeon", () => {
+    const initial = stateOf(
+      [...baseEntities(), ...dungeonTunnels()],
+      baseCampground({ missingFlagKey: undefined })
+    )
+    const surface = reconcileCampgroundProgress(initial, {
+      emitMessages: false
+    })
+    const actor = entityByKey(surface, "player")
+    if (actor === undefined) throw new Error("missing player")
+    const underground = {
+      ...surface,
+      world: surface.world.pipe(
+        HashMap.set(actor.key, {
+          ...actor,
+          at: { x: 1, y: 1, z: 1 }
+        })
+      )
+    }
+    const repaired = reconcileCampgroundProgress(underground, {
+      emitMessages: false
+    })
+
+    expect(entityByKey(surface, CAMPGROUND_MISSING_FLAG_KEY))
+      .toBeUndefined()
+    expect(entityByKey(repaired, CAMPGROUND_MISSING_FLAG_KEY))
+      .toMatchObject({
+        _tag: "flag",
+        at: { x: 3, y: 3, z: 1 },
+        in: "world"
+      })
+  })
+
   it("repairs the borrowed hammer at Patch Bay and never recreates it after completion", () => {
     const first = reconcileCampgroundProgress(stateOf(), {
       emitMessages: false

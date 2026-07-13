@@ -444,4 +444,15 @@ describe("campground state updates and projection", () => {
     expect(surface.weather).toEqual(DEFAULT_CAMPGROUND_WEATHER)
     expect(underground.weather).toBeUndefined()
   })
+
+  it("does not project a location for a player outside the world", () => {
+    const outsidePlayer = { ...player(0, 0, 0), in: "limbo" }
+    const view = campgroundViewForState(stateOf([
+      outsidePlayer,
+      makeTunnel("surface-road", 0, 0, 0)
+    ]))
+
+    expect(view.currentAddress).toBeUndefined()
+    expect(view.weather).toBeUndefined()
+  })
 })

@@ -29,10 +29,9 @@ import { match as omatch } from "effect/Option"
 import { doAction } from "./actions.js"
 import {
   type ActiveRegionBounds,
+  cachedCampgroundActiveRegionForWorld,
   type CampgroundActiveRegion,
-  campgroundActiveRegionForWorld,
   campgroundStaticMetadata,
-  filterWorldToBounds,
   syncEntityIntoBoundedWorld
 } from "./activeRegion.js"
 import type { PlannedAction } from "./ai/ai.js"
@@ -314,7 +313,7 @@ const activeRegionForGameState = (
     onSome: (player) =>
       campgroundStaticMetadataCache.get(player.at.z).pipe(
         Effect.map((metadata) =>
-          campgroundActiveRegionForWorld(gs.world, player, metadata)
+          cachedCampgroundActiveRegionForWorld(gs.world, player, metadata)
         )
       )
   })
@@ -458,13 +457,31 @@ export const eGetWorld = pipe(
   andThen((gs) => gs.world)
 )
 
-const clientWorldForState = (
+const inventoryForWorld = (key: TKey) => (w: World): TItemCollection =>
+  w.pipe(filter(isItem), filter((entity) => entity.in === key))
+
+const clientProjectionForState = (
   gs: TGameState
-): Effect.Effect<World, never, never> =>
+): Effect.Effect<
+  {
+    readonly inventory: TItemCollection
+    readonly world: World
+  },
+  never,
+  never
+> =>
   activeRegionForGameState(gs).pipe(
-    Effect.map((activeRegion) =>
-      activeRegion === undefined
-        ? omatch(getPlayer(gs), {
+    Effect.map((activeRegion) => {
+      if (activeRegion !== undefined) {
+        return {
+          inventory: activeRegion.playerInventory,
+          world: activeRegion.viewportWorld
+        }
+      }
+
+      return {
+        inventory: inventoryForWorld("player")(gs.world),
+        world: omatch(getPlayer(gs), {
           onNone: () => gs.world,
           onSome: (player) =>
             gs.world.pipe(
@@ -473,22 +490,19 @@ const clientWorldForState = (
               )
             )
         })
-        : filterWorldToBounds(gs.world, activeRegion.viewport)
-    )
+      }
+    })
   )
-
-const inventoryForWorld = (key: TKey) => (w: World): TItemCollection =>
-  w.pipe(filter(isItem), filter((e) => e.in === key))
 
 export const getClientState = pipe(
   eGetGameState,
   andThen((rawGs) => {
     const gs = normalizeCampgroundState(rawGs)
-    return clientWorldForState(gs).pipe(
-      Effect.map((world) => ({
-        campground: campgroundViewForState(gs),
+    return clientProjectionForState(gs).pipe(
+      Effect.map(({ inventory, world }) => ({
+        campground: campgroundViewForState(gs, world),
         gameplayEvents: gs.gameplayEvents ?? [],
-        inventory: inventoryForWorld("player")(gs.world),
+        inventory,
         roles: [...availableRoles],
         setup: setupStateFor(gs),
         world

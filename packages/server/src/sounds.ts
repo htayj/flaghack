@@ -1,5 +1,5 @@
 import type { GameState as GameStateSchema } from "@flaghack/domain/schemas"
-import { Effect, HashMap, Random } from "effect"
+import { Effect, HashMap, Option, Random } from "effect"
 import { campgroundCamps } from "./campground.js"
 import { advanceCampgroundAtmosphere } from "./campgroundAtmosphere.js"
 import { appendGameplayEvent } from "./gameplayEvents.js"
@@ -58,6 +58,15 @@ const randomIntInclusive = (
 
 const dungeonEntities = (state: GameState) =>
   Array.from(state.world.pipe(HashMap.values))
+
+const playerFrom = (state: GameState) => {
+  const player = Option.getOrUndefined(
+    state.world.pipe(HashMap.get("player"))
+  )
+  return player?._tag === "player" && player.in === "world"
+    ? player
+    : undefined
+}
 
 const generatedCampNames = (state: GameState): ReadonlyArray<string> => {
   const signNames = new Set(
@@ -191,9 +200,7 @@ export const advanceWorldAtmosphere = (
 ): Effect.Effect<GameState> => {
   const turn = (state.turn ?? 0) + 1
   const advanced = { ...state, turn }
-  const player = dungeonEntities(advanced).find((entity) =>
-    entity._tag === "player" && entity.in === "world"
-  )
+  const player = playerFrom(advanced)
 
   if (player?.at.z === 0) {
     return Effect.succeed(

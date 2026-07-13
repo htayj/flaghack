@@ -2,11 +2,13 @@ import { describe, expect, it } from "@effect/vitest"
 import { balancedAttributes } from "@flaghack/domain/stats"
 import { HashMap } from "effect"
 import {
+  cachedCampgroundActiveRegionForWorld,
   campgroundActiveRegionForWorld,
-  entityWithinBounds
+  entityWithinBounds,
+  filterWorldToBounds
 } from "../src/activeRegion.js"
 import { player } from "../src/creatures.js"
-import type { Entity, World } from "../src/world.js"
+import { type Entity, isItem, type World } from "../src/world.js"
 
 const floorAt = (key: string, x: number, y: number, z = 0): Entity => ({
   _tag: "floor",
@@ -63,6 +65,7 @@ describe("campground active region", () => {
     const far = hippieAt("far", 50, 103)
     const otherLevel = hippieAt("other-level", 96, 120, 1)
     const heldItem = flagAt("held-flag", 96, 120, actor.key)
+    const heldItemMapKey = "held-flag-map-entry"
     const world = worldFrom([
       floorAt("extent-0", 0, 0),
       floorAt("extent-max", 359, 159),
@@ -71,9 +74,8 @@ describe("campground active region", () => {
       nearRight,
       collisionOnly,
       far,
-      otherLevel,
-      heldItem
-    ])
+      otherLevel
+    ]).pipe(HashMap.set(heldItemMapKey, heldItem))
 
     const region = campgroundActiveRegionForWorld(world, actor)
 
@@ -122,6 +124,60 @@ describe("campground active region", () => {
     expect(actorWorldKeys.has(far.key)).toBe(false)
     expect(actorWorldKeys.has(otherLevel.key)).toBe(false)
     expect(actorWorldKeys.has(heldItem.key)).toBe(false)
+    expect(region.offscreenCreatures.map(({ key }) => key)).toEqual([
+      far.key
+    ])
+    const expectedPlayerInventory = world.pipe(
+      HashMap.filter(isItem),
+      HashMap.filter((entity) => entity.in === actor.key)
+    )
+    expect(region.playerInventory).toEqual(expectedPlayerInventory)
+    expect(HashMap.has(region.playerInventory, heldItemMapKey)).toBe(true)
+
+    const viewportWorldKeys = new Set(
+      Array.from(HashMap.values(region.viewportWorld)).map((entity) =>
+        entity.key
+      )
+    )
+    expect(viewportWorldKeys.has(actor.key)).toBe(true)
+    expect(viewportWorldKeys.has(nearLeft.key)).toBe(false)
+    expect(viewportWorldKeys.has(nearRight.key)).toBe(false)
+    expect(viewportWorldKeys.has(collisionOnly.key)).toBe(false)
+    expect(viewportWorldKeys.has(far.key)).toBe(false)
+    expect(viewportWorldKeys.has(otherLevel.key)).toBe(false)
+    expect(viewportWorldKeys.has(heldItem.key)).toBe(false)
+    expect(region.viewportWorld).toEqual(
+      filterWorldToBounds(world, region.viewport)
+    )
+  })
+
+  it("reuses bounded projections for the same immutable world", () => {
+    const actor = player(96, 120, 0)
+    const world = worldFrom([
+      floorAt("extent-0", 0, 0),
+      floorAt("extent-max", 359, 159),
+      actor
+    ])
+
+    const first = cachedCampgroundActiveRegionForWorld(world, actor)
+    const repeated = cachedCampgroundActiveRegionForWorld(world, actor)
+    const changedWorld = world.pipe(
+      HashMap.set("visible-floor", floorAt("visible-floor", 96, 121))
+    )
+    const changed = cachedCampgroundActiveRegionForWorld(
+      changedWorld,
+      actor
+    )
+
+    expect(first).toBeDefined()
+    expect(repeated).toBe(first)
+    expect(changed).toBeDefined()
+    expect(changed).not.toBe(first)
+    expect(
+      changed === undefined
+        ? undefined
+        : HashMap.has(changed.viewportWorld, "visible-floor")
+    ).toBe(true)
   })
 
   it("keeps tent walls and posts in bounded collision worlds", () => {

@@ -5,11 +5,11 @@ import {
   type CampgroundActiveRegion,
   entityWithinBounds
 } from "./activeRegion.js"
-import { planOneAi } from "./ai/ai.js"
+import { type PlannedAction, planOneAi } from "./ai/ai.js"
 import type { GameState } from "./gamestate.js"
 import type { TPos } from "./position.js"
 import { UV } from "./position.js"
-import { type Entity, isCreature, type World } from "./world.js"
+import { type Entity, type World } from "./world.js"
 
 export type LazyOffscreenOptions = {
   readonly enabled: boolean
@@ -69,19 +69,6 @@ const addPosition = (a: TPos, b: TPos): TPos => ({
 const positionKey = (position: TPos): string =>
   `${position.x},${position.y},${position.z}`
 
-const isNonPlayerWorldCreature = (entity: Entity): boolean =>
-  entity.in === "world" && entity._tag !== "player" && isCreature(entity)
-
-const sortedOffscreenCreatures = (
-  world: World,
-  activeRegion: CampgroundActiveRegion
-): Array<Entity> =>
-  Array.from(world.pipe(HashMap.values)).filter((entity) =>
-    isNonPlayerWorldCreature(entity)
-    && entity.at.z === activeRegion.collisionBounds.z
-    && !entityWithinBounds(activeRegion.collisionBounds)(entity)
-  ).sort((a, b) => a.key.localeCompare(b.key))
-
 const moveTarget = (action: Action, entity: Entity): TPos | undefined => {
   if (!EAction.$is("move")(action)) return undefined
 
@@ -100,12 +87,10 @@ const targetStaysOffscreen = (
   })
 
 const candidateMovementPositions = (
-  gs: GameState,
   activeRegion: CampgroundActiveRegion,
   entity: Entity,
-  planningWorld: World
+  planned: Option.Option<PlannedAction>
 ): ReadonlyArray<TPos> => {
-  const planned = planOneAi(gs, entity, planningWorld)
   const target = Option.isSome(planned)
     ? moveTarget(planned.value.action, entity)
     : undefined
@@ -116,23 +101,24 @@ const candidateMovementPositions = (
 }
 
 const localMovementWorld = (
-  gs: GameState,
   activeRegion: CampgroundActiveRegion,
-  actors: ReadonlyArray<Entity>,
+  actors: ReadonlyArray<PlannedOffscreenActor>,
   planningWorld: World
 ): World => {
   const interestingPositions = new Set(
-    actors.flatMap((entity) =>
+    actors.flatMap(({ entity, planned }) =>
       candidateMovementPositions(
-        gs,
         activeRegion,
         entity,
-        planningWorld
+        planned
       ).map(positionKey)
     )
   )
 
-  return gs.world.pipe(
+  // Every possible one-step movement target is already within the one-tile
+  // planning neighborhood. Filtering that bounded world avoids another scan
+  // of the full campground.
+  return planningWorld.pipe(
     HashMap.filter((entity) =>
       entity.in === "world"
       && interestingPositions.has(positionKey(entity.at))
@@ -143,9 +129,10 @@ const localMovementWorld = (
 const localPlanningWorld = (
   world: World,
   actors: ReadonlyArray<Entity>
-): World =>
-  world.pipe(
-    HashMap.filter((entity) =>
+): World => {
+  const entries: Array<readonly [string, Entity]> = []
+  for (const entity of world.pipe(HashMap.values)) {
+    if (
       entity.in === "world"
       && actors.some((actor) =>
         entity.at.z === actor.at.z
@@ -154,8 +141,27 @@ const localPlanningWorld = (
             Math.abs(entity.at.y - actor.at.y)
           ) <= 1
       )
-    )
-  )
+    ) {
+      entries.push([entity.key, entity])
+    }
+  }
+  return HashMap.fromIterable(entries)
+}
+
+type PlannedOffscreenActor = {
+  readonly entity: Entity
+  readonly planned: Option.Option<PlannedAction>
+}
+
+const planOffscreenActors = (
+  gs: GameState,
+  actors: ReadonlyArray<Entity>,
+  planningWorld: World
+): ReadonlyArray<PlannedOffscreenActor> =>
+  actors.map((entity) => ({
+    entity,
+    planned: planOneAi(gs, entity, planningWorld)
+  }))
 
 type LazyOffscreenAccumulator = {
   readonly state: GameState
@@ -178,16 +184,15 @@ const syncLazyMovementWorld = (
 const applyOneLazyOffscreenActor = (
   gs: GameState,
   activeRegion: CampgroundActiveRegion,
-  entity: Entity,
-  movementWorld: World,
-  planningWorld: World
+  actor: PlannedOffscreenActor,
+  movementWorld: World
 ): Effect.Effect<{
   readonly state: GameState
   readonly movementWorld: World
   readonly executed: boolean
   readonly nearActive: boolean
 }> => {
-  const planned = planOneAi(gs, entity, planningWorld)
+  const { entity, planned } = actor
   if (Option.isNone(planned)) {
     return Effect.succeed({
       executed: false,
@@ -254,70 +259,70 @@ export const applyLazyOffscreenStep = (
   gs: GameState,
   activeRegion: CampgroundActiveRegion,
   options: LazyOffscreenOptions = DEFAULT_LAZY_OFFSCREEN_OPTIONS
-): Effect.Effect<LazyOffscreenResult> => {
-  const candidates = sortedOffscreenCreatures(gs.world, activeRegion)
-  if (!options.enabled || options.budget <= 0) {
-    return Effect.succeed({
-      state: gs,
-      stats: zeroStats(options, candidates.length)
-    })
-  }
+): Effect.Effect<LazyOffscreenResult> =>
+  Effect.suspend(() => {
+    const candidates = activeRegion.offscreenCreatures
+    if (!options.enabled || options.budget <= 0) {
+      return Effect.succeed({
+        state: gs,
+        stats: zeroStats(options, candidates.length)
+      })
+    }
 
-  const cursor = candidates.length === 0
-    ? 0
-    : Math.max(0, Math.floor(gs.lazyOffscreenCursor ?? 0))
-      % candidates.length
-  const budgeted = candidates.length === 0
-    ? []
-    : Array.from(
-      { length: Math.min(options.budget, candidates.length) },
-      (_, index) => candidates[(cursor + index) % candidates.length]
-    ).filter((entity): entity is Entity => entity !== undefined)
-  const nextCursor = candidates.length === 0
-    ? 0
-    : (cursor + Math.min(options.budget, candidates.length))
-      % candidates.length
-  const planningWorld = localPlanningWorld(gs.world, budgeted)
-  const movementWorld = localMovementWorld(
-    gs,
-    activeRegion,
-    budgeted,
-    planningWorld
-  )
-  return Effect.reduce(
-    budgeted,
-    { executed: 0, movementWorld, skippedNearActive: 0, state: gs },
-    (acc: LazyOffscreenAccumulator, entity) =>
-      applyOneLazyOffscreenActor(
-        acc.state,
-        activeRegion,
-        entity,
-        acc.movementWorld,
-        planningWorld
-      ).pipe(
-        Effect.map((next) => ({
-          executed: acc.executed + (next.executed ? 1 : 0),
-          movementWorld: next.movementWorld,
-          skippedNearActive: acc.skippedNearActive
-            + (next.nearActive ? 1 : 0),
-          state: next.state
-        }))
-      )
-  ).pipe(
-    Effect.map((result) => ({
-      state: {
-        ...result.state,
-        lazyOffscreenCursor: nextCursor
-      },
-      stats: {
-        offscreenBudget: options.budget,
-        offscreenBudgetedCount: budgeted.length,
-        offscreenCandidateCount: candidates.length,
-        offscreenCursor: cursor,
-        offscreenExecutedCount: result.executed,
-        offscreenNextCursor: nextCursor,
-        offscreenSkippedNearActiveCount: result.skippedNearActive
-      }
-    }))
-  )
-}
+    const cursor = candidates.length === 0
+      ? 0
+      : Math.max(0, Math.floor(gs.lazyOffscreenCursor ?? 0))
+        % candidates.length
+    const budgeted = candidates.length === 0
+      ? []
+      : Array.from(
+        { length: Math.min(options.budget, candidates.length) },
+        (_, index) => candidates[(cursor + index) % candidates.length]
+      ).filter((entity): entity is Entity => entity !== undefined)
+    const nextCursor = candidates.length === 0
+      ? 0
+      : (cursor + Math.min(options.budget, candidates.length))
+        % candidates.length
+    const planningWorld = localPlanningWorld(gs.world, budgeted)
+    const plannedActors = planOffscreenActors(gs, budgeted, planningWorld)
+    const movementWorld = localMovementWorld(
+      activeRegion,
+      plannedActors,
+      planningWorld
+    )
+    return Effect.reduce(
+      plannedActors,
+      { executed: 0, movementWorld, skippedNearActive: 0, state: gs },
+      (acc: LazyOffscreenAccumulator, actor) =>
+        applyOneLazyOffscreenActor(
+          acc.state,
+          activeRegion,
+          actor,
+          acc.movementWorld
+        ).pipe(
+          Effect.map((next) => ({
+            executed: acc.executed + (next.executed ? 1 : 0),
+            movementWorld: next.movementWorld,
+            skippedNearActive: acc.skippedNearActive
+              + (next.nearActive ? 1 : 0),
+            state: next.state
+          }))
+        )
+    ).pipe(
+      Effect.map((result) => ({
+        state: {
+          ...result.state,
+          lazyOffscreenCursor: nextCursor
+        },
+        stats: {
+          offscreenBudget: options.budget,
+          offscreenBudgetedCount: budgeted.length,
+          offscreenCandidateCount: candidates.length,
+          offscreenCursor: cursor,
+          offscreenExecutedCount: result.executed,
+          offscreenNextCursor: nextCursor,
+          offscreenSkippedNearActiveCount: result.skippedNearActive
+        }
+      }))
+    )
+  })

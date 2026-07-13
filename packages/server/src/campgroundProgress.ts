@@ -148,9 +148,31 @@ const heldEntity = (
 ): Entity | undefined => {
   const player = playerFrom(state)
   if (player === undefined) return undefined
-  return Array.from(state.world.pipe(HashMap.values)).filter((entity) =>
-    entity.in === player.key && predicate(entity)
-  ).sort((left, right) => left.key.localeCompare(right.key)).at(0)
+  let held: Entity | undefined
+  for (const entity of state.world.pipe(HashMap.values)) {
+    if (
+      entity.in === player.key
+      && predicate(entity)
+      && (held === undefined || entity.key.localeCompare(held.key) < 0)
+    ) {
+      held = entity
+    }
+  }
+  return held
+}
+
+const heldEntityByKey = (
+  state: GameState,
+  key: string,
+  predicate: (entity: Entity) => boolean
+): Entity | undefined => {
+  const player = playerFrom(state)
+  const entity = entityByKey(state, key)
+  return player !== undefined
+      && entity?.in === player.key
+      && predicate(entity)
+    ? entity
+    : undefined
 }
 
 const makeHeldReward = (
@@ -289,7 +311,11 @@ const repairMissingFlag = (state: GameState): GameState => {
     campground === undefined
     || campground.missingFlagPhase === "returned"
   ) return state
-  const flagKey = campground.missingFlagKey ?? CAMPGROUND_MISSING_FLAG_KEY
+  const registeredFlagKey = campground.missingFlagKey
+  if (registeredFlagKey === undefined && playerFrom(state)?.at.z !== 1) {
+    return state
+  }
+  const flagKey = registeredFlagKey ?? CAMPGROUND_MISSING_FLAG_KEY
   if (HashMap.has(state.world, flagKey)) return state
   const position = firstDungeonFlagPosition(state)
   if (position === undefined) return state
@@ -368,59 +394,61 @@ const reconcileHeldItems = (
   let next = state
   let nextCampground = campground
 
-  const requiredToolKey = campground.toolFavor?.requiredItemKey
-  const heldTool = requiredToolKey === undefined
+  const toolFavor = campground.toolFavor
+  const toolCanAdvance = toolFavor?.phase === "offered"
+    || toolFavor?.phase === "active"
+  const requiredToolKey = toolFavor?.requiredItemKey
+  const heldTool = !toolCanAdvance || requiredToolKey === undefined
     ? undefined
-    : heldEntity(
+    : heldEntityByKey(
       state,
+      requiredToolKey,
       (entity) =>
         entity.key === requiredToolKey && entity._tag === "hammer"
     )
   if (
     heldTool !== undefined
-    && campground.toolFavor !== undefined
-    && (
-      campground.toolFavor.phase === "offered"
-      || campground.toolFavor.phase === "active"
-    )
+    && toolFavor !== undefined
   ) {
     nextCampground = {
       ...nextCampground,
       toolFavor: transitionCampgroundFavor(
-        campground.toolFavor,
+        toolFavor,
         "ready"
       )
     }
   }
 
-  const heldWater = heldEntity(state, ({ _tag }) => _tag === "water")
+  const waterFavor = campground.waterFavor
+  const waterCanAdvance = waterFavor?.phase === "offered"
+    || waterFavor?.phase === "active"
+  const heldWater = waterCanAdvance
+    ? heldEntity(state, ({ _tag }) => _tag === "water")
+    : undefined
   if (
     heldWater !== undefined
-    && campground.waterFavor !== undefined
-    && (
-      campground.waterFavor.phase === "offered"
-      || campground.waterFavor.phase === "active"
-    )
+    && waterFavor !== undefined
   ) {
     nextCampground = {
       ...nextCampground,
       waterFavor: transitionCampgroundFavor(
-        campground.waterFavor,
+        waterFavor,
         "ready"
       )
     }
   }
 
   const flagKey = campground.missingFlagKey
-  const heldFlag = flagKey === undefined
+  const flagCanAdvance = campground.missingFlagPhase !== "flag-retrieved"
+    && campground.missingFlagPhase !== "returned"
+  const heldFlag = !flagCanAdvance || flagKey === undefined
     ? undefined
-    : heldEntity(
+    : heldEntityByKey(
       state,
+      flagKey,
       (entity) => entity.key === flagKey && entity._tag === "flag"
     )
   const recoveredFlag = heldFlag !== undefined
-    && campground.missingFlagPhase !== "flag-retrieved"
-    && campground.missingFlagPhase !== "returned"
   if (recoveredFlag) {
     nextCampground = {
       ...nextCampground,

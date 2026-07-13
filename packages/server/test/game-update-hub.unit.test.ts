@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { ClientStateStreamEventName } from "@flaghack/domain/GameStream"
-import { Effect, HashMap, Stream } from "effect"
+import {
+  ClientStateStreamEvent,
+  ClientStateStreamEventName
+} from "@flaghack/domain/GameStream"
+import { Effect, HashMap, Schema, Stream } from "effect"
 import {
   encodeClientStateSseEvent,
   GameUpdateHub
@@ -94,5 +97,39 @@ describe("GameUpdateHub", () => {
       discoveredLandmarks: []
     })
     expect(payload.clientState?.gameplayEvents).toEqual(gameplayEvents)
+  })
+
+  it("matches the domain schema wire encoding for nonempty snapshots", () => {
+    const carriedWater = {
+      _tag: "water" as const,
+      at: { x: 2, y: 3, z: 0 },
+      in: "player",
+      key: "water-1"
+    }
+    const floor = {
+      _tag: "floor" as const,
+      at: { x: 2, y: 3, z: 0 },
+      in: "world",
+      key: "floor-2-3"
+    }
+    const event: typeof ClientStateStreamEvent.Type = {
+      clientState: {
+        ...emptyClientState,
+        inventory: HashMap.make([carriedWater.key, carriedWater]),
+        world: HashMap.make([floor.key, floor])
+      },
+      previousRevision: 6,
+      revision: 7,
+      source: "quit",
+      terminal: "quit"
+    }
+    const sse = encodeClientStateSseEvent(event)
+    const dataLine = sse.split("\n").find((line) =>
+      line.startsWith("data: ")
+    )
+
+    expect(dataLine).toBeDefined()
+    expect(JSON.parse(dataLine?.slice("data: ".length) ?? "{}"))
+      .toEqual(Schema.encodeSync(ClientStateStreamEvent)(event))
   })
 })

@@ -1,11 +1,16 @@
 import {
   AnyTerrain,
+  type CampProp as CampPropSchema,
+  type CampPropKind as CampPropKindSchema,
   conforms,
   type DirectionalVariant as DirectionalVariantSchema,
   type Door as DoorSchema,
   type Effigy as EffigySchema,
   type Floor as FloorSchema,
+  type Mud as MudSchema,
   type Sign as SignSchema,
+  type StairsDown as StairsDownSchema,
+  type StairsUp as StairsUpSchema,
   type Temple as TempleSchema,
   type Tent as TentSchema,
   type TentPost as TentPostSchema,
@@ -19,9 +24,14 @@ import { KeyGenerator } from "./keyGenerator.js"
 // type TerrainBase = TEntityPositioned & { kind: "terrain" }
 export type Wall = typeof WallSchema.Type
 export type Door = typeof DoorSchema.Type
+export type CampProp = typeof CampPropSchema.Type
+export type CampPropKind = typeof CampPropKindSchema.Type
+export type StairsDown = typeof StairsDownSchema.Type
+export type StairsUp = typeof StairsUpSchema.Type
 export type TentWall = typeof TentWallSchema.Type
 export type TentPost = typeof TentPostSchema.Type
 export type Floor = typeof FloorSchema.Type
+export type Mud = typeof MudSchema.Type
 export type Tunnel = typeof TunnelSchema.Type
 export type Tent = typeof TentSchema.Type
 export type Sign = typeof SignSchema.Type
@@ -31,6 +41,23 @@ export type Terrain = typeof AnyTerrain.Type
 export type DirectionalVariant = typeof DirectionalVariantSchema.Type
 
 export const isTerrain = conforms(AnyTerrain)
+export const isCampPropPassable = (kind: CampPropKind): boolean => {
+  switch (kind) {
+    case "arrival-gate":
+    case "stage":
+    case "directory":
+    case "lantern":
+      return true
+    case "artwork":
+    case "flagpole":
+    case "workbench":
+    case "bike-rack":
+    case "water-station":
+    case "speaker":
+    case "table":
+      return false
+  }
+}
 export const makeWall = (
   key: string,
   x: number,
@@ -94,6 +121,17 @@ export const makeFloor = (
   _tag: "floor",
   key
 })
+export const makeMud = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): Mud => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "mud",
+  key
+})
 export const makeTunnel = (
   key: string,
   x: number,
@@ -149,6 +187,41 @@ export const makeTemple = (
   at: { x, y, z },
   in: "world",
   _tag: "temple",
+  key
+})
+export const makeStairsDown = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): StairsDown => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "stairs-down",
+  key
+})
+export const makeStairsUp = (
+  key: string,
+  x: number,
+  y: number,
+  z: number
+): StairsUp => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "stairs-up",
+  key
+})
+export const makeCampProp = (
+  key: string,
+  x: number,
+  y: number,
+  z: number,
+  kind: CampPropKind
+): CampProp => ({
+  at: { x, y, z },
+  in: "world",
+  _tag: "camp-prop",
+  kind,
   key
 })
 export const wall = (
@@ -210,6 +283,17 @@ export const floor = (
 
     return makeFloor(key, x, y, z)
   })
+export const mud = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<Mud, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeMud(key, x, y, z)
+  })
 export const tunnel = (
   x: number,
   y: number,
@@ -265,6 +349,40 @@ export const temple = (
     const key = yield* keyGenerator.nextKey
 
     return makeTemple(key, x, y, z)
+  })
+export const stairsDown = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<StairsDown, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeStairsDown(key, x, y, z)
+  })
+export const stairsUp = (
+  x: number,
+  y: number,
+  z: number
+): Effect.Effect<StairsUp, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeStairsUp(key, x, y, z)
+  })
+export const campProp = (
+  x: number,
+  y: number,
+  z: number,
+  kind: CampPropKind
+): Effect.Effect<CampProp, never, KeyGenerator> =>
+  Effect.gen(function*() {
+    const keyGenerator = yield* KeyGenerator
+    const key = yield* keyGenerator.nextKey
+
+    return makeCampProp(key, x, y, z, kind)
   })
 export const range = (start: number, end: number) =>
   [...Array(Math.abs(end - start)).keys()].map((i) => i + start)

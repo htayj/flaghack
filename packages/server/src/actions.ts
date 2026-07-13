@@ -5,6 +5,12 @@ import type {
 import { Effect, HashMap, Match, Option } from "effect"
 import { type Option as TOption, some } from "effect/Option"
 import type { PlannedAction } from "./ai/ai.js"
+import {
+  talkCampgroundAction,
+  travelStepCampgroundAction
+} from "./campgroundActions.js"
+import { reconcileCampgroundProgress } from "./campgroundProgress.js"
+import { CAMPGROUND_MISSING_FLAG_KEY } from "./campgroundQuestContent.js"
 import type { TKey } from "./entity.js"
 import { type GameState, updateEntity, updateWorld } from "./gamestate.js"
 import { drop, pickup, putIntoContainer } from "./items.js"
@@ -12,7 +18,10 @@ import type { TPos } from "./position.js"
 import { collideP, shift, UV } from "./position.js"
 import {
   actPosition,
+  BSPGenLevel,
   type Entity,
+  FIRST_DUNGEON_LEVEL,
+  firstDungeonArrivalCoordinate,
   isContainer,
   isCreature,
   isDrinkItem,
@@ -26,6 +35,13 @@ export type ActionExecutionContext = {
 }
 
 type Direction = typeof DirectionSchema.Type
+
+const FIRST_DUNGEON_SEED = 777
+
+const firstDungeonArrival: TPos = {
+  ...firstDungeonArrivalCoordinate,
+  z: FIRST_DUNGEON_LEVEL
+}
 
 const directionVector = (direction: Direction): TPos =>
   Match.value(direction).pipe(
@@ -263,11 +279,170 @@ const consumeHeldItems =
         }, gs)
     })
 
+const playerIsOnDownStairs = (
+  world: World,
+  entity: Entity
+): boolean =>
+  entity._tag === "player"
+  && entity.in === "world"
+  && entity.at.z === FIRST_DUNGEON_LEVEL - 1
+  && Array.from(world.pipe(HashMap.values)).some((candidate) =>
+    candidate._tag === "stairs-down"
+    && candidate.in === "world"
+    && collideP(entity.at)(candidate.at)
+  )
+
+const playerIsOnUpStairs = (
+  world: World,
+  entity: Entity
+): boolean =>
+  entity._tag === "player"
+  && entity.in === "world"
+  && entity.at.z === FIRST_DUNGEON_LEVEL
+  && Array.from(world.pipe(HashMap.values)).some((candidate) =>
+    candidate._tag === "stairs-up"
+    && candidate.in === "world"
+    && collideP(entity.at)(candidate.at)
+  )
+
+const campgroundDownStairs = (world: World): Entity | undefined =>
+  Array.from(world.pipe(HashMap.values)).find((candidate) =>
+    candidate._tag === "stairs-down"
+    && candidate.in === "world"
+    && candidate.at.z === FIRST_DUNGEON_LEVEL - 1
+  )
+
+const hasFirstDungeonArrival = (world: World): boolean =>
+  Array.from(world.pipe(HashMap.values)).some((entity) =>
+    entity._tag === "tunnel"
+    && entity.in === "world"
+    && collideP(firstDungeonArrival)(entity.at)
+  )
+
+const collisionSafeDungeonEntities = (
+  existingWorld: World,
+  generatedWorld: World
+): ReadonlyArray<Entity> => {
+  const occupiedKeys = new globalThis.Set(
+    Array.from(existingWorld.pipe(HashMap.values)).map(({ key }) => key)
+  )
+  const keyMap = new globalThis.Map<string, string>()
+  const generatedEntities = Array.from(
+    generatedWorld.pipe(HashMap.values)
+  ).sort((left, right) => left.key.localeCompare(right.key))
+
+  for (const entity of generatedEntities) {
+    const preserveQuestKey = entity.key === CAMPGROUND_MISSING_FLAG_KEY
+      && !occupiedKeys.has(entity.key)
+    const baseKey = preserveQuestKey
+      ? entity.key
+      : `dungeon-${FIRST_DUNGEON_LEVEL}-${entity.key}`
+    let key = baseKey
+    let suffix = 1
+    while (occupiedKeys.has(key)) {
+      key = `${baseKey}-${suffix}`
+      suffix += 1
+    }
+    occupiedKeys.add(key)
+    keyMap.set(entity.key, key)
+  }
+
+  return generatedEntities.map((entity) => ({
+    ...entity,
+    in: entity.in === "world"
+      ? "world"
+      : keyMap.get(entity.in) ?? entity.in,
+    key: keyMap.get(entity.key) ?? entity.key
+  }))
+}
+
+const mergeFirstDungeon = (
+  existingWorld: World,
+  generatedWorld: World
+): World =>
+  collisionSafeDungeonEntities(existingWorld, generatedWorld).reduce(
+    (world, entity) => world.pipe(HashMap.set(entity.key, entity)),
+    existingWorld
+  )
+
+const descendPlayer = (
+  gs: GameState,
+  entity: Entity
+): Effect.Effect<GameState> => {
+  if (!playerIsOnDownStairs(gs.world, entity)) {
+    return Effect.succeed(gs)
+  }
+
+  const worldWithDungeon = hasFirstDungeonArrival(gs.world)
+    ? Effect.succeed(gs.world)
+    : BSPGenLevel(FIRST_DUNGEON_SEED, FIRST_DUNGEON_LEVEL).pipe(
+      Effect.orDie,
+      Effect.map((generatedWorld) =>
+        mergeFirstDungeon(gs.world, generatedWorld)
+      )
+    )
+
+  return worldWithDungeon.pipe(
+    Effect.map((world) => ({
+      ...gs,
+      world: world.pipe(
+        HashMap.set(entity.key, {
+          ...entity,
+          at: firstDungeonArrival
+        })
+      )
+    }))
+  )
+}
+
+const ascendPlayer = (
+  gs: GameState,
+  entity: Entity
+): GameState => {
+  if (!playerIsOnUpStairs(gs.world, entity)) return gs
+
+  const destination = campgroundDownStairs(gs.world)
+  return destination === undefined
+    ? gs
+    : {
+      ...gs,
+      world: gs.world.pipe(
+        HashMap.set(entity.key, {
+          ...entity,
+          at: destination.at
+        })
+      )
+    }
+}
+
 export const doAction = (
   gs: GameState,
   { action, entity }: PlannedAction,
   context: ActionExecutionContext = {}
-) => Effect.succeed(act(gs, context)(some(entity))(action))
+) =>
+  action._tag === "descend"
+    ? descendPlayer(gs, entity)
+    : action._tag === "ascend"
+    ? Effect.succeed(ascendPlayer(gs, entity))
+    : action._tag === "talk"
+    ? Effect.succeed(talkCampgroundAction(gs, entity, action.dir))
+    : action._tag === "travelStep"
+    ? Effect.succeed(
+      travelStepCampgroundAction(
+        gs,
+        entity,
+        action.landmarkId,
+        context.movementWorld
+      )
+    )
+    : Effect.succeed(act(gs, context)(some(entity))(action)).pipe(
+      Effect.map((next) =>
+        action._tag === "pickupMulti"
+          || action._tag === "lootTakeMulti"
+          ? reconcileCampgroundProgress(next)
+          : next
+      )
+    )
 
 const act =
   (gs: GameState, context: ActionExecutionContext = {}) =>
@@ -276,6 +451,10 @@ const act =
     switch (action._tag) {
       case "apply":
       case "noop":
+      case "descend":
+      case "ascend":
+      case "talk":
+      case "travelStep":
         return gs
       case "move":
         return moveEntityOrOpenDoor(gs, context)(crea)(action.dir)

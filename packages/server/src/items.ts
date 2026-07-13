@@ -4,7 +4,9 @@ import type {
   Cheese as CheeseSchema,
   Cooler as CoolerSchema,
   Flag as FlagSchema,
+  Hammer as HammerSchema,
   Hotdog as HotdogSchema,
+  Nails as NailsSchema,
   Salsa as SalsaSchema,
   Water as WaterSchema
 } from "@flaghack/domain/schemas"
@@ -22,6 +24,8 @@ class ErrNothingTriedToPickup
   extends Data.TaggedError("NotingTriedToPickup")
 {}
 export type Flag = typeof FlagSchema.Type
+export type Hammer = typeof HammerSchema.Type
+export type Nails = typeof NailsSchema.Type
 export type Water = typeof WaterSchema.Type
 export type Beer = typeof BeerSchema.Type
 export type Hotdog = typeof HotdogSchema.Type
@@ -33,6 +37,18 @@ export const makeGroundFlag = (key: string, pos: TPos): Flag => ({
   at: pos,
   in: "world",
   _tag: "flag",
+  key
+})
+export const makeGroundHammer = (key: string, pos: TPos): Hammer => ({
+  at: pos,
+  in: "world",
+  _tag: "hammer",
+  key
+})
+export const makeGroundNails = (key: string, pos: TPos): Nails => ({
+  at: pos,
+  in: "world",
+  _tag: "nails",
   key
 })
 export const makeWaterBottle = (

@@ -7,6 +7,8 @@ import {
 } from "../src/GameUpdateHub.js"
 
 const emptyClientState = {
+  campground: { discoveredLandmarks: [] },
+  gameplayEvents: [],
   inventory: HashMap.empty(),
   roles: [],
   setup: { phase: "complete" as const },
@@ -63,8 +65,12 @@ describe("GameUpdateHub", () => {
   })
 
   it("formats snapshots as SSE events", () => {
+    const gameplayEvents = [{
+      id: 3,
+      message: "You hear distant hippies talking."
+    }]
     const sse = encodeClientStateSseEvent({
-      clientState: emptyClientState,
+      clientState: { ...emptyClientState, gameplayEvents },
       previousRevision: 0,
       revision: 1,
       source: "action"
@@ -74,5 +80,19 @@ describe("GameUpdateHub", () => {
     expect(sse).toContain(`event: ${ClientStateStreamEventName}\n`)
     expect(sse).toContain("data: ")
     expect(sse.endsWith("\n\n")).toBe(true)
+
+    const dataLine = sse.split("\n").find((line) =>
+      line.startsWith("data: ")
+    )
+    expect(dataLine).toBeDefined()
+    const payload = JSON.parse(
+      dataLine?.slice("data: ".length) ?? "{}"
+    ) as {
+      clientState?: { campground?: unknown; gameplayEvents?: unknown }
+    }
+    expect(payload.clientState?.campground).toEqual({
+      discoveredLandmarks: []
+    })
+    expect(payload.clientState?.gameplayEvents).toEqual(gameplayEvents)
   })
 })

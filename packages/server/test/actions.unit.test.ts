@@ -12,6 +12,11 @@ import {
   makeHotdog,
   makeWaterBottle
 } from "../src/items.js"
+import {
+  makeStairsDown,
+  makeStairsUp,
+  makeTunnel
+} from "../src/terrain.js"
 import type { Entity } from "../src/world.js"
 
 const actionsSourcePath = fileURLToPath(
@@ -31,7 +36,7 @@ const floorAt = (key: string, x: number, y: number): Entity => ({
 })
 
 const campgroundMarkerAt = (
-  tag: "tent" | "sign" | "effigy" | "temple"
+  tag: "tent" | "sign" | "effigy" | "temple" | "stairs-down"
 ): Entity => ({
   _tag: tag,
   at: { x: 1, y: 0, z: 0 },
@@ -177,7 +182,15 @@ describe("server actions", () => {
   })
 
   it("allows movement onto passable campground marker terrain", () => {
-    for (const tag of ["tent", "sign", "effigy", "temple"] as const) {
+    for (
+      const tag of [
+        "tent",
+        "sign",
+        "effigy",
+        "temple",
+        "stairs-down"
+      ] as const
+    ) {
       const actor = player(0, 0, 0)
       const marker = campgroundMarkerAt(tag)
       const gs = GameState.make({
@@ -196,6 +209,221 @@ describe("server actions", () => {
       )
 
       expect(entityByKey(next, actor.key)?.at).toEqual(marker.at)
+    }
+  })
+
+  it("generates and merges the first dungeon when the player descends on stairs", () => {
+    const actor = player(4, 5, 0)
+    const stairs = makeStairsDown("stairs-down-1", 4, 5, 0)
+    const collision = makeGroundFlag(
+      "dungeon-1-entity-0",
+      { x: 6, y: 5, z: 0 }
+    )
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [stairs.key, stairs],
+        [collision.key, collision]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.descend(),
+        entity: actor
+      })
+    )
+    const entities = Array.from(next.world.pipe(HashMap.values))
+    const dungeonEntities = entities.filter((entity) => entity.at.z === 1)
+
+    expect(entityByKey(next, actor.key)?.at).toEqual({ x: 1, y: 1, z: 1 })
+    expect(entityByKey(next, stairs.key)).toEqual(stairs)
+    expect(entityByKey(next, collision.key)).toEqual(collision)
+    expect(dungeonEntities.some((entity) =>
+      entity._tag === "tunnel"
+      && entity.at.x === 1
+      && entity.at.y === 1
+    )).toBe(true)
+    expect(dungeonEntities.filter((entity) =>
+      entity._tag === "stairs-up"
+      && entity.at.x === 1
+      && entity.at.y === 1
+    )).toHaveLength(1)
+    expect(dungeonEntities.filter((entity) => entity._tag === "hippie"))
+      .toHaveLength(3)
+    expect(
+      entities.some((entity) => entity.key === "dungeon-1-entity-0-1")
+    ).toBe(true)
+
+    for (const [key, entity] of next.world) {
+      expect(entity.key).toBe(key)
+    }
+
+    const dungeonPlayer = entityByKey(next, actor.key)
+    expect(dungeonPlayer).toBeDefined()
+    if (dungeonPlayer === undefined) {
+      throw new Error("missing dungeon player")
+    }
+    const returned = Effect.runSync(
+      doAction(next, {
+        action: EAction.ascend(),
+        entity: dungeonPlayer
+      })
+    )
+
+    expect(entityByKey(returned, actor.key)?.at).toEqual(stairs.at)
+    expect(HashMap.size(returned.world)).toBe(HashMap.size(next.world))
+    for (const dungeonEntity of dungeonEntities) {
+      if (dungeonEntity.key !== actor.key) {
+        expect(entityByKey(returned, dungeonEntity.key)).toEqual(
+          dungeonEntity
+        )
+      }
+    }
+  })
+
+  it("does not generate a dungeon when descent is attempted off the stairs", () => {
+    const actor = player(4, 5, 0)
+    const stairs = makeStairsDown("stairs-down-1", 5, 5, 0)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [stairs.key, stairs]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.descend(),
+        entity: actor
+      })
+    )
+
+    expect(next).toBe(gs)
+    expect(HashMap.size(next.world)).toBe(2)
+    expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
+  })
+
+  it("does not reuse the campground descent action on another level", () => {
+    const actor = player(1, 1, 1)
+    const stairs = makeStairsDown("future-stairs", 1, 1, 1)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [stairs.key, stairs]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.descend(),
+        entity: actor
+      })
+    )
+
+    expect(next).toBe(gs)
+    expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
+  })
+
+  it("reuses a previously generated first dungeon without replacing it", () => {
+    const actor = player(4, 5, 0)
+    const stairs = makeStairsDown("stairs-down-1", 4, 5, 0)
+    const arrival = makeTunnel("existing-arrival", 1, 1, 1)
+    const returnStairs = makeStairsUp("existing-stairs-up", 1, 1, 1)
+    const existingTunnel = makeTunnel("existing-tunnel", 2, 1, 1)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [stairs.key, stairs],
+        [arrival.key, arrival],
+        [returnStairs.key, returnStairs],
+        [existingTunnel.key, existingTunnel]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.descend(),
+        entity: actor
+      })
+    )
+
+    expect(HashMap.size(next.world)).toBe(HashMap.size(gs.world))
+    expect(entityByKey(next, arrival.key)).toEqual(arrival)
+    expect(entityByKey(next, returnStairs.key)).toEqual(returnStairs)
+    expect(entityByKey(next, existingTunnel.key)).toEqual(existingTunnel)
+    expect(entityByKey(next, actor.key)?.at).toEqual({ x: 1, y: 1, z: 1 })
+  })
+
+  it("returns the player to the campground stairs while preserving both levels", () => {
+    const actor = player(1, 1, 1)
+    const surfaceStairs = makeStairsDown("stairs-down-1", 270, 46, 0)
+    const returnStairs = makeStairsUp("stairs-up-1", 1, 1, 1)
+    const surfaceTerrain = floorAt("surface-floor", 96, 120)
+    const dungeonTunnel = makeTunnel("dungeon-tunnel", 2, 1, 1)
+    const gs = GameState.make({
+      world: HashMap.fromIterable<string, Entity>([
+        [actor.key, actor],
+        [surfaceStairs.key, surfaceStairs],
+        [returnStairs.key, returnStairs],
+        [surfaceTerrain.key, surfaceTerrain],
+        [dungeonTunnel.key, dungeonTunnel]
+      ])
+    })
+
+    const next = Effect.runSync(
+      doAction(gs, {
+        action: EAction.ascend(),
+        entity: actor
+      })
+    )
+
+    expect(entityByKey(next, actor.key)?.at).toEqual(surfaceStairs.at)
+    expect(HashMap.size(next.world)).toBe(HashMap.size(gs.world))
+    expect(entityByKey(next, surfaceStairs.key)).toEqual(surfaceStairs)
+    expect(entityByKey(next, returnStairs.key)).toEqual(returnStairs)
+    expect(entityByKey(next, surfaceTerrain.key)).toEqual(surfaceTerrain)
+    expect(entityByKey(next, dungeonTunnel.key)).toEqual(dungeonTunnel)
+  })
+
+  it("only ascends the player from level-one stairs up", () => {
+    const invalidActors: ReadonlyArray<{
+      readonly actor: Entity
+      readonly returnStairs: Entity
+    }> = [
+      {
+        actor: player(2, 1, 1),
+        returnStairs: makeStairsUp("stairs-up-off-tile", 1, 1, 1)
+      },
+      {
+        actor: player(1, 1, 2),
+        returnStairs: makeStairsUp("stairs-up-deeper", 1, 1, 2)
+      },
+      {
+        actor: makeHippie("hippie-on-stairs", 1, 1, 1),
+        returnStairs: makeStairsUp("stairs-up-non-player", 1, 1, 1)
+      }
+    ]
+
+    for (const { actor, returnStairs } of invalidActors) {
+      const surfaceStairs = makeStairsDown("stairs-down-1", 4, 5, 0)
+      const gs = GameState.make({
+        world: HashMap.fromIterable<string, Entity>([
+          [actor.key, actor],
+          [surfaceStairs.key, surfaceStairs],
+          [returnStairs.key, returnStairs]
+        ])
+      })
+
+      const next = Effect.runSync(
+        doAction(gs, {
+          action: EAction.ascend(),
+          entity: actor
+        })
+      )
+
+      expect(next).toBe(gs)
+      expect(entityByKey(next, actor.key)?.at).toEqual(actor.at)
     }
   })
 

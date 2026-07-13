@@ -17,6 +17,7 @@ const API_WAIT_TIMEOUT_MS = 20_000
 const CLI_WAIT_TIMEOUT_MS = 15_000
 const POLL_INTERVAL_MS = 250
 const DEFAULT_KEY_WAIT_MS = 500
+const DEFAULT_WINDOW_WIDTH = 120
 
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -175,6 +176,95 @@ const booleanFromEnv = (name: string, defaultValue: boolean): boolean => {
   throw new Error(`${name} must be a boolean-like value`)
 }
 
+type FeatureStep = {
+  readonly expectPattern?: RegExp
+  readonly keys: ReadonlyArray<string>
+  readonly label: string
+  readonly rejectPattern?: RegExp
+  readonly waitMs: number
+}
+
+const optionalStringProperty = (
+  value: Record<string, unknown>,
+  property: string,
+  stepIndex: number
+): string | undefined => {
+  const candidate = value[property]
+  if (candidate === undefined) return undefined
+  if (typeof candidate !== "string") {
+    throw new Error(
+      `FLAGHACK_TMUX_STEPS step ${
+        stepIndex + 1
+      } ${property} must be a string`
+    )
+  }
+  return candidate
+}
+
+const parseFeatureSteps = (): ReadonlyArray<FeatureStep> | undefined => {
+  const raw = process.env.FLAGHACK_TMUX_STEPS?.trim()
+  if (raw === undefined || raw === "") return undefined
+
+  const parsed: unknown = JSON.parse(raw)
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("FLAGHACK_TMUX_STEPS must be a non-empty JSON array")
+  }
+
+  return parsed.map((candidate, index) => {
+    if (
+      candidate === null
+      || typeof candidate !== "object"
+      || Array.isArray(candidate)
+    ) {
+      throw new Error(
+        `FLAGHACK_TMUX_STEPS step ${index + 1} must be an object`
+      )
+    }
+    const step = candidate as Record<string, unknown>
+    if (
+      !Array.isArray(step.keys)
+      || step.keys.some((key) => typeof key !== "string")
+    ) {
+      throw new Error(
+        `FLAGHACK_TMUX_STEPS step ${
+          index + 1
+        } keys must be a JSON array of strings`
+      )
+    }
+    const label = optionalStringProperty(step, "label", index)
+      ?? `step-${index + 1}`
+    const expect = optionalStringProperty(step, "expect", index)
+    const reject = optionalStringProperty(step, "reject", index)
+    const waitMs = step.waitMs === undefined
+      ? numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
+      : typeof step.waitMs === "number"
+          && Number.isFinite(step.waitMs)
+          && step.waitMs >= 0
+      ? step.waitMs
+      : undefined
+    if (waitMs === undefined) {
+      throw new Error(
+        `FLAGHACK_TMUX_STEPS step ${
+          index + 1
+        } waitMs must be a non-negative number`
+      )
+    }
+
+    return {
+      ...(expect === undefined
+        ? {}
+        : { expectPattern: new RegExp(expect, "u") }),
+      keys: step.keys,
+      label: label.replace(/[^a-zA-Z0-9_.-]+/gu, "-")
+        || `step-${index + 1}`,
+      ...(reject === undefined
+        ? {}
+        : { rejectPattern: new RegExp(reject, "u") }),
+      waitMs
+    }
+  })
+}
+
 const waitForApiReady = async (serverPane: string) => {
   const startedAt = Date.now()
   let lastError = "server did not respond"
@@ -303,6 +393,7 @@ const run = async () => {
   }
 
   const keys = parseJsonArrayEnv("FLAGHACK_TMUX_KEYS", ["j"])
+  const featureSteps = parseFeatureSteps()
   const expectPattern = regexFromEnv("FLAGHACK_TMUX_EXPECT")
   const rejectPattern = regexFromEnv("FLAGHACK_TMUX_REJECT")
   const keyWaitMs = numberFromEnv(
@@ -311,6 +402,13 @@ const run = async () => {
   )
   const initialWaitMs = numberFromEnv("FLAGHACK_TMUX_INITIAL_WAIT_MS", 0)
   const finalWaitMs = numberFromEnv("FLAGHACK_TMUX_FINAL_WAIT_MS", 1_000)
+  const windowWidth = numberFromEnv(
+    "FLAGHACK_TMUX_WINDOW_WIDTH",
+    DEFAULT_WINDOW_WIDTH
+  )
+  if (windowWidth < 40) {
+    throw new Error("FLAGHACK_TMUX_WINDOW_WIDTH must be at least 40")
+  }
   const autoSetup = booleanFromEnv("FLAGHACK_TMUX_AUTO_SETUP", true)
   const allowCliExit = booleanFromEnv(
     "FLAGHACK_TMUX_ALLOW_CLI_EXIT",
@@ -339,7 +437,7 @@ const run = async () => {
       "-c",
       process.cwd(),
       "-x",
-      "120",
+      String(windowWidth),
       "-y",
       "40",
       `${perfEnvAssignments()} FLAGHACK_PORT=${
@@ -383,8 +481,25 @@ const run = async () => {
     if (initialWaitMs > 0) {
       await delay(initialWaitMs)
     }
-    await sendKeys(cliPane, keys, keyWaitMs)
-    await delay(finalWaitMs)
+    if (featureSteps === undefined) {
+      await sendKeys(cliPane, keys, keyWaitMs)
+      await delay(finalWaitMs)
+    } else {
+      for (const step of featureSteps) {
+        await sendKeys(cliPane, step.keys, keyWaitMs)
+        await delay(step.waitMs)
+        const stepCapture = capturePane(cliPane)
+        await writeFile(
+          path.join(artifactDir, `cli-pane-${step.label}.txt`),
+          stepCapture
+        )
+        assertCapture(
+          stripAnsi(stepCapture),
+          step.expectPattern,
+          step.rejectPattern
+        )
+      }
+    }
 
     const capture = capturePane(cliPane)
     await writeFile(capturePath, capture)
@@ -395,10 +510,16 @@ const run = async () => {
 
     assertCapture(stripAnsi(capture), expectPattern, rejectPattern)
 
+    const inputSummary = featureSteps === undefined
+      ? `keys=${JSON.stringify(keys)}`
+      : `steps=${
+        JSON.stringify(featureSteps.map((step) => ({
+          keys: step.keys,
+          label: step.label
+        })))
+      }`
     console.log(
-      `tmux feature check passed with ${tmuxVersion}; keys=${
-        JSON.stringify(keys)
-      }; capture=${capturePath}${
+      `tmux feature check passed with ${tmuxVersion}; ${inputSummary}; capture=${capturePath}${
         process.env.FLAGHACK_PERF_FILE === undefined
           ? ""
           : `; perf=${process.env.FLAGHACK_PERF_FILE}`

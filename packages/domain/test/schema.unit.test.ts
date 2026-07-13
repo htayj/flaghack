@@ -4,6 +4,10 @@ import {
   AnyFood,
   AnyItem,
   AnyTerrain,
+  CampgroundState,
+  CampgroundView,
+  CampPropKinds,
+  ClientState,
   conforms,
   ContainerCollection,
   Door,
@@ -14,6 +18,7 @@ import {
   Flag,
   Floor,
   FoodItemTags,
+  GameState,
   ItemCollection,
   Player,
   Pos,
@@ -139,6 +144,16 @@ describe("domain source schemas", () => {
 
   it("keeps Data.taggedEnum ergonomics over plain schema union values", () => {
     expect(EAction.move({ dir: "N" })).toEqual({ _tag: "move", dir: "N" })
+    expect(EAction.descend()).toEqual({ _tag: "descend" })
+    expect(EAction.ascend()).toEqual({ _tag: "ascend" })
+    expect(EAction.talk({ dir: "SW" })).toEqual({
+      _tag: "talk",
+      dir: "SW"
+    })
+    expect(EAction.travelStep({ landmarkId: "central-effigy" })).toEqual({
+      _tag: "travelStep",
+      landmarkId: "central-effigy"
+    })
     expect(EEntity.$is("floor")(sampleFloor)).toBe(true)
     expect(EEntity.$is("floor")(sampleItem)).toBe(false)
   })
@@ -324,6 +339,17 @@ describe("domain source schemas", () => {
 
   it("decodes current movement, multi-item, and loot actions", () => {
     expectRight(S.decodeUnknownEither(SAction)({ _tag: "move", dir: "N" }))
+    expectRight(S.decodeUnknownEither(SAction)({ _tag: "descend" }))
+    expectRight(S.decodeUnknownEither(SAction)({ _tag: "ascend" }))
+    expectRight(
+      S.decodeUnknownEither(SAction)({ _tag: "talk", dir: "SW" })
+    )
+    expectRight(
+      S.decodeUnknownEither(SAction)({
+        _tag: "travelStep",
+        landmarkId: "central-effigy"
+      })
+    )
     expectRight(
       S.decodeUnknownEither(SAction)({
         _tag: "pickupMulti",
@@ -374,6 +400,159 @@ describe("domain source schemas", () => {
         S.decodeUnknownEither(SAction)({
           _tag: "pickup",
           object: sampleItem
+        })
+      )
+    ).toBe(true)
+    expect(
+      Either.isLeft(
+        S.decodeUnknownEither(SAction)({ _tag: "talk", dir: "HERE" })
+      )
+    ).toBe(true)
+  })
+
+  it("keeps versioned campground state optional and validates partial schedulers", () => {
+    const legacyState = { world: [] }
+    expectRight(S.decodeUnknownEither(GameState)(legacyState))
+
+    const campground = {
+      version: 1,
+      activeTravel: {
+        destinationId: "dusty-spoon",
+        nextIndex: 1,
+        path: [
+          { x: 96, y: 120, z: 0 },
+          { x: 97, y: 120, z: 0 }
+        ]
+      },
+      contentVersion: "campground-v1",
+      seed: 777,
+      campPlacements: [{
+        id: "dusty-spoon",
+        name: "The Dusty Spoon",
+        kind: "flagship",
+        signAt: { x: 100, y: 120, z: 0 },
+        entranceAt: { x: 101, y: 120, z: 0 },
+        signKey: "sign-1",
+        address: {
+          districtId: "north",
+          roadId: "lantern-road",
+          marker: "N-1",
+          label: "N-1, Lantern Road"
+        }
+      }],
+      landmarkPlacements: [{
+        id: "central-effigy",
+        name: "The Effigy",
+        kind: "effigy",
+        at: { x: 180, y: 80, z: 0 },
+        travelAt: { x: 180, y: 81, z: 0 },
+        entityKey: "effigy-1",
+        address: { label: "Center Junction" }
+      }],
+      npcAssignments: [{
+        npcKey: "ranger-1",
+        role: "civic" as const,
+        landmarkId: "arrival-plaza",
+        homeAt: { x: 97, y: 120, z: 0 }
+      }],
+      discoveredIds: ["arrival-plaza"],
+      greetedNpcKeys: ["ranger-1"],
+      welcomeFavor: {
+        phase: "active" as const,
+        giverNpcKey: "ranger-1",
+        recipientNpcKey: "ranger-2"
+      },
+      toolFavor: {
+        phase: "ready" as const,
+        requiredItemKey: "hammer-quest"
+      },
+      waterFavor: {
+        phase: "completed" as const,
+        rewardGranted: true
+      },
+      missingFlagPhase: "temple-lead" as const,
+      missingFlagKey: "missing-flag-1",
+      missingFlagOwnerNpcKey: "ranger-1",
+      surfaceAmbience: {
+        lastMessageTurn: 10,
+        nextTurn: 24,
+        zoneId: "arrival-plaza"
+      },
+      publicEvent: {
+        phase: "scheduled" as const,
+        kind: "meal",
+        hostCampId: "dusty-spoon",
+        nextTurn: 50
+      }
+    }
+
+    expectRight(S.validateEither(CampgroundState)(campground))
+    expectRight(
+      S.validateEither(GameState)({
+        campground,
+        world: HashMap.empty()
+      })
+    )
+    expectRight(
+      S.validateEither(CampgroundState)({
+        version: 1,
+        publicEvent: { phase: "cooldown" },
+        surfaceAmbience: {}
+      })
+    )
+    expect(
+      Either.isLeft(
+        S.validateEither(CampgroundState)({
+          version: 1,
+          publicEvent: { phase: "tomorrow" }
+        })
+      )
+    ).toBe(true)
+  })
+
+  it("requires a leak-safe campground client projection", () => {
+    const campground = {
+      currentAddress: "N-1, Lantern Road",
+      discoveredLandmarks: [{
+        id: "arrival-plaza",
+        name: "Arrival Plaza",
+        kind: "civic",
+        at: { x: 96, y: 120, z: 0 },
+        address: "Gate and Main Road",
+        travelAvailable: true
+      }],
+      activeEvent: {
+        kind: "meal",
+        name: "Pancake Breakfast",
+        landmarkId: "dusty-spoon",
+        hostCampId: "dusty-spoon",
+        endTurn: 80
+      },
+      weather: { condition: "heavy-rain" as const }
+    }
+
+    expectRight(S.validateEither(CampgroundView)(campground))
+    expectRight(
+      S.validateEither(ClientState)({
+        campground,
+        gameplayEvents: [],
+        inventory: HashMap.empty(),
+        roles: [],
+        setup: { phase: "complete" },
+        world: HashMap.empty()
+      })
+    )
+    expect(
+      Either.isLeft(S.validateEither(CampgroundView)({}))
+    ).toBe(true)
+    expect(
+      Either.isLeft(
+        S.validateEither(ClientState)({
+          gameplayEvents: [],
+          inventory: HashMap.empty(),
+          roles: [],
+          setup: { phase: "complete" },
+          world: HashMap.empty()
         })
       )
     ).toBe(true)
@@ -532,7 +711,26 @@ describe("domain source schemas", () => {
         key: "temple-1",
         in: "world",
         at: { x: 5, y: 0, z: 0 }
-      }
+      },
+      {
+        _tag: "stairs-down" as const,
+        key: "stairs-down-1",
+        in: "world",
+        at: { x: 6, y: 0, z: 0 }
+      },
+      {
+        _tag: "stairs-up" as const,
+        key: "stairs-up-1",
+        in: "world",
+        at: { x: 1, y: 1, z: 1 }
+      },
+      ...CampPropKinds.map((kind, index) => ({
+        _tag: "camp-prop" as const,
+        key: `camp-prop-${index}`,
+        in: "world" as const,
+        at: { x: 10 + index, y: 0, z: 0 },
+        kind
+      }))
     ]
     const world = HashMap.fromIterable(
       campgroundTerrain.map((entity) => [entity.key, entity] as const)
@@ -543,6 +741,17 @@ describe("domain source schemas", () => {
         .toBe(true)
     }
     expect(Either.isRight(S.validateEither(World)(world))).toBe(true)
+    expect(
+      Either.isLeft(
+        S.validateEither(AnyTerrain)({
+          _tag: "camp-prop",
+          key: "camp-prop-invalid",
+          in: "world",
+          at: { x: 0, y: 0, z: 0 },
+          kind: "unknown-prop"
+        })
+      )
+    ).toBe(true)
   })
 
   it("implements conforms with canonical Schema.is validation", () => {

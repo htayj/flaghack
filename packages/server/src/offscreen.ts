@@ -102,9 +102,10 @@ const targetStaysOffscreen = (
 const candidateMovementPositions = (
   gs: GameState,
   activeRegion: CampgroundActiveRegion,
-  entity: Entity
+  entity: Entity,
+  planningWorld: World
 ): ReadonlyArray<TPos> => {
-  const planned = planOneAi(gs, entity)
+  const planned = planOneAi(gs, entity, planningWorld)
   const target = Option.isSome(planned)
     ? moveTarget(planned.value.action, entity)
     : undefined
@@ -117,11 +118,17 @@ const candidateMovementPositions = (
 const localMovementWorld = (
   gs: GameState,
   activeRegion: CampgroundActiveRegion,
-  actors: ReadonlyArray<Entity>
+  actors: ReadonlyArray<Entity>,
+  planningWorld: World
 ): World => {
   const interestingPositions = new Set(
     actors.flatMap((entity) =>
-      candidateMovementPositions(gs, activeRegion, entity).map(positionKey)
+      candidateMovementPositions(
+        gs,
+        activeRegion,
+        entity,
+        planningWorld
+      ).map(positionKey)
     )
   )
 
@@ -132,6 +139,23 @@ const localMovementWorld = (
     )
   )
 }
+
+const localPlanningWorld = (
+  world: World,
+  actors: ReadonlyArray<Entity>
+): World =>
+  world.pipe(
+    HashMap.filter((entity) =>
+      entity.in === "world"
+      && actors.some((actor) =>
+        entity.at.z === actor.at.z
+        && Math.max(
+            Math.abs(entity.at.x - actor.at.x),
+            Math.abs(entity.at.y - actor.at.y)
+          ) <= 1
+      )
+    )
+  )
 
 type LazyOffscreenAccumulator = {
   readonly state: GameState
@@ -155,14 +179,15 @@ const applyOneLazyOffscreenActor = (
   gs: GameState,
   activeRegion: CampgroundActiveRegion,
   entity: Entity,
-  movementWorld: World
+  movementWorld: World,
+  planningWorld: World
 ): Effect.Effect<{
   readonly state: GameState
   readonly movementWorld: World
   readonly executed: boolean
   readonly nearActive: boolean
 }> => {
-  const planned = planOneAi(gs, entity)
+  const planned = planOneAi(gs, entity, planningWorld)
   if (Option.isNone(planned)) {
     return Effect.succeed({
       executed: false,
@@ -252,7 +277,13 @@ export const applyLazyOffscreenStep = (
     ? 0
     : (cursor + Math.min(options.budget, candidates.length))
       % candidates.length
-  const movementWorld = localMovementWorld(gs, activeRegion, budgeted)
+  const planningWorld = localPlanningWorld(gs.world, budgeted)
+  const movementWorld = localMovementWorld(
+    gs,
+    activeRegion,
+    budgeted,
+    planningWorld
+  )
   return Effect.reduce(
     budgeted,
     { executed: 0, movementWorld, skippedNearActive: 0, state: gs },
@@ -261,7 +292,8 @@ export const applyLazyOffscreenStep = (
         acc.state,
         activeRegion,
         entity,
-        acc.movementWorld
+        acc.movementWorld,
+        planningWorld
       ).pipe(
         Effect.map((next) => ({
           executed: acc.executed + (next.executed ? 1 : 0),

@@ -37,6 +37,12 @@ import {
 } from "./activeRegion.js"
 import type { PlannedAction } from "./ai/ai.js"
 import { allAiPlan } from "./ai/ai.js"
+import { reconcileCampgroundProgress } from "./campgroundProgress.js"
+import {
+  appendCampgroundWakeUpNarration,
+  campgroundViewForState,
+  normalizeCampgroundState
+} from "./campgroundState.js"
 import { rolledPlayer } from "./creatures.js"
 import type { TKey } from "./entity.js"
 import {
@@ -51,7 +57,6 @@ import {
   DEFAULT_LAZY_OFFSCREEN_OPTIONS
 } from "./offscreen.js"
 import { makePerfTraceId, measureEffect } from "./perf.js"
-import type { TPos } from "./position.js"
 import {
   availableRoles,
   confirmSetupForGameState,
@@ -60,10 +65,11 @@ import {
   setupIsComplete,
   setupStateFor
 } from "./setup.js"
+import { advanceWorldAtmosphere } from "./sounds.js"
 import { makeDoor, makeFloor } from "./terrain.js"
 import {
   CampgroundGenLevel,
-  campgroundReservedTravelCorridorCoordinates,
+  campgroundWakeUpCoordinate,
   containersAt,
   type Entity,
   isItem,
@@ -87,41 +93,31 @@ const rolledInitialPlayer = (
     Effect.withRandom(Random.make(INITIAL_PLAYER_ATTRIBUTE_SEED + z))
   )
 
-const campgroundReservedTravelStart =
-  campgroundReservedTravelCorridorCoordinates()[0]
-const campgroundSpawnAnchor: TPos = {
-  x: campgroundReservedTravelStart?.x ?? 96,
-  y: campgroundReservedTravelStart?.y ?? 120,
+const campgroundSpawnAnchor = {
+  x: campgroundWakeUpCoordinate.x,
+  y: campgroundWakeUpCoordinate.y,
   z: 0
-}
-
-const spawnDistanceSquared = (entity: Entity): number =>
-  (entity.at.x - campgroundSpawnAnchor.x) ** 2
-  + (entity.at.y - campgroundSpawnAnchor.y) ** 2
-  + (entity.at.z - campgroundSpawnAnchor.z) ** 2
+} as const
 
 const doorFixtureRequested = (): boolean =>
   process.env.FLAGHACK_GAME_FIXTURE === "door"
   || process.env.FLAGHACK_DOOR_FIXTURE === "1"
 
-const selectRequiredSpawnFloor = (world: World): Effect.Effect<TPos> => {
-  const spawnFloor = Array.from(world.pipe(HashMap.values))
-    .filter((entity) => entity._tag === "floor")
-    .reduce<Entity | undefined>(
-      (closest, candidate) =>
-        closest === undefined
-          || spawnDistanceSquared(candidate)
-            < spawnDistanceSquared(closest)
-          ? candidate
-          : closest,
-      undefined
-    )
+const selectRequiredWakeUpPosition = (
+  world: World
+): Effect.Effect<typeof campgroundSpawnAnchor> => {
+  const wakeUpMud = Array.from(world.pipe(HashMap.values)).find((entity) =>
+    entity._tag === "mud"
+    && entity.at.x === campgroundSpawnAnchor.x
+    && entity.at.y === campgroundSpawnAnchor.y
+    && entity.at.z === campgroundSpawnAnchor.z
+  )
 
-  return spawnFloor === undefined
+  return wakeUpMud === undefined
     ? Effect.dieMessage(
-      "Initial level generation produced no floor tiles; cannot place player"
+      "Initial campground generation omitted the required wake-up mud tile"
     )
-    : Effect.succeed(spawnFloor.at)
+    : Effect.succeed(campgroundSpawnAnchor)
 }
 
 const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
@@ -134,7 +130,7 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
       INITIAL_CAMPGROUND_SEED,
       0
     ).pipe(Effect.orDie)
-    const testLevelPlayerLocation = yield* selectRequiredSpawnFloor(
+    const testLevelPlayerLocation = yield* selectRequiredWakeUpPosition(
       testLevel
     )
 
@@ -151,10 +147,12 @@ const makeInitialGameState: Effect.Effect<TGameState> = Effect.gen(
       HashMap.union(testLevel)
     )
 
-    return GameState.make({
-      setup: initialSetupState,
-      world: testLevelReady
-    })
+    return normalizeCampgroundState(
+      GameState.make({
+        setup: initialSetupState,
+        world: testLevelReady
+      })
+    )
   }
 )
 
@@ -330,8 +328,9 @@ export const actPlayerAction = (
     turnMeasureOptions(action, traceId, "total"),
     measureEffect(
       turnMeasureOptions(action, traceId, "state.modifyEffect"),
-      eWithGameState((gs) =>
+      eWithGameState((rawGs) =>
         Effect.gen(function*() {
+          const gs = normalizeCampgroundState(rawGs)
           if (!setupIsComplete(gs)) {
             return gs
           }
@@ -443,6 +442,8 @@ export const actPlayerAction = (
                 )
               )
             ),
+            andThen(reconcileCampgroundProgress),
+            andThen(advanceWorldAtmosphere),
             tap(() => log("finished action")),
             withLogSpan(`playeract.${action._tag}`)
           )
@@ -463,7 +464,15 @@ const clientWorldForState = (
   activeRegionForGameState(gs).pipe(
     Effect.map((activeRegion) =>
       activeRegion === undefined
-        ? gs.world
+        ? omatch(getPlayer(gs), {
+          onNone: () => gs.world,
+          onSome: (player) =>
+            gs.world.pipe(
+              filter((entity) =>
+                entity.in === "world" && entity.at.z === player.at.z
+              )
+            )
+        })
         : filterWorldToBounds(gs.world, activeRegion.viewport)
     )
   )
@@ -473,16 +482,19 @@ const inventoryForWorld = (key: TKey) => (w: World): TItemCollection =>
 
 export const getClientState = pipe(
   eGetGameState,
-  andThen((gs) =>
-    clientWorldForState(gs).pipe(
+  andThen((rawGs) => {
+    const gs = normalizeCampgroundState(rawGs)
+    return clientWorldForState(gs).pipe(
       Effect.map((world) => ({
+        campground: campgroundViewForState(gs),
+        gameplayEvents: gs.gameplayEvents ?? [],
         inventory: inventoryForWorld("player")(gs.world),
         roles: [...availableRoles],
         setup: setupStateFor(gs),
         world
       }))
     )
-  )
+  })
 )
 
 export const selectRoleForSetup = (roleId: RoleId) =>
@@ -491,9 +503,14 @@ export const selectRoleForSetup = (roleId: RoleId) =>
   )
 
 export const confirmSetup = (confirm: boolean) =>
-  eWithGameState((gs) =>
-    Effect.succeed(confirmSetupForGameState(gs, confirm))
-  )
+  eWithGameState((gs) => {
+    const confirmed = confirmSetupForGameState(gs, confirm)
+    return Effect.succeed(
+      !setupIsComplete(gs) && setupIsComplete(confirmed)
+        ? appendCampgroundWakeUpNarration(confirmed)
+        : confirmed
+    )
+  })
 
 export const getInventory = (key: TKey) =>
   pipe(

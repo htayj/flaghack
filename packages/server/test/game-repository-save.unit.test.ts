@@ -4,6 +4,7 @@ import { Effect, HashMap, Option } from "effect"
 import { access, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { CAMPGROUND_WAKE_UP_MESSAGE } from "../src/campgroundState.js"
 import { player } from "../src/creatures.js"
 import { GamePersistence } from "../src/GamePersistence.js"
 import { GameRepository } from "../src/GameRepository.js"
@@ -67,6 +68,45 @@ const provideTestRepository = <A, E>(
   )
 
 describe("GameRepository save lifecycle", () => {
+  it("does not replay retained arrival narration when restoring", async () => {
+    await withTempSavePath(async (saveFilePath) => {
+      const saved = GameState.make({
+        ...stateWithPlayer(),
+        campground: { version: 1 },
+        gameplayEvents: [{ id: 7, message: "Keep this event." }, {
+          id: 8,
+          kind: "arrival-narration",
+          message: CAMPGROUND_WAKE_UP_MESSAGE
+        }],
+        nextGameplayEventId: 14
+      })
+      const program = Effect.gen(function*() {
+        const persistence = yield* GamePersistence
+        const repository = yield* GameRepository
+        const store = yield* GameStateStore
+
+        yield* persistence.save(saved)
+        yield* store.reset
+        yield* repository.restoreGame
+        const clientState = yield* repository.getClientState
+        const restored = yield* store.peek
+        return { clientState, restored }
+      })
+
+      const result = await Effect.runPromise(
+        provideTestRepository(program, saveFilePath)
+      )
+
+      expect(result.clientState.gameplayEvents).toEqual([{
+        id: 7,
+        message: "Keep this event."
+      }])
+      expect(
+        Option.getOrThrow(result.restored).nextGameplayEventId
+      ).toBe(14)
+    })
+  })
+
   it("saveGame writes a save and only explicit restore consumes it", async () => {
     await withTempSavePath(async (saveFilePath) => {
       const program = Effect.gen(function*() {

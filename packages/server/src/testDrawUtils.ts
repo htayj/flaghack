@@ -2,6 +2,7 @@ import { EEntity, type Pos as PosSchema } from "@flaghack/domain/schemas"
 import { Option } from "effect"
 import { defined } from "effect/Match"
 import { List, Map, type Set } from "immutable"
+import type { CampPropKind } from "./terrain.js"
 import { nullMatrix } from "./util.js"
 import type { Entity, World } from "./world.js"
 
@@ -26,6 +27,32 @@ const tile = (value: Tile): Tile => value
 
 type VEntity = { dist: number; entity: Entity }
 export type Tiles = Array<Array<Tile>>
+const campPropTile = (kind: CampPropKind): Tile => {
+  switch (kind) {
+    case "arrival-gate":
+      return tile({ color: "magenta", bright: true, char: "G" })
+    case "artwork":
+      return tile({ color: "red", bright: true, char: "A" })
+    case "flagpole":
+      return tile({ color: "yellow", bright: true, char: "|" })
+    case "stage":
+      return tile({ color: "magenta", bright: true, char: "=" })
+    case "workbench":
+      return tile({ color: "yellow", bright: true, char: "W" })
+    case "bike-rack":
+      return tile({ color: "cyan", bright: true, char: "B" })
+    case "directory":
+      return tile({ color: "cyan", bright: true, char: "D" })
+    case "water-station":
+      return tile({ color: "cyan", bright: true, char: "~" })
+    case "speaker":
+      return tile({ color: "magenta", bright: true, char: "S" })
+    case "lantern":
+      return tile({ color: "yellow", bright: true, char: "L" })
+    case "table":
+      return tile({ color: "white", bright: true, char: "T" })
+  }
+}
 const getTile = (e: Entity | undefined): Tile =>
   defined(e)
     ? EEntity.$match({
@@ -61,10 +88,15 @@ const getTile = (e: Entity | undefined): Tile =>
       "tent-post": () => tile({ color: "yellow", char: "┼" }),
       tunnel: () => tile({ color: "black", bright: true, char: "," }),
       floor: () => tile({ color: "black", bright: true, char: "." }),
+      mud: () => tile({ color: "yellow", char: ";" }),
       tent: () => tile({ color: "yellow", bright: true, char: "^" }),
       sign: () => tile({ color: "cyan", bright: true, char: "?" }),
       effigy: () => tile({ color: "red", bright: true, char: "Y" }),
-      temple: () => tile({ color: "magenta", bright: true, char: "Ω" })
+      temple: () => tile({ color: "magenta", bright: true, char: "Ω" }),
+      "stairs-down": () =>
+        tile({ color: "white", bright: true, char: ">" }),
+      "stairs-up": () => tile({ color: "white", bright: true, char: "<" }),
+      "camp-prop": ({ kind }) => campPropTile(kind)
     })(e)
     : { color: "black", char: ".", bright: true }
 

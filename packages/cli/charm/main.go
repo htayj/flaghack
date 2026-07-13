@@ -52,6 +52,7 @@ type entity struct {
 	At         pos         `json:"at"`
 	In         string      `json:"in"`
 	Tag        string      `json:"_tag"`
+	Kind       string      `json:"kind,omitempty"`
 	Variant    string      `json:"variant,omitempty"`
 	Open       bool        `json:"open,omitempty"`
 	Name       string      `json:"name,omitempty"`
@@ -81,6 +82,7 @@ type action struct {
 	Tag          string
 	Dir          string
 	ContainerKey string
+	LandmarkID   string
 	Keys         []string
 }
 
@@ -91,6 +93,9 @@ func (a action) MarshalJSON() ([]byte, error) {
 	}
 	if a.ContainerKey != "" {
 		payload["containerKey"] = a.ContainerKey
+	}
+	if a.LandmarkID != "" {
+		payload["landmarkId"] = a.LandmarkID
 	}
 	if actionUsesKeys(a.Tag) {
 		if a.Keys == nil {
@@ -129,18 +134,56 @@ type apiClient struct {
 	perf    *perfRecorder
 }
 
+type gameplayEvent struct {
+	ID               int    `json:"id"`
+	Message          string `json:"message"`
+	InterruptsTravel *bool  `json:"interruptsTravel,omitempty"`
+}
+
+type campgroundLandmark struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Kind            string `json:"kind"`
+	At              pos    `json:"at"`
+	Address         string `json:"address"`
+	TravelAvailable bool   `json:"travelAvailable"`
+}
+
+type campgroundActiveEvent struct {
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	LandmarkID string `json:"landmarkId"`
+	HostCampID string `json:"hostCampId,omitempty"`
+	EndTurn    int    `json:"endTurn,omitempty"`
+}
+
+type campgroundWeather struct {
+	Condition string `json:"condition"`
+}
+
+type campgroundView struct {
+	CurrentAddress      string                 `json:"currentAddress,omitempty"`
+	DiscoveredLandmarks []campgroundLandmark   `json:"discoveredLandmarks"`
+	ActiveEvent         *campgroundActiveEvent `json:"activeEvent,omitempty"`
+	Weather             *campgroundWeather     `json:"weather,omitempty"`
+}
+
 type snapshot struct {
-	world     []entity
-	inventory []entity
-	roles     []role
-	setup     setupState
+	world          []entity
+	inventory      []entity
+	roles          []role
+	setup          setupState
+	gameplayEvents []gameplayEvent
+	campground     *campgroundView
 }
 
 type clientStateResponse struct {
-	World     [][]json.RawMessage `json:"world"`
-	Inventory [][]json.RawMessage `json:"inventory"`
-	Roles     []role              `json:"roles"`
-	Setup     setupState          `json:"setup"`
+	World          [][]json.RawMessage `json:"world"`
+	Inventory      [][]json.RawMessage `json:"inventory"`
+	Roles          []role              `json:"roles"`
+	Setup          setupState          `json:"setup"`
+	GameplayEvents []gameplayEvent     `json:"gameplayEvents"`
+	Campground     campgroundView      `json:"campground"`
 }
 
 type clientStateStreamEvent struct {
@@ -205,6 +248,11 @@ type popupState struct {
 	items        []entity
 	putItems     []entity
 	marked       map[string]bool
+}
+
+type landmarkPopupState struct {
+	landmarks []campgroundLandmark
+	page      int
 }
 
 type autoRunResult struct {
@@ -306,16 +354,20 @@ type model struct {
 	inventory               []entity
 	roles                   []role
 	setup                   setupState
+	campground              campgroundView
 	messages                []string
 	debugMessages           bool
 	pendingMovementPrefix   string
 	pendingDoorAction       string
+	pendingTalk             bool
 	pendingExtendedCommand  *string
 	pendingQuitConfirmation bool
 	pendingTerminalAction   bool
 	travelTarget            *pos
 	lookTarget              *pos
 	popup                   *popupState
+	landmarkPopup           *landmarkPopupState
+	overviewOpen            bool
 	pickupRequestID         int
 	lootRequestID           int
 	mutationSerial          int
@@ -329,6 +381,7 @@ type model struct {
 	stream                  *clientStateStream
 	streamActive            bool
 	lastStreamRevision      int
+	lastGameplayEventID     int
 }
 
 var (
@@ -627,6 +680,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cancelActiveAutoMove() {
 		return m, nil
 	}
+	if m.overviewOpen {
+		return m.handleOverviewKey(input)
+	}
+	if m.landmarkPopup != nil {
+		return m.handleLandmarkPopupKey(input)
+	}
 	if m.popup != nil {
 		return m.handlePopupKey(input)
 	}
@@ -641,6 +700,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.addDebugMessage("doing " + input)
 
+	if m.pendingTalk {
+		return m.handleTalkDirectionKey(input)
+	}
 	if m.pendingDoorAction != "" {
 		return m.handleDoorDirectionKey(input)
 	}
@@ -667,6 +729,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.addMessage("extended command: #")
 		return m, nil
 	case "o", "c":
+		m.pendingTalk = false
 		m.pendingMovementPrefix = ""
 		if input == "o" {
 			m.pendingDoorAction = "open"
@@ -675,17 +738,25 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.addMessage(doorDirectionPrompt(m.pendingDoorAction))
 		return m, nil
+	case "t":
+		m.pendingDoorAction = ""
+		m.pendingMovementPrefix = ""
+		m.pendingTalk = true
+		m.addMessage(talkDirectionPrompt())
+		return m, nil
+	case "O":
+		m.pendingDoorAction = ""
+		m.pendingMovementPrefix = ""
+		m.pendingTalk = false
+		m.overviewOpen = true
+		return m, nil
 	case "_":
 		m.pendingDoorAction = ""
 		m.pendingMovementPrefix = ""
-		player, ok := findPlayer(m.world)
-		if !ok {
-			m.addMessage("cannot travel: player not found")
-			return m, nil
+		m.pendingTalk = false
+		m.landmarkPopup = &landmarkPopupState{
+			landmarks: sortedCampgroundLandmarks(m.campground.DiscoveredLandmarks),
 		}
-		target := clampTravelTarget(player.At, m.world)
-		m.travelTarget = &target
-		m.addMessage(travelPrompt(target))
 		return m, nil
 	case ";":
 		m.pendingMovementPrefix = ""
@@ -803,6 +874,75 @@ func (m model) handleDoorDirectionKey(input string) (tea.Model, tea.Cmd) {
 	}
 	m.mutationSerial++
 	return m, actionCmd(m.client, action{Tag: kind, Dir: dir}, m.streamActive)
+}
+
+func (m model) handleTalkDirectionKey(input string) (tea.Model, tea.Cmd) {
+	if input == "escape" {
+		m.pendingTalk = false
+		m.addMessage("canceled talk")
+		return m, nil
+	}
+	dir, ok := baseMovementDirections[input]
+	m.pendingTalk = false
+	if !ok {
+		m.addMessage("canceled talk")
+		return m, nil
+	}
+	m.mutationSerial++
+	return m, actionCmd(m.client, action{Tag: "talk", Dir: dir}, m.streamActive)
+}
+
+func (m model) handleOverviewKey(input string) (tea.Model, tea.Cmd) {
+	if input == "_" {
+		m.overviewOpen = false
+		m.landmarkPopup = &landmarkPopupState{
+			landmarks: sortedCampgroundLandmarks(m.campground.DiscoveredLandmarks),
+		}
+		return m, nil
+	}
+	if input == "escape" || input == "O" || strings.EqualFold(input, "q") {
+		m.overviewOpen = false
+	}
+	return m, nil
+}
+
+func (m model) handleLandmarkPopupKey(input string) (tea.Model, tea.Cmd) {
+	popup := m.landmarkPopup
+	if popup == nil {
+		return m, nil
+	}
+	if input == "escape" || strings.EqualFold(input, "q") || strings.EqualFold(input, "r") {
+		m.landmarkPopup = nil
+		m.addMessage("canceled travel")
+		return m, nil
+	}
+	if input == "*" {
+		m.landmarkPopup = nil
+		player, ok := findPlayer(m.world)
+		if !ok {
+			m.addMessage("cannot travel: player not found")
+			return m, nil
+		}
+		target := clampTravelTarget(player.At, m.world)
+		m.travelTarget = &target
+		m.addMessage(travelPrompt(target))
+		return m, nil
+	}
+	pageCount := landmarkPopupPageCount(len(popup.landmarks))
+	if input == "[" {
+		popup.page = max(0, popup.page-1)
+		return m, nil
+	}
+	if input == "]" {
+		popup.page = min(pageCount-1, popup.page+1)
+		return m, nil
+	}
+	landmark, ok := landmarkForLetter(popup.landmarks, input)
+	if !ok {
+		return m, nil
+	}
+	m.landmarkPopup = nil
+	return m.startLandmarkTravel(landmark)
 }
 
 func (m model) saveAndExit() (tea.Model, tea.Cmd) {
@@ -1056,16 +1196,59 @@ func (m model) startTravel(target pos) (tea.Model, tea.Cmd) {
 	traceID := client.perf.nextTraceID("charm.travel")
 	m.addMessage("traveling")
 	streamActive := m.streamActive
+	baselineEventID := m.lastGameplayEventID
 	return m, func() tea.Msg {
 		var result autoRunResult
 		var snap snapshot
 		var err error
 		if streamActive {
-			result, snap, err = client.runTravelStreamed(context.Background(), initialWorld, target, cancel)
+			result, snap, err = client.runTravelStreamedFromBaseline(context.Background(), initialWorld, target, baselineEventID, cancel)
 		} else {
-			result, snap, err = client.runTravel(context.Background(), initialWorld, target, cancel)
+			result, snap, err = client.runTravelFromBaseline(context.Background(), initialWorld, target, baselineEventID, cancel)
 		}
 		return autoDoneMsg{id: id, cancel: cancel, mutationSerial: mutationSerial, result: result, snapshot: snap, err: err, caseName: "travel", perfTraceID: traceID, responseReceived: time.Now()}
+	}
+}
+
+func (m model) startLandmarkTravel(
+	landmark campgroundLandmark,
+) (tea.Model, tea.Cmd) {
+	m.autoID++
+	m.mutationSerial++
+	id := m.autoID
+	mutationSerial := m.mutationSerial
+	cancel := make(chan struct{})
+	m.autoCancel = cancel
+	campground := m.campground
+	initial := snapshot{
+		world:      cloneEntities(m.world),
+		campground: &campground,
+	}
+	client := m.client
+	traceID := client.perf.nextTraceID("charm.landmarkTravel")
+	streamActive := m.streamActive
+	baselineEventID := m.lastGameplayEventID
+	m.addMessage("traveling to " + landmark.Name)
+	return m, func() tea.Msg {
+		result, snap, err := client.runLandmarkTravel(
+			context.Background(),
+			initial,
+			landmark.ID,
+			baselineEventID,
+			cancel,
+			streamActive,
+		)
+		return autoDoneMsg{
+			id:               id,
+			cancel:           cancel,
+			mutationSerial:   mutationSerial,
+			result:           result,
+			snapshot:         snap,
+			err:              err,
+			caseName:         "landmarkTravel",
+			perfTraceID:      traceID,
+			responseReceived: time.Now(),
+		}
 	}
 }
 
@@ -1112,9 +1295,23 @@ func (m *model) applySnapshot(snap snapshot) {
 	if snap.roles != nil {
 		m.roles = snap.roles
 	}
+	if snap.campground != nil {
+		m.campground = *snap.campground
+	}
 	nextSetup := normalizeSetup(snap.setup)
 	if !(m.setup.Phase == "complete" && !nextSetup.complete()) {
 		m.setup = nextSetup
+	}
+	m.applyGameplayEvents(snap.gameplayEvents)
+}
+
+func (m *model) applyGameplayEvents(events []gameplayEvent) {
+	for _, event := range events {
+		if event.ID <= m.lastGameplayEventID {
+			continue
+		}
+		m.addMessage(event.Message)
+		m.lastGameplayEventID = event.ID
 	}
 }
 
@@ -1153,18 +1350,21 @@ func (m model) View() string {
 			return renderBoard(m.world, cursorTarget)
 		})
 		sidebar := m.perf.measureString("frontend.component", "sidebar", "", "", map[string]int{"inventorySize": len(m.inventory)}, func() string {
-			return renderSidebarArea(m.inventory, m.popup)
+			return renderSidebarArea(m.inventory, m.popup, m.landmarkPopup)
 		})
 		main := m.perf.measureString("frontend.component", "main_join", "", "", nil, func() string {
+			if m.overviewOpen {
+				return renderCampgroundOverview(m.campground)
+			}
 			return lipgloss.JoinHorizontal(lipgloss.Top, board, sidebar)
 		})
 		sections := []string{
 			m.perf.measureString("frontend.component", "event", "", "", map[string]int{"messageCount": len(m.messages)}, func() string {
-				return renderEventArea(m.world, m.messages, m.lookTarget)
+				return renderEventArea(m.world, m.messages, m.lookTarget, m.campground)
 			}),
 			main,
 			m.perf.measureString("frontend.component", "status", "", "", map[string]int{"worldSize": len(m.world)}, func() string {
-				return renderStatus(m.world)
+				return renderStatus(m.world, m.campground)
 			}),
 		}
 		if m.popup != nil && m.popup.kind == popupDrop {
@@ -1172,7 +1372,7 @@ func (m model) View() string {
 				return renderPopup(*m.popup)
 			}))
 		}
-		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · Shift/Ctrl/g/G/m/M run · o open · c close · _ travel · ; look · , pickup · d drop · e eat · q quaff · M-l loot · item letters select · #save/Ctrl-S save · #quit/Ctrl-Q quit"))
+		sections = append(sections, helpStyle.Render("Flag Hack Charmbracelet UI · hjklyubn move · t talk · O overview · _ landmark/map travel · <> stairs · Shift/Ctrl/g/G/m/M run · o/c doors · ; look · , pickup · d drop · e eat · q quaff · M-l loot · #save/Ctrl-S · #quit/Ctrl-Q"))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	})
 	m.perf.finishRedraws()
@@ -1196,11 +1396,108 @@ func renderBoard(world []entity, target *pos) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderSidebarArea(inventory []entity, popup *popupState) string {
+func renderSidebarArea(
+	inventory []entity,
+	popup *popupState,
+	landmarkPopup *landmarkPopupState,
+) string {
+	if landmarkPopup != nil {
+		return renderLandmarkPopup(*landmarkPopup)
+	}
 	if popup != nil && popup.kind != popupDrop {
 		return renderSidebarPopup(*popup)
 	}
 	return renderSidebar(inventory)
+}
+
+func renderLandmarkPopup(popup landmarkPopupState) string {
+	const pageSize = 8
+	lines := []string{
+		"travel where?",
+		mutedStyle.Render("* - map cursor"),
+	}
+	entries := letteredLandmarks(popup.landmarks)
+	if len(entries) == 0 {
+		lines = append(lines, mutedStyle.Render("(no discovered destinations)"))
+	}
+	pageCount := landmarkPopupPageCount(len(entries))
+	page := min(max(0, popup.page), pageCount-1)
+	start := page * pageSize
+	end := min(len(entries), start+pageSize)
+	for _, entry := range entries[start:end] {
+		label := "-"
+		if entry.letter != "" {
+			label = entry.letter
+		}
+		line := fmt.Sprintf("%s - %s", label, entry.landmark.Name)
+		if !entry.landmark.TravelAvailable {
+			line += " (unavailable)"
+		}
+		lines = append(lines, line)
+	}
+	if pageCount > 1 {
+		lines = append(lines, mutedStyle.Render(fmt.Sprintf(
+			"page %d/%d · [ ] change page",
+			page+1,
+			pageCount,
+		)))
+	}
+	lines = append(lines, mutedStyle.Render("q/r/Esc cancels"))
+	return sidebarStyle.Render(strings.Join(lines, "\n"))
+}
+
+func landmarkPopupPageCount(landmarkCount int) int {
+	const pageSize = 8
+	return max(1, (landmarkCount+pageSize-1)/pageSize)
+}
+
+func renderCampgroundOverview(view campgroundView) string {
+	address := strings.TrimSpace(view.CurrentAddress)
+	if address == "" {
+		address = "unknown"
+	}
+	lines := []string{
+		"Campground overview",
+		"Current address: " + address,
+	}
+	if weather := campgroundWeatherLabel(view.Weather); weather != "" {
+		lines = append(lines, "Weather: "+weather)
+	}
+	lines = append(lines, "", "Discovered destinations:")
+	landmarks := sortedCampgroundLandmarks(view.DiscoveredLandmarks)
+	if len(landmarks) == 0 {
+		lines = append(lines, "  (none yet)")
+	}
+	for _, landmark := range landmarks {
+		travel := ""
+		if landmark.TravelAvailable {
+			travel = " [travel]"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"  - %s (%s) — %s%s",
+			landmark.Name,
+			landmark.Kind,
+			landmark.Address,
+			travel,
+		))
+	}
+	if view.ActiveEvent != nil {
+		lines = append(lines, "", fmt.Sprintf(
+			"Active event: %s (%s) at %s",
+			view.ActiveEvent.Name,
+			view.ActiveEvent.Kind,
+			view.ActiveEvent.LandmarkID,
+		))
+	}
+	lines = append(
+		lines,
+		"",
+		"Legend: @ you  # road  ? sign  Y effigy  Ω temple  < > stairs",
+		"Props: G gate  A art  | flagpole  = stage  W bench  B bikes",
+		"       D directory  ~ water  S speaker  L lantern  T table",
+		mutedStyle.Render("O/q/Esc closes · _ chooses a destination"),
+	)
+	return messageStyle.Width(118).Render(strings.Join(lines, "\n"))
 }
 
 func renderSidebar(inventory []entity) string {
@@ -1246,9 +1543,14 @@ func fixedEventLines(lines []string) []string {
 	return fixed
 }
 
-func renderEventArea(world []entity, messages []string, lookTarget *pos) string {
+func renderEventArea(
+	world []entity,
+	messages []string,
+	lookTarget *pos,
+	campground campgroundView,
+) string {
 	if lookTarget != nil {
-		return renderLookPanel(world, *lookTarget)
+		return renderLookPanel(world, *lookTarget, campground)
 	}
 	return renderMessages(messages)
 }
@@ -1257,15 +1559,22 @@ func renderMessages(messages []string) string {
 	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(messages), "\n"))
 }
 
-func renderLookPanel(world []entity, target pos) string {
+func renderLookPanel(
+	world []entity,
+	target pos,
+	campground campgroundView,
+) string {
 	lines := []string{
-		describeLookTarget(world, target),
+		describeLookTargetWithCampground(world, target, campground),
 		mutedStyle.Render("hjkl/yubn move look cursor, Esc exits look mode"),
+	}
+	if address := strings.TrimSpace(campground.CurrentAddress); address != "" {
+		lines = append(lines, "Address: "+address)
 	}
 	return messageStyle.Width(118).Render(strings.Join(fixedEventLines(lines), "\n"))
 }
 
-func renderStatus(world []entity) string {
+func renderStatus(world []entity, campgroundViews ...campgroundView) string {
 	name := "player"
 	dungeonLevel := "?"
 	attributeLine := "St:-- Dx:-- Co:-- In:-- Wi:-- Ch:--  HP:--/--  Pw:--/--"
@@ -1279,7 +1588,7 @@ func renderStatus(world []entity) string {
 		if player.At.Z == 0 {
 			dungeonLevel = "burn"
 		} else {
-			dungeonLevel = fmt.Sprintf("%d", player.At.Z+1)
+			dungeonLevel = fmt.Sprintf("%d", player.At.Z)
 		}
 	}
 	lines := []string{
@@ -1287,7 +1596,28 @@ func renderStatus(world []entity) string {
 		attributeLine,
 		"AC:--  Dlvl:" + dungeonLevel,
 	}
+	if len(campgroundViews) > 0 {
+		campground := campgroundViews[0]
+		if address := strings.TrimSpace(campground.CurrentAddress); address != "" {
+			lines = append(lines, "Address: "+address)
+		}
+		if weather := campgroundWeatherLabel(campground.Weather); weather != "" {
+			lines = append(lines, "Weather: "+weather)
+		}
+	}
 	return statusStyle.Render(strings.Join(lines, "\n"))
+}
+
+func campgroundWeatherLabel(weather *campgroundWeather) string {
+	if weather == nil {
+		return ""
+	}
+	switch weather.Condition {
+	case "heavy-rain":
+		return "heavy rain"
+	default:
+		return strings.TrimSpace(weather.Condition)
+	}
 }
 
 func formatAttributeStatus(a attributes) string {
@@ -1742,30 +2072,42 @@ func (c apiClient) runDirectionalMovementStreamedUnmeasured(ctx context.Context,
 }
 
 func (c apiClient) runTravel(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	return c.runTravelFromBaseline(ctx, initialWorld, target, 0, cancel)
+}
+
+func (c apiClient) runTravelFromBaseline(ctx context.Context, initialWorld []entity, target pos, baselineEventID int, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	measured, err := measurePerfCall(c.perf, "frontend.api", "runTravel", "travel", "", nil, func() (autoRunSnapshot, error) {
-		result, snap, err := c.runTravelUnmeasured(ctx, initialWorld, target, cancel)
+		result, snap, err := c.runTravelUnmeasuredFromBaseline(ctx, initialWorld, target, baselineEventID, cancel)
 		return autoRunSnapshot{result: result, snapshot: snap}, err
 	})
 	return measured.result, measured.snapshot, err
 }
 
 func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	return c.runTravelUnmeasuredFromBaseline(ctx, initialWorld, target, 0, cancel)
+}
+
+func (c apiClient) runTravelUnmeasuredFromBaseline(ctx context.Context, initialWorld []entity, target pos, baselineEventID int, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	world := initialWorld
+	latest := snapshot{world: world}
 	steps := 0
 	for steps < maxAutoMoveSteps {
 		if cancelled(cancel) {
-			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{}, nil
+			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, latest, nil
+		}
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: "travel", kind: "interesting", steps: steps}, latest, nil
 		}
 		player, ok := findPlayer(world)
 		if !ok {
-			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, snapshot{}, nil
+			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, latest, nil
 		}
 		if samePos(player.At, target) {
-			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, snapshot{world: world}, nil
+			return autoRunResult{label: "travel", kind: "arrived", steps: steps}, latest, nil
 		}
 		path := findTravelDirections(world, player.At, target)
 		if len(path) == 0 {
-			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, snapshot{world: world}, nil
+			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, latest, nil
 		}
 
 		batch := straightTravelBatch(path, maxAutoMoveSteps-steps)
@@ -1773,7 +2115,7 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 		expected := before
 		for _, direction := range batch {
 			if cancelled(cancel) {
-				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, snapshot{world: world}, nil
+				return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, latest, nil
 			}
 			if err := c.doAction(ctx, action{Tag: "move", Dir: direction}); err != nil {
 				return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
@@ -1794,8 +2136,12 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 			return autoRunResult{label: "travel", kind: "error", steps: steps}, snapshot{}, err
 		}
 		world = refreshed.world
+		latest = refreshed
 		if cancelled(cancel) {
 			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, refreshed, nil
+		}
+		if hasNewInterruptingGameplayEvent(refreshed.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: "travel", kind: "interesting", steps: steps}, refreshed, nil
 		}
 		after, ok := findPlayer(world)
 		if !ok {
@@ -1808,18 +2154,26 @@ func (c apiClient) runTravelUnmeasured(ctx context.Context, initialWorld []entit
 			return autoRunResult{label: "travel", kind: "blocked", steps: steps}, refreshed, nil
 		}
 	}
-	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, snapshot{world: world}, nil
+	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, latest, nil
 }
 
 func (c apiClient) runTravelStreamed(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	return c.runTravelStreamedFromBaseline(ctx, initialWorld, target, 0, cancel)
+}
+
+func (c apiClient) runTravelStreamedFromBaseline(ctx context.Context, initialWorld []entity, target pos, baselineEventID int, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	measured, err := measurePerfCall(c.perf, "frontend.api", "runTravel", "travel", "stream", nil, func() (autoRunSnapshot, error) {
-		result, snap, err := c.runTravelStreamedUnmeasured(ctx, initialWorld, target, cancel)
+		result, snap, err := c.runTravelStreamedUnmeasuredFromBaseline(ctx, initialWorld, target, baselineEventID, cancel)
 		return autoRunSnapshot{result: result, snapshot: snap}, err
 	})
 	return measured.result, measured.snapshot, err
 }
 
 func (c apiClient) runTravelStreamedUnmeasured(ctx context.Context, initialWorld []entity, target pos, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
+	return c.runTravelStreamedUnmeasuredFromBaseline(ctx, initialWorld, target, 0, cancel)
+}
+
+func (c apiClient) runTravelStreamedUnmeasuredFromBaseline(ctx context.Context, initialWorld []entity, target pos, baselineEventID int, cancel <-chan struct{}) (autoRunResult, snapshot, error) {
 	stream, err := c.openClientStateStreamWithTimeout(ctx, 10*time.Second)
 	if err != nil {
 		return autoRunResult{label: "travel", kind: "error", steps: 0}, snapshot{}, err
@@ -1843,6 +2197,9 @@ func (c apiClient) runTravelStreamedUnmeasured(ctx context.Context, initialWorld
 	for steps < maxAutoMoveSteps {
 		if cancelled(cancel) {
 			return autoRunResult{label: "travel", kind: "cancelled", steps: steps}, latest, nil
+		}
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: "travel", kind: "interesting", steps: steps}, latest, nil
 		}
 		player, ok := findPlayer(world)
 		if !ok {
@@ -1872,6 +2229,9 @@ func (c apiClient) runTravelStreamedUnmeasured(ctx context.Context, initialWorld
 		lastRevision = nextRevision
 		latest = nextSnap
 		world = nextSnap.world
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: "travel", kind: "interesting", steps: steps}, latest, nil
+		}
 		after, ok := findPlayer(world)
 		if !ok {
 			return autoRunResult{label: "travel", kind: "player-not-found", steps: steps}, latest, nil
@@ -1885,6 +2245,257 @@ func (c apiClient) runTravelStreamedUnmeasured(ctx context.Context, initialWorld
 		}
 	}
 	return autoRunResult{label: "travel", kind: "too-far", steps: steps}, latest, nil
+}
+
+func (c apiClient) runLandmarkTravel(
+	ctx context.Context,
+	initial snapshot,
+	landmarkID string,
+	baselineEventID int,
+	cancel <-chan struct{},
+	preferStream bool,
+) (autoRunResult, snapshot, error) {
+	if preferStream {
+		result, snap, err := c.runLandmarkTravelStreamed(
+			ctx,
+			initial,
+			landmarkID,
+			baselineEventID,
+			cancel,
+		)
+		if err == nil || result.steps > 0 {
+			return result, snap, err
+		}
+	}
+	return c.runLandmarkTravelPolling(
+		ctx,
+		initial,
+		landmarkID,
+		baselineEventID,
+		cancel,
+	)
+}
+
+func (c apiClient) runLandmarkTravelPolling(
+	ctx context.Context,
+	initial snapshot,
+	landmarkID string,
+	baselineEventID int,
+	cancel <-chan struct{},
+) (autoRunResult, snapshot, error) {
+	latest := initial
+	label := landmarkTravelLabel(initial, landmarkID)
+	steps := 0
+	for steps < maxAutoMoveSteps {
+		if cancelled(cancel) {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		before, ok := findPlayer(latest.world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if landmarkReached(latest, landmarkID) {
+			return autoRunResult{label: label, kind: "arrived", steps: steps}, latest, nil
+		}
+		destination, ok := landmarkInView(latest, landmarkID)
+		if !ok || !destination.TravelAvailable {
+			return autoRunResult{label: label, kind: "blocked", steps: steps}, latest, nil
+		}
+
+		next, err := c.actionAndRefresh(ctx, action{
+			Tag:        "travelStep",
+			LandmarkID: landmarkID,
+		})
+		if err != nil {
+			return autoRunResult{label: label, kind: "error", steps: steps}, snapshot{}, err
+		}
+		steps++
+		latest = snapshotWithFallback(next, latest)
+		if cancelled(cancel) {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		after, ok := findPlayer(latest.world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if landmarkReached(latest, landmarkID) {
+			return autoRunResult{label: label, kind: "arrived", steps: steps}, latest, nil
+		}
+		if samePos(before.At, after.At) {
+			return autoRunResult{label: label, kind: "blocked", steps: steps}, latest, nil
+		}
+	}
+	return autoRunResult{label: label, kind: "too-far", steps: steps}, latest, nil
+}
+
+func (c apiClient) runLandmarkTravelStreamed(
+	ctx context.Context,
+	initial snapshot,
+	landmarkID string,
+	baselineEventID int,
+	cancel <-chan struct{},
+) (autoRunResult, snapshot, error) {
+	label := landmarkTravelLabel(initial, landmarkID)
+	stream, err := c.openClientStateStreamWithTimeout(ctx, 10*time.Second)
+	if err != nil {
+		return autoRunResult{label: label, kind: "error"}, snapshot{}, err
+	}
+	defer stream.cancel()
+
+	latest, lastRevision, wasCancelled, err := waitForStreamSnapshot(
+		ctx,
+		stream,
+		cancel,
+		-1,
+	)
+	if err != nil {
+		return autoRunResult{label: label, kind: "error"}, snapshot{}, err
+	}
+	latest = snapshotWithFallback(latest, initial)
+	if wasCancelled {
+		return autoRunResult{label: label, kind: "cancelled"}, latest, nil
+	}
+
+	steps := 0
+	for steps < maxAutoMoveSteps {
+		if cancelled(cancel) {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		before, ok := findPlayer(latest.world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if landmarkReached(latest, landmarkID) {
+			return autoRunResult{label: label, kind: "arrived", steps: steps}, latest, nil
+		}
+		destination, ok := landmarkInView(latest, landmarkID)
+		if !ok || !destination.TravelAvailable {
+			return autoRunResult{label: label, kind: "blocked", steps: steps}, latest, nil
+		}
+		if err := c.actionOnly(ctx, action{
+			Tag:        "travelStep",
+			LandmarkID: landmarkID,
+		}); err != nil {
+			return autoRunResult{label: label, kind: "error", steps: steps}, snapshot{}, err
+		}
+		steps++
+		next, nextRevision, wasCancelled, err := waitForStreamSnapshot(
+			ctx,
+			stream,
+			cancel,
+			lastRevision,
+		)
+		if err != nil {
+			return autoRunResult{label: label, kind: "error", steps: steps}, snapshot{}, err
+		}
+		if wasCancelled {
+			return autoRunResult{label: label, kind: "cancelled", steps: steps}, latest, nil
+		}
+		lastRevision = nextRevision
+		latest = snapshotWithFallback(next, latest)
+		if hasNewInterruptingGameplayEvent(latest.gameplayEvents, baselineEventID) {
+			return autoRunResult{label: label, kind: "interesting", steps: steps}, latest, nil
+		}
+		after, ok := findPlayer(latest.world)
+		if !ok {
+			return autoRunResult{label: label, kind: "player-not-found", steps: steps}, latest, nil
+		}
+		if landmarkReached(latest, landmarkID) {
+			return autoRunResult{label: label, kind: "arrived", steps: steps}, latest, nil
+		}
+		if samePos(before.At, after.At) {
+			return autoRunResult{label: label, kind: "blocked", steps: steps}, latest, nil
+		}
+	}
+	return autoRunResult{label: label, kind: "too-far", steps: steps}, latest, nil
+}
+
+func snapshotWithFallback(next snapshot, previous snapshot) snapshot {
+	if next.world == nil {
+		next.world = previous.world
+	}
+	if next.inventory == nil {
+		next.inventory = previous.inventory
+	}
+	if next.roles == nil {
+		next.roles = previous.roles
+	}
+	if next.campground == nil {
+		next.campground = previous.campground
+	}
+	if next.gameplayEvents == nil {
+		next.gameplayEvents = previous.gameplayEvents
+	}
+	return next
+}
+
+func maxGameplayEventID(events []gameplayEvent) int {
+	maximum := 0
+	for _, event := range events {
+		maximum = max(maximum, event.ID)
+	}
+	return maximum
+}
+
+func maxInterruptingGameplayEventID(events []gameplayEvent) int {
+	maximum := 0
+	for _, event := range events {
+		if event.InterruptsTravel == nil || *event.InterruptsTravel {
+			maximum = max(maximum, event.ID)
+		}
+	}
+	return maximum
+}
+
+func hasNewInterruptingGameplayEvent(events []gameplayEvent, baselineEventID int) bool {
+	return maxInterruptingGameplayEventID(events) > baselineEventID
+}
+
+func landmarkInView(
+	snap snapshot,
+	landmarkID string,
+) (campgroundLandmark, bool) {
+	if snap.campground == nil {
+		return campgroundLandmark{}, false
+	}
+	for _, landmark := range snap.campground.DiscoveredLandmarks {
+		if landmark.ID == landmarkID {
+			return landmark, true
+		}
+	}
+	return campgroundLandmark{}, false
+}
+
+func landmarkReached(snap snapshot, landmarkID string) bool {
+	landmark, ok := landmarkInView(snap, landmarkID)
+	if !ok {
+		return false
+	}
+	player, ok := findPlayer(snap.world)
+	if ok && samePos(player.At, landmark.At) {
+		return true
+	}
+	return snap.campground != nil &&
+		!landmark.TravelAvailable &&
+		strings.TrimSpace(landmark.Address) != "" &&
+		snap.campground.CurrentAddress == landmark.Address
+}
+
+func landmarkTravelLabel(snap snapshot, landmarkID string) string {
+	landmark, ok := landmarkInView(snap, landmarkID)
+	if ok && strings.TrimSpace(landmark.Name) != "" {
+		return "travel to " + landmark.Name
+	}
+	return "landmark travel"
 }
 
 func straightTravelBatch(path []string, remainingSteps int) []string {
@@ -1948,7 +2559,14 @@ func (raw clientStateResponse) snapshot() (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	return snapshot{world: world, inventory: inventory, roles: raw.Roles, setup: normalizeSetup(raw.Setup)}, nil
+	return snapshot{
+		world:          world,
+		inventory:      inventory,
+		roles:          raw.Roles,
+		setup:          normalizeSetup(raw.Setup),
+		gameplayEvents: raw.GameplayEvents,
+		campground:     &raw.Campground,
+	}, nil
 }
 
 type openClientStateStreamResult struct {
@@ -2339,6 +2957,10 @@ func doorDirectionPrompt(kind string) string {
 	return label + " direction: hjkl/yubn, Esc cancel"
 }
 
+func talkDirectionPrompt() string {
+	return "Talk direction: hjkl/yubn, Esc cancel"
+}
+
 func quitWarningPrompt() string {
 	return "Really quit? This permanently ends the game; save exits without quitting. [yn]"
 }
@@ -2351,6 +2973,12 @@ func parseAction(input string) (action, bool) {
 	}
 	if input == "." {
 		return action{Tag: "noop"}, true
+	}
+	if input == ">" {
+		return action{Tag: "descend"}, true
+	}
+	if input == "<" {
+		return action{Tag: "ascend"}, true
 	}
 	return action{}, false
 }
@@ -2590,6 +3218,9 @@ func drawWorld(world []entity, target *pos) [][]tile {
 }
 
 func tileFor(item entity) tile {
+	if item.Tag == "flag" && item.Key == "campground-missing-flag" {
+		return tile{char: "f", color: lipgloss.Color("11"), bright: true}
+	}
 	switch item.Tag {
 	case "player":
 		return tile{char: "@", color: lipgloss.Color("15"), bright: true}
@@ -2638,6 +3269,8 @@ func tileFor(item entity) tile {
 		return tile{char: "┼", color: lipgloss.Color("11")}
 	case "tunnel":
 		return tile{char: "#", color: lipgloss.Color("15")}
+	case "mud":
+		return tile{char: ";", color: lipgloss.Color("3")}
 	case "floor":
 		return tile{char: "·", color: lipgloss.Color("8"), bright: true}
 	case "tent":
@@ -2648,6 +3281,41 @@ func tileFor(item entity) tile {
 		return tile{char: "Y", color: lipgloss.Color("9"), bright: true}
 	case "temple":
 		return tile{char: "Ω", color: lipgloss.Color("13"), bright: true}
+	case "stairs-down":
+		return tile{char: ">", color: lipgloss.Color("15"), bright: true}
+	case "stairs-up":
+		return tile{char: "<", color: lipgloss.Color("15"), bright: true}
+	case "camp-prop":
+		return campPropTile(item.Kind)
+	default:
+		return tile{char: "?", color: lipgloss.Color("9")}
+	}
+}
+
+func campPropTile(kind string) tile {
+	switch kind {
+	case "arrival-gate":
+		return tile{char: "G", color: lipgloss.Color("13"), bright: true}
+	case "artwork":
+		return tile{char: "A", color: lipgloss.Color("9"), bright: true}
+	case "flagpole":
+		return tile{char: "|", color: lipgloss.Color("11"), bright: true}
+	case "stage":
+		return tile{char: "=", color: lipgloss.Color("13"), bright: true}
+	case "workbench":
+		return tile{char: "W", color: lipgloss.Color("11"), bright: true}
+	case "bike-rack":
+		return tile{char: "B", color: lipgloss.Color("14"), bright: true}
+	case "directory":
+		return tile{char: "D", color: lipgloss.Color("14"), bright: true}
+	case "water-station":
+		return tile{char: "~", color: lipgloss.Color("14"), bright: true}
+	case "speaker":
+		return tile{char: "S", color: lipgloss.Color("13"), bright: true}
+	case "lantern":
+		return tile{char: "L", color: lipgloss.Color("11"), bright: true}
+	case "table":
+		return tile{char: "T", color: lipgloss.Color("15"), bright: true}
 	default:
 		return tile{char: "?", color: lipgloss.Color("9")}
 	}
@@ -2695,9 +3363,9 @@ func zIndex(item entity) int {
 	switch item.Tag {
 	case "tent":
 		return -1
-	case "floor", "tunnel":
+	case "floor", "tunnel", "mud":
 		return 0
-	case "wall", "door", "tent-wall", "tent-post", "sign", "effigy", "temple":
+	case "wall", "door", "tent-wall", "tent-post", "sign", "effigy", "temple", "stairs-down", "stairs-up", "camp-prop":
 		return 2
 	default:
 		if isCreature(item) {
@@ -2712,7 +3380,7 @@ func zIndex(item entity) int {
 
 func isTerrain(item entity) bool {
 	switch item.Tag {
-	case "wall", "door", "tent-wall", "tent-post", "floor", "tunnel", "tent", "sign", "effigy", "temple":
+	case "wall", "door", "tent-wall", "tent-post", "floor", "tunnel", "mud", "tent", "sign", "effigy", "temple", "stairs-down", "stairs-up", "camp-prop":
 		return true
 	default:
 		return false
@@ -2720,7 +3388,21 @@ func isTerrain(item entity) bool {
 }
 
 func isImpassableTerrain(item entity) bool {
+	if item.Tag == "camp-prop" {
+		return !isCampPropPassable(item.Kind)
+	}
 	return item.Tag == "wall" || item.Tag == "tent-wall" || item.Tag == "tent-post" || (item.Tag == "door" && !item.Open)
+}
+
+func isCampPropPassable(kind string) bool {
+	switch kind {
+	case "arrival-gate", "stage", "directory", "lantern":
+		return true
+	case "artwork", "flagpole", "workbench", "bike-rack", "water-station", "speaker", "table":
+		return false
+	default:
+		return false
+	}
 }
 
 func isPassableTerrain(item entity) bool {
@@ -2812,7 +3494,30 @@ func describeLookTarget(world []entity, target pos) string {
 	return fmt.Sprintf("Look %d,%d: %s", target.X, target.Y, strings.Join(descriptions, "; "))
 }
 
+func describeLookTargetWithCampground(
+	world []entity,
+	target pos,
+	campground campgroundView,
+) string {
+	description := describeLookTarget(world, target)
+	for _, landmark := range campground.DiscoveredLandmarks {
+		if samePos(landmark.At, target) {
+			return fmt.Sprintf(
+				"%s; landmark: %s (%s) — %s",
+				description,
+				landmark.Name,
+				landmark.Kind,
+				landmark.Address,
+			)
+		}
+	}
+	return description
+}
+
 func describeEntityForLook(item entity) string {
+	if item.Tag == "flag" && item.Key == "campground-missing-flag" {
+		return "dust-caked flag"
+	}
 	switch item.Tag {
 	case "player":
 		name := strings.TrimSpace(item.Name)
@@ -2842,6 +3547,8 @@ func describeEntityForLook(item entity) string {
 		return "dusty ground"
 	case "tunnel":
 		return "road"
+	case "mud":
+		return "mud puddle"
 	case "wall":
 		return "wall"
 	case "door":
@@ -2864,6 +3571,12 @@ func describeEntityForLook(item entity) string {
 		return "effigy"
 	case "temple":
 		return "temple"
+	case "stairs-down":
+		return "stairs down"
+	case "stairs-up":
+		return "stairs up"
+	case "camp-prop":
+		return campPropLookName(item.Kind)
 	case "cooler":
 		return "cooler"
 	case "beer":
@@ -2900,6 +3613,35 @@ func describeEntityForLook(item entity) string {
 		return "nails"
 	default:
 		return item.Tag
+	}
+}
+
+func campPropLookName(kind string) string {
+	switch kind {
+	case "arrival-gate":
+		return "arrival gate"
+	case "artwork":
+		return "artwork"
+	case "flagpole":
+		return "flagpole"
+	case "stage":
+		return "stage"
+	case "workbench":
+		return "workbench"
+	case "bike-rack":
+		return "bike rack"
+	case "directory":
+		return "directory"
+	case "water-station":
+		return "water station"
+	case "speaker":
+		return "speaker"
+	case "lantern":
+		return "lantern"
+	case "table":
+		return "table"
+	default:
+		return "camp prop"
 	}
 }
 
@@ -3103,6 +3845,60 @@ func cloneEntities(items []entity) []entity {
 	clone := make([]entity, len(items))
 	copy(clone, items)
 	return clone
+}
+
+const landmarkLetterAlphabet = "abcdefghijklmnopstuvwxyzABCDEFGHIJKLMNOPSTUVWXYZ"
+
+type letteredLandmark struct {
+	letter   string
+	landmark campgroundLandmark
+}
+
+func sortedCampgroundLandmarks(
+	landmarks []campgroundLandmark,
+) []campgroundLandmark {
+	sorted := append([]campgroundLandmark(nil), landmarks...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Name != sorted[j].Name {
+			return sorted[i].Name < sorted[j].Name
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+	return sorted
+}
+
+func letteredLandmarks(
+	landmarks []campgroundLandmark,
+) []letteredLandmark {
+	entries := make([]letteredLandmark, 0, len(landmarks))
+	letterIndex := 0
+	for _, landmark := range sortedCampgroundLandmarks(landmarks) {
+		letter := ""
+		if landmark.TravelAvailable && letterIndex < len(landmarkLetterAlphabet) {
+			letter = string(landmarkLetterAlphabet[letterIndex])
+			letterIndex++
+		}
+		entries = append(entries, letteredLandmark{
+			letter:   letter,
+			landmark: landmark,
+		})
+	}
+	return entries
+}
+
+func landmarkForLetter(
+	landmarks []campgroundLandmark,
+	input string,
+) (campgroundLandmark, bool) {
+	if len(input) != 1 {
+		return campgroundLandmark{}, false
+	}
+	for _, entry := range letteredLandmarks(landmarks) {
+		if entry.letter == input {
+			return entry.landmark, true
+		}
+	}
+	return campgroundLandmark{}, false
 }
 
 func isAlpha(input string) bool {

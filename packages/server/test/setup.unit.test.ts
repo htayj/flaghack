@@ -1,10 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
 import { EAction, GameState } from "@flaghack/domain/schemas"
 import { Effect, HashMap } from "effect"
+import {
+  CAMPGROUND_WAKE_UP_MESSAGE,
+  DEFAULT_CAMPGROUND_WEATHER
+} from "../src/campgroundState.js"
 import { player } from "../src/creatures.js"
 import { GameStateStore } from "../src/GameStateStore.js"
 import { makeWaterBottle } from "../src/items.js"
 import type { Entity } from "../src/world.js"
+import { campgroundWakeUpCoordinate } from "../src/world.js"
 
 const floorAt = (key: string, x: number, y: number): Entity => ({
   _tag: "floor",
@@ -32,6 +37,15 @@ const stateFromEntities = (
 const importGameloop = async () => await import("../src/gameloop.js")
 
 type SetupClientState = {
+  readonly campground: {
+    readonly weather?: { readonly condition: "heavy-rain" }
+  }
+  readonly gameplayEvents: ReadonlyArray<{
+    readonly id: number
+    readonly interruptsTravel?: boolean
+    readonly kind?: "arrival-narration"
+    readonly message: string
+  }>
   readonly inventory: HashMap.HashMap<string, Entity>
   readonly roles: ReadonlyArray<
     { readonly letter: string; readonly name: string }
@@ -88,6 +102,52 @@ describe("role setup", () => {
     expect(state.setup).toEqual({ phase: "selectRole" })
     expect(state.roles.map((role) => `${role.letter} - ${role.name}`))
       .toEqual(["v - virgin"])
+    expect(state.campground.weather).toEqual(DEFAULT_CAMPGROUND_WEATHER)
+    const actor = Array.from(HashMap.values(state.world)).find(
+      ({ _tag }) => _tag === "player"
+    )
+    const mud = Array.from(HashMap.values(state.world)).find((entity) =>
+      entity._tag === "mud"
+      && entity.at.x === campgroundWakeUpCoordinate.x
+      && entity.at.y === campgroundWakeUpCoordinate.y
+      && entity.at.z === 0
+    )
+    expect(actor?.at).toEqual({
+      ...campgroundWakeUpCoordinate,
+      z: 0
+    })
+    expect(mud).toBeDefined()
+  })
+
+  it("emits the wake-up narration exactly once after fresh setup", async () => {
+    const module = asSetupModule(await importGameloop())
+    const result = Effect.runSync(
+      Effect.gen(function*() {
+        yield* module.selectRoleForSetup("virgin")
+        yield* module.confirmSetup(true)
+        const first = yield* module.getClientState
+        const repeatedView = yield* module.getClientState
+        yield* module.confirmSetup(true)
+        const repeatedConfirmation = yield* module.getClientState
+        return { first, repeatedConfirmation, repeatedView }
+      }).pipe(Effect.provide(module.DefaultGameStateStoreLive))
+    )
+
+    const arrivalEvents = result.first.gameplayEvents.filter(({ kind }) =>
+      kind === "arrival-narration"
+    )
+    expect(arrivalEvents).toEqual([expect.objectContaining({
+      interruptsTravel: false,
+      kind: "arrival-narration",
+      message: CAMPGROUND_WAKE_UP_MESSAGE
+    })])
+    expect(HashMap.size(result.first.inventory)).toBe(0)
+    expect(result.repeatedView.gameplayEvents).toEqual(
+      result.first.gameplayEvents
+    )
+    expect(result.repeatedConfirmation.gameplayEvents).toEqual(
+      result.first.gameplayEvents
+    )
   })
 
   it("treats missing setup state as already complete for existing fixtures", async () => {

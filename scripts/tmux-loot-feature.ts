@@ -290,9 +290,10 @@ const isCreature = (entity: Entity): boolean =>
   || entity._tag === "acidcop" || entity._tag.endsWith("egregore")
 const isPassableTerrain = (entity: Entity): boolean =>
   entity.in === "world" && entity._tag !== "wall"
-  && ["floor", "tunnel", "tent", "sign", "effigy", "temple"].includes(
-    entity._tag
-  )
+  && ["floor", "tunnel", "tent", "sign", "effigy", "temple", "stairs-down"]
+    .includes(
+      entity._tag
+    )
 
 const findPath = (
   worldValues: ReadonlyArray<Entity>,

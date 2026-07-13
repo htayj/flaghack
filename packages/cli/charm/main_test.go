@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,11 +72,70 @@ func streamClientStateEvent(revision int, playerX int) string {
 	return fmt.Sprintf("id: %d\nevent: client-state\ndata: {\"revision\":%d,\"source\":\"action\",\"clientState\":{\"world\":[[\"floor-0\",{\"key\":\"floor-0\",\"_tag\":\"floor\",\"in\":\"world\",\"at\":{\"x\":0,\"y\":0,\"z\":0}}],[\"floor-1\",{\"key\":\"floor-1\",\"_tag\":\"floor\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}],[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":%d,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"}}}\n\n", revision, revision, playerX)
 }
 
+func landmarkClientStateJSON(playerX int, currentAddress string, eventID int, interruptsTravel ...bool) string {
+	addressField := ""
+	if currentAddress != "" {
+		addressField = fmt.Sprintf(`"currentAddress":%q,`, currentAddress)
+	}
+	events := "[]"
+	if eventID > 0 {
+		interruptField := ""
+		if len(interruptsTravel) > 0 {
+			interruptField = fmt.Sprintf(`,"interruptsTravel":%t`, interruptsTravel[0])
+		}
+		events = fmt.Sprintf(`[{"id":%d,"message":"A ranger calls for your attention."%s}]`, eventID, interruptField)
+	}
+	return fmt.Sprintf(`{
+		"world":[
+			["floor",{"key":"floor","_tag":"floor","in":"world","at":{"x":%d,"y":0,"z":0}}],
+			["player",{"key":"player","_tag":"player","in":"world","at":{"x":%d,"y":0,"z":0}}]
+		],
+		"inventory":[],
+		"roles":[],
+		"setup":{"phase":"complete"},
+		"gameplayEvents":%s,
+		"campground":{%s"discoveredLandmarks":[{
+			"id":"temple","name":"The Temple","kind":"temple",
+			"at":{"x":2,"y":0,"z":0},"address":"Temple Road","travelAvailable":true
+		}]}
+	}`, playerX, playerX, events, addressField)
+}
+
+func landmarkStreamEvent(revision int, playerX int, currentAddress string, eventID int, interruptsTravel ...bool) string {
+	var compact bytes.Buffer
+	if err := json.Compact(
+		&compact,
+		[]byte(landmarkClientStateJSON(playerX, currentAddress, eventID, interruptsTravel...)),
+	); err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(
+		"id: %d\nevent: client-state\ndata: {\"revision\":%d,\"source\":\"action\",\"clientState\":%s}\n\n",
+		revision,
+		revision,
+		compact.String(),
+	)
+}
+
+func initialLandmarkTravelSnapshot() snapshot {
+	campground := campgroundView{DiscoveredLandmarks: []campgroundLandmark{{
+		ID: "temple", Name: "The Temple", Kind: "temple",
+		At: pos{X: 2, Y: 0, Z: 0}, Address: "Temple Road", TravelAvailable: true,
+	}}}
+	return snapshot{
+		world: []entity{
+			{Key: "floor", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		},
+		campground: &campground,
+	}
+}
+
 func TestReadClientStateSSEParsesRevisionedSnapshots(t *testing.T) {
 	events := make(chan clientStateStreamResult, 1)
 	readClientStateSSE(
 		t.Context(),
-		strings.NewReader("id: 1\nevent: client-state\ndata: {\"revision\":1,\"source\":\"action\",\"clientState\":{\"world\":[[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"}}}\n\n"),
+		strings.NewReader("id: 1\nevent: client-state\ndata: {\"revision\":1,\"source\":\"action\",\"clientState\":{\"world\":[[\"player\",{\"key\":\"player\",\"_tag\":\"player\",\"in\":\"world\",\"at\":{\"x\":1,\"y\":0,\"z\":0}}]],\"inventory\":[],\"roles\":[],\"setup\":{\"phase\":\"complete\"},\"gameplayEvents\":[{\"id\":7,\"message\":\"You hear distant laughter.\",\"interruptsTravel\":false}]}}\n\n"),
 		events,
 	)
 	result, ok := <-events
@@ -93,6 +154,140 @@ func TestReadClientStateSSEParsesRevisionedSnapshots(t *testing.T) {
 	}
 	if len(snap.world) != 1 || snap.world[0].Key != "player" {
 		t.Fatalf("snapshot world = %#v", snap.world)
+	}
+	if len(snap.gameplayEvents) != 1 || snap.gameplayEvents[0].ID != 7 || snap.gameplayEvents[0].Message != "You hear distant laughter." {
+		t.Fatalf("snapshot gameplay events = %#v", snap.gameplayEvents)
+	}
+	if snap.gameplayEvents[0].InterruptsTravel == nil || *snap.gameplayEvents[0].InterruptsTravel {
+		t.Fatalf("snapshot ambient event lost explicit noninterrupting flag: %#v", snap.gameplayEvents)
+	}
+}
+
+func TestApplySnapshotAddsGameplayEventsOnlyOnce(t *testing.T) {
+	ambient := false
+	m := newModel()
+	firstSnapshot := snapshot{gameplayEvents: []gameplayEvent{
+		{ID: 1, Message: "You hear hippies grumbling in the tunnels.", InterruptsTravel: &ambient},
+		{ID: 2, Message: "The hippie asks about a missing flag."},
+	}}
+
+	m.applySnapshot(firstSnapshot)
+	m.applySnapshot(firstSnapshot)
+	m.applySnapshot(snapshot{gameplayEvents: []gameplayEvent{
+		{ID: 1, Message: "You hear hippies grumbling in the tunnels."},
+		{ID: 2, Message: "The hippie asks about a missing flag."},
+		{ID: 3, Message: "You hear hippies laughing somewhere in the tunnels."},
+	}})
+
+	want := []string{
+		"You hear hippies laughing somewhere in the tunnels.",
+		"The hippie asks about a missing flag.",
+		"You hear hippies grumbling in the tunnels.",
+	}
+	if len(m.messages) != len(want) {
+		t.Fatalf("messages = %#v, want %#v", m.messages, want)
+	}
+	for index := range want {
+		if m.messages[index] != want[index] {
+			t.Fatalf("messages = %#v, want %#v", m.messages, want)
+		}
+	}
+	if m.lastGameplayEventID != 3 {
+		t.Fatalf("last gameplay event ID = %d, want 3", m.lastGameplayEventID)
+	}
+}
+
+func TestGameplayEventTravelInterruptionUsesPresenceSemantics(t *testing.T) {
+	interrupts := true
+	doesNotInterrupt := false
+	tests := []struct {
+		name     string
+		events   []gameplayEvent
+		baseline int
+		want     bool
+	}{
+		{
+			name:     "newer explicit false remains ambient",
+			events:   []gameplayEvent{{ID: 8, Message: "distant laughter", InterruptsTravel: &doesNotInterrupt}},
+			baseline: 7,
+		},
+		{
+			name:     "newer omitted flag preserves legacy interruption",
+			events:   []gameplayEvent{{ID: 8, Message: "a ranger calls"}},
+			baseline: 7,
+			want:     true,
+		},
+		{
+			name:     "newer explicit true interrupts",
+			events:   []gameplayEvent{{ID: 8, Message: "a ranger calls", InterruptsTravel: &interrupts}},
+			baseline: 7,
+			want:     true,
+		},
+		{
+			name:     "interrupting event at baseline is not new",
+			events:   []gameplayEvent{{ID: 7, Message: "already seen"}},
+			baseline: 7,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasNewInterruptingGameplayEvent(test.events, test.baseline); got != test.want {
+				t.Fatalf("hasNewInterruptingGameplayEvent() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestClientStateSnapshotDecodesAndStoresCampgroundView(t *testing.T) {
+	var raw clientStateResponse
+	err := json.Unmarshal([]byte(`{
+		"world":[],
+		"inventory":[],
+		"roles":[],
+		"setup":{"phase":"complete"},
+		"gameplayEvents":[],
+		"campground":{
+			"currentAddress":"N-1, Lantern Road",
+			"weather":{"condition":"heavy-rain"},
+			"discoveredLandmarks":[{
+				"id":"arrival-plaza",
+				"name":"Arrival Plaza",
+				"kind":"civic",
+				"at":{"x":96,"y":120,"z":0},
+				"address":"Gate and Main Road",
+				"travelAvailable":true
+			}],
+			"activeEvent":{
+				"kind":"meal",
+				"name":"Pancake Breakfast",
+				"landmarkId":"dusty-spoon",
+				"hostCampId":"dusty-spoon",
+				"endTurn":80
+			}
+		}
+	}`), &raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := raw.snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.campground == nil || len(snap.campground.DiscoveredLandmarks) != 1 {
+		t.Fatalf("snapshot campground = %#v", snap.campground)
+	}
+
+	m := newModel()
+	m.applySnapshot(snap)
+	if m.campground.CurrentAddress != "N-1, Lantern Road" {
+		t.Fatalf("model campground = %#v", m.campground)
+	}
+	if m.campground.ActiveEvent == nil || m.campground.ActiveEvent.Name != "Pancake Breakfast" {
+		t.Fatalf("model active event = %#v", m.campground.ActiveEvent)
+	}
+	if m.campground.Weather == nil || m.campground.Weather.Condition != "heavy-rain" {
+		t.Fatalf("model campground weather = %#v", m.campground.Weather)
 	}
 }
 
@@ -240,6 +435,219 @@ func TestActionAndRefreshUsesClientStateForMovement(t *testing.T) {
 	}
 }
 
+func TestLandmarkTravelPollingRepeatsAuthoritativeStepsAndStops(t *testing.T) {
+	t.Run("arrival", func(t *testing.T) {
+		actRequests := 0
+		clientStateRequests := 0
+		payloads := []string{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/act":
+				actRequests++
+				body := new(strings.Builder)
+				_, _ = io.Copy(body, r.Body)
+				payloads = append(payloads, body.String())
+				w.WriteHeader(http.StatusOK)
+			case "/client-state":
+				clientStateRequests++
+				address := ""
+				if actRequests >= 2 {
+					address = "Temple Road"
+				}
+				_, _ = w.Write([]byte(landmarkClientStateJSON(min(actRequests, 2), address, 0)))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+		result, snap, err := client.runLandmarkTravelPolling(
+			t.Context(), initialLandmarkTravelSnapshot(), "temple", 0, make(chan struct{}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.kind != "arrived" || result.steps != 2 {
+			t.Fatalf("landmark travel result = %#v, want arrival after two steps", result)
+		}
+		if actRequests != 2 || clientStateRequests != 2 {
+			t.Fatalf("requests act/client-state = %d/%d, want 2/2", actRequests, clientStateRequests)
+		}
+		for _, payload := range payloads {
+			if !strings.Contains(payload, `"_tag":"travelStep"`) || !strings.Contains(payload, `"landmarkId":"temple"`) {
+				t.Fatalf("travel step payload = %q", payload)
+			}
+		}
+		player, ok := findPlayer(snap.world)
+		if !ok || player.At.X != 2 {
+			t.Fatalf("arrived player = %#v, %v", player, ok)
+		}
+	})
+
+	t.Run("important event", func(t *testing.T) {
+		actRequests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/act":
+				actRequests++
+				w.WriteHeader(http.StatusOK)
+			case "/client-state":
+				_, _ = w.Write([]byte(landmarkClientStateJSON(1, "", 8)))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+		result, snap, err := client.runLandmarkTravelPolling(
+			t.Context(), initialLandmarkTravelSnapshot(), "temple", 7, make(chan struct{}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.kind != "interesting" || result.steps != 1 || actRequests != 1 {
+			t.Fatalf("event-interrupted landmark travel = %#v requests=%d", result, actRequests)
+		}
+		if maxGameplayEventID(snap.gameplayEvents) != 8 {
+			t.Fatalf("interruption snapshot events = %#v", snap.gameplayEvents)
+		}
+	})
+
+	t.Run("ambient event", func(t *testing.T) {
+		actRequests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/act":
+				actRequests++
+				w.WriteHeader(http.StatusOK)
+			case "/client-state":
+				address := ""
+				if actRequests >= 2 {
+					address = "Temple Road"
+				}
+				_, _ = w.Write([]byte(landmarkClientStateJSON(min(actRequests, 2), address, 8, false)))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+		result, snap, err := client.runLandmarkTravelPolling(
+			t.Context(), initialLandmarkTravelSnapshot(), "temple", 7, make(chan struct{}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.kind != "arrived" || result.steps != 2 || actRequests != 2 {
+			t.Fatalf("ambient-event landmark travel = %#v requests=%d", result, actRequests)
+		}
+		if maxGameplayEventID(snap.gameplayEvents) != 8 || hasNewInterruptingGameplayEvent(snap.gameplayEvents, 7) {
+			t.Fatalf("ambient event not preserved as visible/noninterrupting: %#v", snap.gameplayEvents)
+		}
+	})
+}
+
+func TestLandmarkTravelUsesSSEAndFallsBackBeforeFirstStep(t *testing.T) {
+	t.Run("SSE", func(t *testing.T) {
+		positions := make(chan int, 2)
+		actRequests := 0
+		streamRequests := 0
+		clientStateRequests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/act":
+				actRequests++
+				positions <- actRequests
+				w.WriteHeader(http.StatusOK)
+			case "/client-state/stream":
+				streamRequests++
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher := w.(http.Flusher)
+				_, _ = w.Write([]byte(landmarkStreamEvent(0, 0, "", 0)))
+				flusher.Flush()
+				for revision := 1; revision <= 2; revision++ {
+					select {
+					case x := <-positions:
+						address := ""
+						if x == 2 {
+							address = "Temple Road"
+						}
+						_, _ = w.Write([]byte(landmarkStreamEvent(revision, x, address, 8, false)))
+						flusher.Flush()
+					case <-r.Context().Done():
+						return
+					}
+				}
+			case "/client-state":
+				clientStateRequests++
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+		result, snap, err := client.runLandmarkTravel(
+			t.Context(), initialLandmarkTravelSnapshot(), "temple", 0, make(chan struct{}), true,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.kind != "arrived" || result.steps != 2 {
+			t.Fatalf("streamed landmark result = %#v", result)
+		}
+		if maxGameplayEventID(snap.gameplayEvents) != 8 || hasNewInterruptingGameplayEvent(snap.gameplayEvents, 0) {
+			t.Fatalf("streamed ambient event not preserved as visible/noninterrupting: %#v", snap.gameplayEvents)
+		}
+		if actRequests != 2 || streamRequests != 1 || clientStateRequests != 0 {
+			t.Fatalf("requests act/stream/client-state = %d/%d/%d", actRequests, streamRequests, clientStateRequests)
+		}
+	})
+
+	t.Run("HTTP fallback", func(t *testing.T) {
+		actRequests := 0
+		streamRequests := 0
+		clientStateRequests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/client-state/stream":
+				streamRequests++
+				http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+			case "/act":
+				actRequests++
+				w.WriteHeader(http.StatusOK)
+			case "/client-state":
+				clientStateRequests++
+				address := ""
+				if actRequests >= 2 {
+					address = "Temple Road"
+				}
+				_, _ = w.Write([]byte(landmarkClientStateJSON(min(actRequests, 2), address, 0)))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+		result, _, err := client.runLandmarkTravel(
+			t.Context(), initialLandmarkTravelSnapshot(), "temple", 0, make(chan struct{}), true,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.kind != "arrived" || result.steps != 2 {
+			t.Fatalf("fallback landmark result = %#v", result)
+		}
+		if streamRequests != 1 || actRequests != 2 || clientStateRequests != 2 {
+			t.Fatalf("fallback requests stream/act/client-state = %d/%d/%d", streamRequests, actRequests, clientStateRequests)
+		}
+	})
+}
+
 func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testing.T) {
 	playerX := 0
 	actRequests := 0
@@ -285,6 +693,66 @@ func TestRunTravelBatchesStraightMovesAndDetectsBlockedTravelAtRefresh(t *testin
 	}
 	if len(snap.inventory) != 1 || snap.inventory[0].Key != "water-1" {
 		t.Fatalf("final inventory = %#v, want client-state inventory", snap.inventory)
+	}
+}
+
+func TestCoordinateTravelOnlyStopsForNewInterruptingEvents(t *testing.T) {
+	tests := []struct {
+		name             string
+		interruptsTravel []bool
+		wantKind         string
+	}{
+		{
+			name:             "explicit false remains ambient",
+			interruptsTravel: []bool{false},
+			wantKind:         "arrived",
+		},
+		{
+			name:     "omitted flag interrupts for legacy events",
+			wantKind: "interesting",
+		},
+		{
+			name:             "explicit true interrupts",
+			interruptsTravel: []bool{true},
+			wantKind:         "interesting",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actRequests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/act":
+					actRequests++
+					w.WriteHeader(http.StatusOK)
+				case "/client-state":
+					_, _ = w.Write([]byte(landmarkClientStateJSON(1, "", 8, test.interruptsTravel...)))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			initialWorld := []entity{
+				{Key: "floor-0", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+				{Key: "floor-1", Tag: "floor", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+				{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			}
+			client := apiClient{baseURL: server.URL, http: server.Client(), perf: &perfRecorder{source: "charm"}}
+			result, snap, err := client.runTravelUnmeasuredFromBaseline(
+				t.Context(), initialWorld, pos{X: 1, Y: 0, Z: 0}, 7, make(chan struct{}),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.kind != test.wantKind || result.steps != 1 || actRequests != 1 {
+				t.Fatalf("coordinate travel = %#v requests=%d, want kind %q after one step", result, actRequests, test.wantKind)
+			}
+			if maxGameplayEventID(snap.gameplayEvents) != 8 {
+				t.Fatalf("coordinate travel dropped gameplay event: %#v", snap.gameplayEvents)
+			}
+		})
 	}
 }
 
@@ -530,6 +998,43 @@ func TestDoorDirectionPromptDispatchesOpenAndCloseActions(t *testing.T) {
 	}
 }
 
+func TestTalkDirectionPromptDispatchesDirectionalAction(t *testing.T) {
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = []entity{{
+		Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0},
+	}}
+
+	next, cmd := m.handleKey(charmRuneKey('t'))
+	if cmd != nil {
+		t.Fatalf("talk key returned command %#v, want prompt", cmd)
+	}
+	m = next.(model)
+	if !m.pendingTalk || !strings.Contains(m.messages[0], "Talk direction") {
+		t.Fatalf("talk prompt state = %v messages=%#v", m.pendingTalk, m.messages)
+	}
+
+	next, cmd = m.handleKey(charmRuneKey('u'))
+	if cmd == nil {
+		t.Fatal("talk direction should dispatch an action")
+	}
+	m = next.(model)
+	if m.pendingTalk {
+		t.Fatal("talk direction should clear prompt")
+	}
+
+	next, _ = m.handleKey(charmRuneKey('t'))
+	m = next.(model)
+	next, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("talk escape returned command %#v, want nil", cmd)
+	}
+	m = next.(model)
+	if m.pendingTalk || !strings.Contains(m.messages[0], "canceled talk") {
+		t.Fatalf("talk cancel state = %v messages=%#v", m.pendingTalk, m.messages)
+	}
+}
+
 func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	encoded, err := json.Marshal(actionPayload{Action: action{Tag: "move", Dir: "E"}})
 	if err != nil {
@@ -538,6 +1043,42 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	want := `{"action":{"_tag":"move","dir":"E"}}`
 	if string(encoded) != want {
 		t.Fatalf("encoded action = %s, want %s", encoded, want)
+	}
+
+	descend, err := json.Marshal(actionPayload{Action: action{Tag: "descend"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDescend := `{"action":{"_tag":"descend"}}`
+	if string(descend) != wantDescend {
+		t.Fatalf("encoded descend = %s, want %s", descend, wantDescend)
+	}
+
+	ascend, err := json.Marshal(actionPayload{Action: action{Tag: "ascend"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAscend := `{"action":{"_tag":"ascend"}}`
+	if string(ascend) != wantAscend {
+		t.Fatalf("encoded ascend = %s, want %s", ascend, wantAscend)
+	}
+
+	talk, err := json.Marshal(actionPayload{Action: action{Tag: "talk", Dir: "NW"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTalk := `{"action":{"_tag":"talk","dir":"NW"}}`
+	if string(talk) != wantTalk {
+		t.Fatalf("encoded talk = %s, want %s", talk, wantTalk)
+	}
+
+	travelStep, err := json.Marshal(actionPayload{Action: action{Tag: "travelStep", LandmarkID: "central-effigy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTravelStep := `{"action":{"_tag":"travelStep","landmarkId":"central-effigy"}}`
+	if string(travelStep) != wantTravelStep {
+		t.Fatalf("encoded travel step = %s, want %s", travelStep, wantTravelStep)
 	}
 
 	emptyPickup, err := json.Marshal(actionPayload{Action: action{Tag: "pickupMulti", Keys: []string{}}})
@@ -595,6 +1136,43 @@ func TestActionPayloadJSONMatchesEffectAPI(t *testing.T) {
 	}
 }
 
+func TestParseActionMapsGreaterThanToDescend(t *testing.T) {
+	got, ok := parseAction(">")
+	if !ok || got.Tag != "descend" || got.Dir != "" || len(got.Keys) != 0 {
+		t.Fatalf("parseAction(>) = %#v, %v; want descend", got, ok)
+	}
+}
+
+func TestParseActionMapsLessThanToAscend(t *testing.T) {
+	got, ok := parseAction("<")
+	if !ok || got.Tag != "ascend" || got.Dir != "" || len(got.Keys) != 0 {
+		t.Fatalf("parseAction(<) = %#v, %v; want ascend", got, ok)
+	}
+}
+
+type campPropTestCase struct {
+	kind     string
+	char     string
+	look     string
+	passable bool
+}
+
+func campPropTestCases() []campPropTestCase {
+	return []campPropTestCase{
+		{kind: "arrival-gate", char: "G", look: "arrival gate", passable: true},
+		{kind: "artwork", char: "A", look: "artwork", passable: false},
+		{kind: "flagpole", char: "|", look: "flagpole", passable: false},
+		{kind: "stage", char: "=", look: "stage", passable: true},
+		{kind: "workbench", char: "W", look: "workbench", passable: false},
+		{kind: "bike-rack", char: "B", look: "bike rack", passable: false},
+		{kind: "directory", char: "D", look: "directory", passable: true},
+		{kind: "water-station", char: "~", look: "water station", passable: false},
+		{kind: "speaker", char: "S", look: "speaker", passable: false},
+		{kind: "lantern", char: "L", look: "lantern", passable: true},
+		{kind: "table", char: "T", look: "table", passable: false},
+	}
+}
+
 func TestTileForCampgroundMarkers(t *testing.T) {
 	tests := []struct {
 		tag     string
@@ -602,12 +1180,15 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 		variant string
 	}{
 		{tag: "tent", char: "^"},
+		{tag: "mud", char: ";"},
 		{tag: "tent-wall", char: "│", variant: "vertical"},
 		{tag: "tent-post", char: "┼"},
 		{tag: "door", char: "│", variant: "vertical"},
 		{tag: "sign", char: "?"},
 		{tag: "effigy", char: "Y"},
 		{tag: "temple", char: "Ω"},
+		{tag: "stairs-down", char: ">"},
+		{tag: "stairs-up", char: "<"},
 		{tag: "cooler", char: "C"},
 		{tag: "beer", char: "!"},
 		{tag: "hotdog", char: "%"},
@@ -619,6 +1200,115 @@ func TestTileForCampgroundMarkers(t *testing.T) {
 		got := tileFor(entity{Tag: tc.tag, Variant: tc.variant})
 		if got.char != tc.char {
 			t.Fatalf("tileFor(%s) char = %q, want %q", tc.tag, got.char, tc.char)
+		}
+	}
+
+	seenPropGlyphs := map[string]string{}
+	for _, tc := range campPropTestCases() {
+		got := tileFor(entity{Tag: "camp-prop", Kind: tc.kind})
+		if got.char != tc.char {
+			t.Fatalf("tileFor(camp-prop/%s) char = %q, want %q", tc.kind, got.char, tc.char)
+		}
+		if len(got.char) != 1 {
+			t.Fatalf("camp-prop/%s glyph %q occupies more than one ASCII cell", tc.kind, got.char)
+		}
+		if previous, exists := seenPropGlyphs[got.char]; exists {
+			t.Fatalf("camp-prop/%s reuses glyph %q from %s", tc.kind, got.char, previous)
+		}
+		seenPropGlyphs[got.char] = tc.kind
+	}
+}
+
+func TestMudIsVisiblePassableTerrainWithLookDescription(t *testing.T) {
+	mud := entity{Key: "mud", Tag: "mud", In: "world", At: pos{X: 2, Y: 3, Z: 0}}
+	if got := tileFor(mud).char; got != ";" {
+		t.Fatalf("mud glyph = %q, want semicolon", got)
+	}
+	if !isPassableTerrain(mud) {
+		t.Fatal("mud should be passable terrain")
+	}
+	if got := describeEntityForLook(mud); got != "mud puddle" {
+		t.Fatalf("mud look text = %q, want mud puddle", got)
+	}
+}
+
+func TestCampPropTerrainPassabilityIsExplicitPerKind(t *testing.T) {
+	var decoded entity
+	if err := json.Unmarshal([]byte(`{"key":"prop-1","at":{"x":2,"y":3,"z":0},"in":"world","_tag":"camp-prop","kind":"bike-rack"}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Tag != "camp-prop" || decoded.Kind != "bike-rack" {
+		t.Fatalf("decoded camp prop = %#v, want bike-rack kind", decoded)
+	}
+
+	for _, tc := range campPropTestCases() {
+		prop := entity{Tag: "camp-prop", Kind: tc.kind}
+		if !isTerrain(prop) {
+			t.Fatalf("camp-prop/%s should be terrain", tc.kind)
+		}
+		if got := isCampPropPassable(tc.kind); got != tc.passable {
+			t.Fatalf("isCampPropPassable(%s) = %v, want %v", tc.kind, got, tc.passable)
+		}
+		if got := isPassableTerrain(prop); got != tc.passable {
+			t.Fatalf("isPassableTerrain(camp-prop/%s) = %v, want %v", tc.kind, got, tc.passable)
+		}
+	}
+	if isCampPropPassable("unknown") {
+		t.Fatal("unknown camp prop kinds should fail closed")
+	}
+}
+
+func TestCampPropLayeringAndLookNames(t *testing.T) {
+	floor := entity{Key: "floor", Tag: "floor", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	item := entity{Key: "beer", Tag: "beer", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+	player := entity{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+
+	for _, tc := range campPropTestCases() {
+		prop := entity{Key: "prop", Tag: "camp-prop", Kind: tc.kind, In: "world", At: pos{X: 1, Y: 2, Z: 0}}
+		if got := drawWorld([]entity{floor, prop}, nil)[2][1].char; got != tc.char {
+			t.Fatalf("camp-prop/%s should layer over floor: got %q, want %q", tc.kind, got, tc.char)
+		}
+		if got := drawWorld([]entity{prop, item}, nil)[2][1].char; got != "!" {
+			t.Fatalf("item should layer over camp-prop/%s, got %q", tc.kind, got)
+		}
+		if got := drawWorld([]entity{prop, player}, nil)[2][1].char; got != "@" {
+			t.Fatalf("player should layer over camp-prop/%s, got %q", tc.kind, got)
+		}
+		if got := describeEntityForLook(prop); got != tc.look {
+			t.Fatalf("look name for camp-prop/%s = %q, want %q", tc.kind, got, tc.look)
+		}
+	}
+}
+
+func TestCampgroundFlagUsesCrypticColorIndependentRendering(t *testing.T) {
+	campgroundFlag := entity{
+		Key: "campground-missing-flag",
+		Tag: "flag",
+		In:  "world",
+		At:  pos{X: 1, Y: 1, Z: 0},
+	}
+	ordinaryFlag := entity{
+		Key: "ordinary-flag",
+		Tag: "flag",
+		In:  "world",
+		At:  pos{X: 2, Y: 1, Z: 0},
+	}
+
+	if got := tileFor(campgroundFlag).char; got != "f" {
+		t.Fatalf("campground flag glyph = %q, want lowercase f", got)
+	}
+	if got := describeEntityForLook(campgroundFlag); got != "dust-caked flag" {
+		t.Fatalf("campground flag look text = %q, want cryptic description", got)
+	}
+	if got := tileFor(ordinaryFlag).char; got != "F" {
+		t.Fatalf("ordinary flag glyph = %q, want uppercase F", got)
+	}
+	if got := describeEntityForLook(ordinaryFlag); got != "flag" {
+		t.Fatalf("ordinary flag look text = %q, want flag", got)
+	}
+	for _, forbidden := range []string{"special", "quest", "missing"} {
+		if strings.Contains(describeEntityForLook(campgroundFlag), forbidden) {
+			t.Fatalf("campground flag description exposes %q", forbidden)
 		}
 	}
 }
@@ -793,10 +1483,12 @@ func TestFindTravelDirectionsUsesCampgroundMarkerPassability(t *testing.T) {
 		{Key: "tent-2", Tag: "tent", In: "world", At: pos{X: 2, Y: 0, Z: 0}},
 		{Key: "effigy-3", Tag: "effigy", In: "world", At: pos{X: 3, Y: 0, Z: 0}},
 		{Key: "temple-4", Tag: "temple", In: "world", At: pos{X: 4, Y: 0, Z: 0}},
+		{Key: "stairs-down-5", Tag: "stairs-down", In: "world", At: pos{X: 5, Y: 0, Z: 0}},
+		{Key: "stairs-up-6", Tag: "stairs-up", In: "world", At: pos{X: 6, Y: 0, Z: 0}},
 	}
-	path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 4, Y: 0, Z: 0})
-	if len(path) != 4 || path[0] != "E" || path[1] != "E" || path[2] != "E" || path[3] != "E" {
-		t.Fatalf("path = %#v, want [E E E E]", path)
+	path := findTravelDirections(world, pos{X: 0, Y: 0, Z: 0}, pos{X: 6, Y: 0, Z: 0})
+	if len(path) != 6 || path[0] != "E" || path[1] != "E" || path[2] != "E" || path[3] != "E" || path[4] != "E" || path[5] != "E" {
+		t.Fatalf("path = %#v, want [E E E E E E]", path)
 	}
 }
 
@@ -806,6 +1498,8 @@ func TestDescribeLookTargetListsCoordinatesAndVisibleContents(t *testing.T) {
 		{Key: "tent-wall-1", Tag: "tent-wall", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Variant: "vertical"},
 		{Key: "tent-post-1", Tag: "tent-post", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 		{Key: "sign-1", Tag: "sign", In: "world", At: pos{X: 1, Y: 0, Z: 0}, Name: "Camp Type Safety"},
+		{Key: "stairs-down-1", Tag: "stairs-down", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
+		{Key: "stairs-up-1", Tag: "stairs-up", In: "world", At: pos{X: 1, Y: 0, Z: 0}},
 		{Key: "beer-1", Tag: "beer", In: "cooler-1", At: pos{X: 0, Y: 0, Z: 0}},
 	}
 
@@ -813,7 +1507,7 @@ func TestDescribeLookTargetListsCoordinatesAndVisibleContents(t *testing.T) {
 	if !strings.Contains(got, "Look 1,0:") {
 		t.Fatalf("look description missing coordinates: %q", got)
 	}
-	if !strings.Contains(got, "sign: Camp Type Safety") || !strings.Contains(got, "dusty ground") || !strings.Contains(got, "tent-wall") || !strings.Contains(got, "tent-post") {
+	if !strings.Contains(got, "sign: Camp Type Safety") || !strings.Contains(got, "dusty ground") || !strings.Contains(got, "tent-wall") || !strings.Contains(got, "tent-post") || !strings.Contains(got, "stairs down") || !strings.Contains(got, "stairs up") {
 		t.Fatalf("look description missing visible tile contents: %q", got)
 	}
 	if strings.Contains(got, "beer") {
@@ -1272,6 +1966,146 @@ func TestRenderStatusLabelsCampgroundAsBurn(t *testing.T) {
 	}
 }
 
+func TestRenderStatusLabelsFirstDungeonAsLevelOne(t *testing.T) {
+	status := renderStatus([]entity{{Key: "player", Tag: "player", In: "world", At: pos{X: 1, Y: 1, Z: 1}, Name: "Ada"}})
+	if !strings.Contains(status, "Dlvl:1") {
+		t.Fatalf("first dungeon status missing level one label: %q", status)
+	}
+	if strings.Contains(status, "Dlvl:2") {
+		t.Fatalf("first dungeon should not be rendered as level two: %q", status)
+	}
+}
+
+func TestCampgroundOverviewStatusLookAndHelpUseServerProjection(t *testing.T) {
+	campground := campgroundView{
+		CurrentAddress: "N-1, Lantern Road",
+		Weather:        &campgroundWeather{Condition: "heavy-rain"},
+		DiscoveredLandmarks: []campgroundLandmark{
+			{
+				ID: "arrival-plaza", Name: "Arrival Plaza", Kind: "civic",
+				At: pos{X: 96, Y: 120, Z: 0}, Address: "Gate and Main Road",
+				TravelAvailable: true,
+			},
+			{
+				ID: "temple", Name: "The Temple", Kind: "temple",
+				At: pos{X: 270, Y: 44, Z: 0}, Address: "Far end of Temple Road",
+			},
+		},
+		ActiveEvent: &campgroundActiveEvent{
+			Kind: "meal", Name: "Pancake Breakfast", LandmarkID: "dusty-spoon",
+		},
+	}
+	overview := renderCampgroundOverview(campground)
+	for _, expected := range []string{
+		"Current address: N-1, Lantern Road",
+		"Weather: heavy rain",
+		"Arrival Plaza",
+		"Far end of Temple Road",
+		"Active event: Pancake Breakfast",
+		"G gate",
+	} {
+		if !strings.Contains(overview, expected) {
+			t.Fatalf("overview missing %q: %q", expected, overview)
+		}
+	}
+
+	world := []entity{
+		{Key: "floor", Tag: "floor", In: "world", At: pos{X: 96, Y: 120, Z: 0}},
+		{Key: "player", Tag: "player", In: "world", At: pos{X: 96, Y: 120, Z: 0}},
+	}
+	status := renderStatus(world, campground)
+	if !strings.Contains(status, "Address: N-1, Lantern Road") {
+		t.Fatalf("status missing projected campground text: %q", status)
+	}
+	if !strings.Contains(status, "Weather: heavy rain") {
+		t.Fatalf("status missing projected weather: %q", status)
+	}
+	look := describeLookTargetWithCampground(world, pos{X: 96, Y: 120, Z: 0}, campground)
+	if !strings.Contains(look, "landmark: Arrival Plaza (civic) — Gate and Main Road") {
+		t.Fatalf("look missing projected landmark identity: %q", look)
+	}
+	lookPanel := renderLookPanel(world, pos{X: 96, Y: 120, Z: 0}, campground)
+	if !strings.Contains(lookPanel, "Address: N-1, Lantern Road") {
+		t.Fatalf("look panel missing projected address: %q", lookPanel)
+	}
+	if strings.Contains(overview+status+lookPanel, "Objective:") {
+		t.Fatalf("campground UI must not expose a quest tracker: %q", overview+status+lookPanel)
+	}
+
+	m := newModel()
+	m.setup = setupState{Phase: "complete"}
+	m.world = world
+	m.campground = campground
+	next, cmd := m.handleKey(charmRuneKey('O'))
+	if cmd != nil {
+		t.Fatalf("overview key returned command %#v", cmd)
+	}
+	m = next.(model)
+	view := m.View()
+	if !m.overviewOpen || !strings.Contains(view, "Campground overview") || !strings.Contains(view, "t talk") || !strings.Contains(view, "_ landmark/map travel") {
+		t.Fatalf("overview/help missing from view: %q", view)
+	}
+}
+
+func TestLandmarkTravelPopupOffersDestinationsAndMapCursor(t *testing.T) {
+	newTravelModel := func() model {
+		m := newModel()
+		m.setup = setupState{Phase: "complete"}
+		m.world = []entity{
+			{Key: "floor", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+			{Key: "player", Tag: "player", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
+		}
+		m.campground = campgroundView{DiscoveredLandmarks: []campgroundLandmark{
+			{ID: "temple", Name: "The Temple", Kind: "temple", At: pos{X: 10, Y: 0, Z: 0}, Address: "Temple Road", TravelAvailable: true},
+			{ID: "effigy", Name: "The Effigy", Kind: "effigy", At: pos{X: 5, Y: 0, Z: 0}, Address: "Center", TravelAvailable: false},
+		}}
+		return m
+	}
+
+	m := newTravelModel()
+	next, cmd := m.handleKey(charmRuneKey('_'))
+	if cmd != nil {
+		t.Fatalf("travel menu key returned command %#v", cmd)
+	}
+	m = next.(model)
+	if m.landmarkPopup == nil {
+		t.Fatal("travel menu did not open")
+	}
+	popup := renderLandmarkPopup(*m.landmarkPopup)
+	if !strings.Contains(popup, "* - map cursor") || !strings.Contains(popup, "The Temple") || !strings.Contains(popup, "The Effigy") || !strings.Contains(popup, "(unavailable)") {
+		t.Fatalf("landmark popup missing options: %q", popup)
+	}
+	next, cmd = m.handleKey(charmRuneKey('*'))
+	if cmd != nil {
+		t.Fatalf("map cursor choice returned command %#v", cmd)
+	}
+	m = next.(model)
+	if m.landmarkPopup != nil || m.travelTarget == nil || *m.travelTarget != (pos{X: 0, Y: 0, Z: 0}) {
+		t.Fatalf("map cursor state = popup %#v target %#v", m.landmarkPopup, m.travelTarget)
+	}
+
+	m = newTravelModel()
+	next, _ = m.handleKey(charmRuneKey('_'))
+	m = next.(model)
+	landmark, ok := landmarkForLetter(m.landmarkPopup.landmarks, "a")
+	if !ok || landmark.ID != "temple" {
+		t.Fatalf("letter a destination = %#v, %v; want temple", landmark, ok)
+	}
+	next, cmd = m.handleKey(charmRuneKey('a'))
+	if cmd == nil {
+		t.Fatal("landmark choice did not start travel")
+	}
+	m = next.(model)
+	if m.landmarkPopup != nil || m.autoCancel == nil {
+		t.Fatalf("landmark travel state = popup %#v cancel %#v", m.landmarkPopup, m.autoCancel)
+	}
+	next, _ = m.handleKey(charmRuneKey('x'))
+	m = next.(model)
+	if m.autoCancel != nil || !strings.Contains(m.messages[0], "automove canceled") {
+		t.Fatalf("landmark travel did not remain cancellable: %#v", m.messages)
+	}
+}
+
 func TestDrawWorldCentersPlayerOnLargeCampground(t *testing.T) {
 	world := []entity{
 		{Key: "floor-origin", Tag: "floor", In: "world", At: pos{X: 0, Y: 0, Z: 0}},
@@ -1327,7 +2161,7 @@ func TestViewRendersStatusBoxBelowMapAboveControls(t *testing.T) {
 			t.Fatalf("%s missing from view: %q", label, view)
 		}
 	}
-	for _, want := range []string{"St:--", "HP:--/--", "Dlvl:3"} {
+	for _, want := range []string{"St:--", "HP:--/--", "Dlvl:2"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("status box missing %q from view: %q", want, view)
 		}

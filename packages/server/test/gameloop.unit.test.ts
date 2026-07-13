@@ -184,7 +184,8 @@ describe("initial world", () => {
         "tent",
         "sign",
         "effigy",
-        "temple"
+        "temple",
+        "stairs-down"
       ] as const
     ) {
       expect(entities.some((entity) => entity._tag === requiredTag)).toBe(
@@ -270,11 +271,11 @@ describe("initial world", () => {
 })
 
 describe("campground active turn region", () => {
-  it("processes the player and nearby campground NPCs while lazily stepping budgeted offscreen NPCs", async () => {
+  it("processes the player while leaving NPCs without navigable assignments inert", async () => {
     const actor = player(90, 13, 0)
     const nearHippie = hippieAt("hippie-near", 50, 3)
     const farHippie = hippieAt("hippie-far", 70, 50)
-    const world = await runWithWorld(
+    const state = await runWithWorld(
       [
         floorAt("extent-0", 0, 0),
         floorAt("extent-max", 359, 159),
@@ -291,10 +292,13 @@ describe("campground active turn region", () => {
       (module) =>
         Effect.gen(function*() {
           yield* module.actPlayerAction(EAction.move({ dir: "E" }))
-          return yield* module.eGetWorld
+          const store = yield* GameStateStore
+          return yield* store.get
         })
     )
+    const world = state.world
 
+    expect(state.turn).toBe(1)
     expect(entityByKey(world, actor.key)?.at).toEqual({
       x: 91,
       y: 13,
@@ -302,12 +306,12 @@ describe("campground active turn region", () => {
     })
     expect(entityByKey(world, nearHippie.key)?.at).toEqual({
       x: 50,
-      y: 4,
+      y: 3,
       z: 0
     })
     expect(entityByKey(world, farHippie.key)?.at).toEqual({
       x: 70,
-      y: 49,
+      y: 50,
       z: 0
     })
   })
@@ -343,13 +347,13 @@ describe("campground active turn region", () => {
     )
   })
 
-  it("rotates the lazy offscreen budget across candidates over multiple turns", async () => {
+  it("rotates the lazy offscreen budget even when generic NPCs have no AI", async () => {
     const actor = player(90, 13, 0)
     const hippies = Array.from(
       { length: 6 },
       (_, index) => hippieAt(`hippie-${index}`, 70, 50 + index)
     )
-    const world = await runWithWorld(
+    const state = await runWithWorld(
       [
         floorAt("extent-0", 0, 0),
         floorAt("extent-max", 359, 159),
@@ -365,18 +369,21 @@ describe("campground active turn region", () => {
         Effect.gen(function*() {
           yield* module.actPlayerAction(EAction.noop())
           yield* module.actPlayerAction(EAction.noop())
-          return yield* module.eGetWorld
+          const store = yield* GameStateStore
+          return yield* store.get
         })
     )
 
+    expect(state.lazyOffscreenCursor).toBe(2)
+    const world = state.world
     expect(entityByKey(world, "hippie-4")?.at).toEqual({
       x: 70,
-      y: 53,
+      y: 54,
       z: 0
     })
     expect(entityByKey(world, "hippie-5")?.at).toEqual({
       x: 70,
-      y: 54,
+      y: 55,
       z: 0
     })
   })
@@ -414,6 +421,34 @@ describe("campground active turn region", () => {
       .toBeDefined()
     expect(entityByKey(fullWorld.state.world, "far-floor")).toBeUndefined()
     expect(HashMap.size(fullWorld.state.inventory)).toBe(1)
+    expect(fullWorld.state.campground).toEqual({
+      discoveredLandmarks: [],
+      weather: { condition: "heavy-rain" }
+    })
+    expect(fullWorld.state.gameplayEvents).toEqual([])
+  })
+
+  it("returns only the current dungeon level when campground bounds do not apply", async () => {
+    const result = await runWithWorld(
+      [
+        floorAt("campground-floor", 1, 1),
+        {
+          ...floorAt("dungeon-tunnel", 1, 1),
+          _tag: "tunnel",
+          at: { x: 1, y: 1, z: 1 }
+        },
+        player(1, 1, 1),
+        makeBeer("inventory-beer", 1, 1, 1, "player")
+      ],
+      (module) => module.getClientState
+    )
+
+    expect(entityByKey(result.world, "player")).toBeDefined()
+    expect(entityByKey(result.world, "dungeon-tunnel")).toBeDefined()
+    expect(entityByKey(result.world, "campground-floor")).toBeUndefined()
+    expect(entityByKey(result.world, "inventory-beer")).toBeUndefined()
+    expect(HashMap.size(result.inventory)).toBe(1)
+    expect(result.campground).toEqual({ discoveredLandmarks: [] })
   })
 
   it("keeps lazy offscreen processing scoped to the active campground level", async () => {
@@ -450,7 +485,7 @@ describe("campground active turn region", () => {
     )
   })
 
-  it("keeps non-campground worlds processing all NPCs", async () => {
+  it("keeps generic non-campground NPCs inert", async () => {
     const actor = player(90, 13, 0)
     const farHippie = hippieAt("hippie-far", 70, 50)
     const world = await runWithWorld(
@@ -476,7 +511,7 @@ describe("campground active turn region", () => {
     })
     expect(entityByKey(world, farHippie.key)?.at).toEqual({
       x: 70,
-      y: 49,
+      y: 50,
       z: 0
     })
   })

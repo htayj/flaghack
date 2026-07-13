@@ -100,6 +100,9 @@ describe("GameRepository client-state stream publishing", () => {
       source: "initial",
       terminal: "quit"
     })
+    expect(initial.clientState.campground).toEqual({
+      discoveredLandmarks: []
+    })
     expect(initial.clientState.world.pipe(HashMap.size)).toBe(0)
   })
 })

@@ -2,6 +2,7 @@ import { EAction, GameState } from "@flaghack/domain/schemas"
 import { Effect, HashMap } from "effect"
 import { bench, describe } from "vitest"
 import { doAction } from "../src/actions.js"
+import { normalizeCampgroundState } from "../src/campgroundState.js"
 import { player } from "../src/creatures.js"
 import { actPlayerAction } from "../src/gameloop.js"
 import { GameStateStore } from "../src/GameStateStore.js"
@@ -30,7 +31,9 @@ const benchmarkWorld: World = HashMap.set(
   "player",
   benchmarkPlayer
 )
-const benchmarkState = GameState.make({ world: benchmarkWorld })
+const benchmarkState = normalizeCampgroundState(
+  GameState.make({ world: benchmarkWorld })
+)
 
 describe("server gameloop smoke benchmarks", () => {
   bench("generates deterministic campground level", () => {

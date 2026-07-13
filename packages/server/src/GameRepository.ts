@@ -5,6 +5,10 @@ import type {
 import type { RoleId } from "@flaghack/domain/roles"
 import type { Action } from "@flaghack/domain/schemas"
 import { Effect, HashMap, Option, Ref } from "effect"
+import {
+  appendCampgroundWakeUpNarration,
+  prepareRestoredCampgroundState
+} from "./campgroundState.js"
 import type { TKey } from "./entity.js"
 import {
   actPlayerAction as apiDoPlayerAction,
@@ -26,7 +30,8 @@ import { measureEffect } from "./perf.js"
 import {
   availableRoles,
   confirmSetupForGameState,
-  selectRoleForGameState
+  selectRoleForGameState,
+  setupIsComplete
 } from "./setup.js"
 
 type AutosaveRegistration = () => Effect.Effect<void>
@@ -88,7 +93,7 @@ export class GameRepository
           Effect.orDie
         )
         if (Option.isSome(restored)) {
-          yield* store.set(restored.value)
+          yield* store.set(prepareRestoredCampgroundState(restored.value))
         }
       })
 
@@ -108,6 +113,8 @@ export class GameRepository
         )
 
       const emptyClientState = {
+        campground: { discoveredLandmarks: [] },
+        gameplayEvents: [],
         inventory: HashMap.empty(),
         roles: [...availableRoles],
         setup: { phase: "complete" as const },
@@ -247,7 +254,7 @@ export class GameRepository
         yield* Ref.set(terminalLifecycleKindRef, undefined)
         yield* store.reset
         if (Option.isSome(restored)) {
-          yield* store.set(restored.value)
+          yield* store.set(prepareRestoredCampgroundState(restored.value))
         }
         yield* publishClientStateUnlocked("restore")
       }).pipe(lifecycleSemaphore.withPermits(1))
@@ -377,7 +384,13 @@ export class GameRepository
             },
             withRestoredTransformAndSaveIfChanged(
               "setup",
-              (state) => confirmSetupForGameState(state, confirm)
+              (state) => {
+                const confirmed = confirmSetupForGameState(state, confirm)
+                return !setupIsComplete(state)
+                    && setupIsComplete(confirmed)
+                  ? appendCampgroundWakeUpNarration(confirmed)
+                  : confirmed
+              }
             )
           )
         },

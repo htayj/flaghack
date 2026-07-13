@@ -148,6 +148,14 @@ The feature gate also starts a disposable server and CLI in a unique tmux sessio
 
 Use this for task-graph feature verification when the requested behavior must be exercised in the real terminal UI. Extend `scripts/tmux-feature-check.ts` or add a focused script when a feature needs richer assertions than output matching.
 
+Campground terminal verification has a focused bot-port gate:
+
+```sh
+pnpm test:feature:tmux:campground:bot
+```
+
+It uses one disposable server and Charm session to verify the one-time brutal-arrival narration, empty inventory, visible mud-puddle spawn beside the gate, and heavy-rain projection. It then opens the campground overview, verifies the projected current address and discovered Arrival Plaza destination without tracker text or hidden landmarks, closes the overview, exercises the talk-direction prompt, and opens the discovered-landmark travel popup. The generic feature harness accepts staged checks through `FLAGHACK_TMUX_STEPS`; the focused command supplies those checks and a wide enough disposable tmux window for the sidebar popup.
+
 Loot-specific terminal verification has a focused bot-port gate:
 
 ```sh

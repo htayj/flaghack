@@ -154,7 +154,7 @@ describe("initial world", () => {
     }
   })
 
-  it("places the player on a generated burn campground floor tile", async () => {
+  it("places the player on the generated wake-up mud tile", async () => {
     const world = await runGetWorld()
     const entities = Array.from(HashMap.values(world))
     const playerEntityOption = world.pipe(HashMap.get("player"))
@@ -167,16 +167,20 @@ describe("initial world", () => {
     expect(playerEntity._tag).toBe("player")
     if (playerEntity._tag !== "player") return
 
-    const floorAtPlayer = entities.find(
+    const groundAtPlayer = entities.filter(
       (entity) =>
-        entity._tag === "floor"
+        (
+          entity._tag === "floor"
+          || entity._tag === "mud"
+          || entity._tag === "tunnel"
+        )
         && entity.at.x === playerEntity.at.x
         && entity.at.y === playerEntity.at.y
         && entity.at.z === playerEntity.at.z
     )
 
     expect(playerEntity.at.z).toBe(0)
-    expect(floorAtPlayer?._tag).toBe("floor")
+    expect(groundAtPlayer.map(({ _tag }) => _tag)).toEqual(["mud"])
     for (
       const requiredTag of [
         "tunnel",

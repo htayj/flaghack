@@ -217,9 +217,10 @@ const SCREEN_WIDTH = 78
 const SCREEN_HEIGHT = 20
 export const FIRST_DUNGEON_LEVEL = 1
 const FIRST_DUNGEON_HIPPIE_COUNT = 3
-// const MIN_ROOM_SIZE = []
 const BSP_MAX_PART_HEIGHT = 10
 const BSP_MAX_PART_WIDTH = 10
+const BSP_MIN_PART_SPAN = 4
+const BSP_SPLIT_ASPECT_RATIO = 1.5
 const makeAllWalls = (
   width: number,
   height: number,
@@ -255,14 +256,25 @@ const randomRoomBoundary = (
   min: number,
   max: number,
   description: string
-): Effect.Effect<number, LevelGenerationError> => {
-  const low = Math.ceil(min)
-  const high = Math.floor(max)
+): Effect.Effect<number, LevelGenerationError> =>
+  randomIntInclusive(min, max, description)
 
-  return low > high
-    ? Effect.succeed(low)
-    : randomIntInclusive(low, high, description)
+const chooseBspSplitOrientation = (
+  width: number,
+  height: number
+): Effect.Effect<boolean> => {
+  const canSplitVertically = width > BSP_MAX_PART_WIDTH
+  const canSplitHorizontally = height > BSP_MAX_PART_HEIGHT
+
+  if (!canSplitHorizontally) return Effect.succeed(true)
+  if (!canSplitVertically) return Effect.succeed(false)
+  if (width >= height * BSP_SPLIT_ASPECT_RATIO) return Effect.succeed(true)
+  if (height >= width * BSP_SPLIT_ASPECT_RATIO) {
+    return Effect.succeed(false)
+  }
+  return Random.nextBoolean
 }
+
 const filterSplit = <T>(
   arr: Array<T>,
   fn: (a: T) => boolean
@@ -363,8 +375,16 @@ const doorVariantForPassage = (
   return "none"
 }
 
-const passageDoorIndex = (coordinates: ReadonlyArray<PassageCoordinate>) =>
-  Math.floor(coordinates.length / 2)
+const inclusiveIntegerRange = (
+  start: number,
+  end: number
+): ReadonlyArray<number> =>
+  start > end
+    ? []
+    : Array.from(
+      { length: end - start + 1 },
+      (_, offset) => start + offset
+    )
 
 const makePassagesWithDoor = (
   coordinates: ReadonlyArray<PassageCoordinate>,
@@ -374,12 +394,37 @@ const makePassagesWithDoor = (
   const passageCoordinateKeys = new globalThis.Set(
     coordinates.map(passageCoordinateKey)
   )
-  const doorIndex = passageDoorIndex(coordinates)
+  const validDoorCoordinates = coordinates.filter((coordinate) => {
+    const hasHorizontalPassage = hasPassageAt(
+      { ...coordinate, x: coordinate.x - 1 },
+      world,
+      passageCoordinateKeys
+    ) && hasPassageAt(
+      { ...coordinate, x: coordinate.x + 1 },
+      world,
+      passageCoordinateKeys
+    )
+    const hasVerticalPassage = hasPassageAt(
+      { ...coordinate, y: coordinate.y - 1 },
+      world,
+      passageCoordinateKeys
+    ) && hasPassageAt(
+      { ...coordinate, y: coordinate.y + 1 },
+      world,
+      passageCoordinateKeys
+    )
+
+    return hasHorizontalPassage || hasVerticalPassage
+  })
+  const doorCoordinate = validDoorCoordinates.at(
+    Math.floor(validDoorCoordinates.length / 2)
+  )
 
   return Effect.forEach(
     coordinates,
-    (coordinate, index): Effect.Effect<Entity, never, KeyGenerator> =>
-      index === doorIndex
+    (coordinate): Effect.Effect<Entity, never, KeyGenerator> =>
+      doorCoordinate !== undefined
+        && samePassageCoordinate(coordinate, doorCoordinate)
         ? door(
           coordinate.x,
           coordinate.y,
@@ -445,8 +490,8 @@ const _linkLeaves = (
       )
 
       const passageCoordinates = (minXA < minXB
-        ? range(maxXA + 1, minXB - 1)
-        : range(maxXB + 1, minXA - 1)).map((x) => ({
+        ? inclusiveIntegerRange(maxXA + 1, minXB - 1)
+        : inclusiveIntegerRange(maxXB + 1, minXA - 1)).map((x) => ({
           x,
           y: linkLineY,
           z
@@ -464,7 +509,7 @@ const _linkLeaves = (
     }
     const xIntersectValues = Set(xsB).intersect(Set(xsA)).filter((x) =>
       floorsA.some((f) => f.at.x === x && maxYA === f.at.y)
-      && floorsB.some((f) => f.at.x === x && maxYB === f.at.y)
+      && floorsB.some((f) => f.at.x === x && minYB === f.at.y)
     ).toArray()
     if (xIntersectValues.length > 0) {
       // console.log(
@@ -483,8 +528,8 @@ const _linkLeaves = (
       )
 
       const passageCoordinates = (minYA < minYB
-        ? range(maxYA + 1, minYB - 1)
-        : range(maxYB + 1, minYA - 1)).map((y) => ({
+        ? inclusiveIntegerRange(maxYA + 1, minYB - 1)
+        : inclusiveIntegerRange(maxYB + 1, minYA - 1)).map((y) => ({
           x: linkLineX,
           y,
           z
@@ -531,41 +576,23 @@ const _linkLeaves = (
     return replaceTilesWithPassages(a, b, passages)
   })
 
-const wallAt = (x: number, y: number) => (w: Array<Entity>) =>
-  w.some((e) =>
-    e.in === "world"
-    && e.at.x === x
-    && e.at.y === y
-    && e._tag === "wall"
-  )
-
-const flip =
-  <A, B, C>(f: (a: A) => (b: B) => C): (b: B) => (a: A) => C =>
-  (b: B) =>
-  (a: A) => f(a)(b)
-
-const wallN = flip(({ at: { x, y } }: Entity) => wallAt(x, y - 1))
-const wallS = flip(({ at: { x, y } }: Entity) => wallAt(x, y + 1))
-const wallE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y))
-const wallW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y))
-const wallNE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y - 1))
-const wallSE = flip(({ at: { x, y } }: Entity) => wallAt(x + 1, y + 1))
-const wallNW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y - 1))
-const wallSW = flip(({ at: { x, y } }: Entity) => wallAt(x - 1, y + 1))
-
 const determineWallVariant = (
   entity: Entity,
-  world: Array<Entity>
+  wallCoordinates: ReadonlySet<string>
 ): typeof DirectionalVariantSchema.Type => {
-  // const n = normalNeighbors(e, w).filter((n) => n._tag === "wall")
-  const n = wallN(world)(entity)
-  const w = wallW(world)(entity)
-  const e = wallE(world)(entity)
-  const s = wallS(world)(entity)
-  const ne = wallNE(world)(entity)
-  const nw = wallNW(world)(entity)
-  const se = wallSE(world)(entity)
-  const sw = wallSW(world)(entity)
+  const { x, y, z } = entity.at
+  const hasWall = (offsetX: number, offsetY: number) =>
+    wallCoordinates.has(
+      passageCoordinateKey({ x: x + offsetX, y: y + offsetY, z })
+    )
+  const n = hasWall(0, -1)
+  const w = hasWall(-1, 0)
+  const e = hasWall(1, 0)
+  const s = hasWall(0, 1)
+  const ne = hasWall(1, -1)
+  const nw = hasWall(-1, -1)
+  const se = hasWall(1, 1)
+  const sw = hasWall(-1, 1)
   if (n && w && s && e && se && sw && nw && ne) return "none"
 
   if (n && (!nw || !ne)) {
@@ -622,6 +649,27 @@ const determineWallVariant = (
     return "horizontal"
   } else return "none"
 }
+
+const finalizeWallVariants = (
+  level: ReadonlyArray<Entity>
+): Array<Entity> => {
+  const completeLevel = [...level]
+  const wallCoordinates = new globalThis.Set(
+    completeLevel
+      .filter((entity) => entity.in === "world" && entity._tag === "wall")
+      .map((entity) => passageCoordinateKey(entity.at))
+  )
+
+  return completeLevel.map((entity) =>
+    entity._tag === "wall"
+      ? {
+        ...entity,
+        variant: determineWallVariant(entity, wallCoordinates)
+      }
+      : entity
+  )
+}
+
 const _carveRoom = (
   level: Array<Entity>,
   width: number,
@@ -668,11 +716,7 @@ const _carveRoom = (
         deleteWallp(e) ? floor(e.at.x, e.at.y, e.at.z) : Effect.succeed(e),
       { concurrency: 1 }
     )
-    return withRoom.map((e) =>
-      e._tag === "wall"
-        ? { ...e, variant: determineWallVariant(e, withRoom) }
-        : e
-    )
+    return withRoom
   })
 const _BSPGenLevel = (
   level: Array<Entity>
@@ -693,7 +737,9 @@ const _BSPGenLevel = (
     // )
     const width = maxX - minX
     const height = maxY - minY
-    if (width <= BSP_MAX_PART_WIDTH || height <= BSP_MAX_PART_HEIGHT) {
+    const canSplitVertically = width > BSP_MAX_PART_WIDTH
+    const canSplitHorizontally = height > BSP_MAX_PART_HEIGHT
+    if (!canSplitVertically && !canSplitHorizontally) {
       const res = yield* _carveRoom(
         level,
         width,
@@ -709,17 +755,16 @@ const _BSPGenLevel = (
       // )
       return res
     }
-    const verticalp = yield* Random.nextBoolean
-    // console.log("vertical split? ", verticalp)
+    const splitVertically = yield* chooseBspSplitOrientation(width, height)
     const sliceAt = yield* randomIntInclusive(
-      (verticalp ? minX : minY) + 4,
-      (verticalp ? maxX : maxY) - 4,
+      (splitVertically ? minX : minY) + BSP_MIN_PART_SPAN + 1,
+      (splitVertically ? maxX : maxY) - BSP_MIN_PART_SPAN,
       "BSP slice"
     )
     // console.log("sliceat: ", sliceAt)
     const [sideA, sideB] = filterSplit(
       level,
-      (e) => (verticalp ? e.at.x : e.at.y) < sliceAt
+      (e) => (splitVertically ? e.at.x : e.at.y) < sliceAt
     )
     const doneA = yield* _BSPGenLevel(sideA)
     const doneB = yield* _BSPGenLevel(sideB)
@@ -2045,13 +2090,6 @@ const campPostCoordinates = (
     structureTiles.flatMap((tiles) => tiles.postCoordinates)
   )
 
-const campFloorCoordinates = (
-  structureTiles: ReadonlyArray<TentStructureTiles>
-): Array<GridPosition> =>
-  uniqueGridPositions(
-    structureTiles.flatMap((tiles) => tiles.floorCoordinates)
-  )
-
 const makeCoolerContents = (
   container: Cooler,
   profile: CampgroundCoolerLootProfile
@@ -2087,58 +2125,32 @@ const makeCoolerContents = (
     return [...bottles, ...beers, ...hotdogs, ...cheeses, ...salsas]
   })
 
-const chooseRandomCoordinate = (
-  availableCoordinates: ReadonlyArray<GridPosition>,
-  description: string
-): Effect.Effect<
-  readonly [GridPosition, Array<GridPosition>],
-  LevelGenerationError
-> =>
-  Effect.gen(function*() {
-    if (availableCoordinates.length === 0) {
-      return yield* Effect.fail(levelGenerationError(description))
-    }
-
-    const index = yield* randomIntInclusive(
-      0,
-      availableCoordinates.length - 1,
-      description
-    )
-    const coordinate = yield* getRequiredAt(
-      availableCoordinates,
-      index,
-      description
-    )
-
-    return [
-      coordinate,
-      availableCoordinates.filter((_, coordinateIndex) =>
-        coordinateIndex !== index
-      )
-    ] as const
-  })
-
 const chooseRandomCoordinates = (
   availableCoordinates: ReadonlyArray<GridPosition>,
   count: number,
   description: string
 ): Effect.Effect<Array<GridPosition>, LevelGenerationError> =>
   Effect.gen(function*() {
-    let remainingCoordinates = [...availableCoordinates]
-    const selectedCoordinates: Array<GridPosition> = []
-
-    for (const offset of range(0, count - 1)) {
-      const [coordinate, nextRemainingCoordinates] =
-        yield* chooseRandomCoordinate(
-          remainingCoordinates,
-          `${description} ${offset}`
+    if (!Number.isSafeInteger(count) || count < 0) {
+      return yield* Effect.fail(
+        levelGenerationError(
+          `${description} has invalid selection count ${count}`
         )
-
-      selectedCoordinates.push(coordinate)
-      remainingCoordinates = nextRemainingCoordinates
+      )
+    }
+    if (count > availableCoordinates.length) {
+      return yield* Effect.fail(
+        levelGenerationError(
+          `${description} needs ${count} coordinates, but only ${availableCoordinates.length} are available`
+        )
+      )
     }
 
-    return selectedCoordinates
+    const shuffledCoordinates = yield* Random.shuffle(
+      availableCoordinates
+    )
+
+    return Array.from(shuffledCoordinates).slice(0, count)
   })
 
 const campgroundHumanDisplayNameAt = (offset: number): string =>
@@ -2189,6 +2201,9 @@ const makeCampgroundNpcs = (
       availableCoordinates.map((coordinate) =>
         [gridKey(coordinate), coordinate] as const
       )
+    )
+    const patrolShelterKeys = new globalThis.Set(
+      patrolShelterCoordinates.map(gridKey)
     )
     const nameOffset = yield* randomIntInclusive(
       0,
@@ -2261,6 +2276,7 @@ const makeCampgroundNpcs = (
       available,
       Array.from(available.values()).filter((coordinate) =>
         roadKeys.has(gridKey(coordinate))
+        && !patrolShelterKeys.has(gridKey(coordinate))
       ),
       roadTravelerCount,
       "campground road travelers"
@@ -2269,6 +2285,7 @@ const makeCampgroundNpcs = (
       available,
       Array.from(available.values()).filter((coordinate) =>
         !roadKeys.has(gridKey(coordinate))
+        && !patrolShelterKeys.has(gridKey(coordinate))
         && residentShelterKeys.has(gridKey(coordinate))
         && cardinalGridNeighbors(coordinate).some((neighbor) =>
           roadKeys.has(gridKey(neighbor))
@@ -2386,46 +2403,10 @@ const templeWallVariant = (
 const isInCampgroundBounds = ({ x, y }: GridPosition): boolean =>
   x >= 0 && x < CAMPGROUND_WIDTH && y >= 0 && y < CAMPGROUND_HEIGHT
 
-const roadShoulderCoordinates = (
-  roadCoordinates: ReadonlyArray<GridPosition>
-): Array<GridPosition> =>
-  uniqueGridPositions(
-    roadCoordinates.map(({ x, y }, index) =>
-      index % 2 === 0 ? { x: x + 1, y } : { x, y: y + 1 }
-    )
-  ).filter(isInCampgroundBounds)
-
-const campPadCoordinates = (
-  layouts: ReadonlyArray<ThemeCampLayout>
-): Array<GridPosition> =>
-  uniqueGridPositions(
-    layouts.flatMap((layout) =>
-      rectangleCoordinates(
-        layout.signPosition.x - 2,
-        layout.signPosition.x + 2,
-        layout.signPosition.y - 2,
-        layout.signPosition.y + 2
-      )
-    )
-  ).filter(isInCampgroundBounds)
-
 const allCampgroundCoordinates = (): Array<GridPosition> =>
   range(0, CAMPGROUND_HEIGHT - 1).flatMap((y) =>
     range(0, CAMPGROUND_WIDTH - 1).map((x) => ({ x, y }))
   )
-
-const campgroundFloorCandidateCoordinates = (
-  roadCoordinates: ReadonlyArray<GridPosition>,
-  layouts: ReadonlyArray<ThemeCampLayout>,
-  requiredFloorCoordinates: ReadonlyArray<GridPosition>
-): Array<GridPosition> =>
-  uniqueGridPositions(
-    allCampgroundCoordinates()
-      .concat(roadShoulderCoordinates(roadCoordinates))
-      .concat(campPadCoordinates(layouts))
-      .concat(campgroundReservedTravelCorridorCoordinates())
-      .concat(requiredFloorCoordinates)
-  ).filter(isInCampgroundBounds)
 
 export const makeCampgroundLevel = (
   dlvl: number
@@ -2436,13 +2417,16 @@ export const makeCampgroundLevel = (
     const objectiveSpineCoordinates = campgroundObjectiveSpineCoordinates(
       geometry
     )
+    const puddleKeys = new globalThis.Set(
+      campgroundMudPuddleCoordinates().map(gridKey)
+    )
     const roadCoordinates = uniqueGridPositions(
       connectedRoadLoopCoordinates(geometry)
         .concat(objectiveSpineCoordinates)
         .concat(
           themeCamps.flatMap((layout) => layout.entranceCoordinates)
         )
-    )
+    ).filter((coordinate) => !puddleKeys.has(gridKey(coordinate)))
     const roadKeys = new globalThis.Set(roadCoordinates.map(gridKey))
     const roadSignCoordinates = [
       { x: geometry.centerX, y: geometry.innerTop },
@@ -2483,6 +2467,9 @@ export const makeCampgroundLevel = (
       roadCoordinates,
       structureReservedCoordinates
     )
+    const structureReservedKeys = new globalThis.Set(
+      structureReservedCoordinates.map(gridKey)
+    )
     const structureTiles = structures.map(({ tiles }) => tiles)
     const rawStructureRoofCoordinates = campRoofCoordinates(structureTiles)
     const rawStructureWallPlacements = campWallPlacements(structures)
@@ -2498,7 +2485,9 @@ export const makeCampgroundLevel = (
     )
     const rawStructurePostCoordinates = campPostCoordinates(structureTiles)
     const structureRoofCoordinates = rawStructureRoofCoordinates.filter(
-      (coordinate) => !roadKeys.has(gridKey(coordinate))
+      (coordinate) =>
+        !roadKeys.has(gridKey(coordinate))
+        && !structureReservedKeys.has(gridKey(coordinate))
     )
     const structureRoofKeys = new globalThis.Set(
       structureRoofCoordinates.map(gridKey)
@@ -2506,6 +2495,7 @@ export const makeCampgroundLevel = (
     const structureDoorPlacements = rawStructureDoorPlacements.filter(
       ({ position }) =>
         !roadKeys.has(gridKey(position))
+        && !structureReservedKeys.has(gridKey(position))
         && !structureRoofKeys.has(gridKey(position))
     )
     const structureDoorCoordinates = structureDoorPlacements.map(
@@ -2517,19 +2507,24 @@ export const makeCampgroundLevel = (
     const structureWallPlacements = rawStructureWallPlacements.filter(
       ({ position }) =>
         !roadKeys.has(gridKey(position))
+        && !structureReservedKeys.has(gridKey(position))
         && !structureRoofKeys.has(gridKey(position))
         && !structureDoorKeys.has(gridKey(position))
     )
     const structureWallCoordinates = structureWallPlacements.map(
       ({ position }) => position
     )
+    const structureWallKeys = new globalThis.Set(
+      structureWallCoordinates.map(gridKey)
+    )
     const structurePostCoordinates = rawStructurePostCoordinates.filter(
       (coordinate) =>
         !roadKeys.has(gridKey(coordinate))
+        && !structureReservedKeys.has(gridKey(coordinate))
         && !structureRoofKeys.has(gridKey(coordinate))
         && !structureDoorKeys.has(gridKey(coordinate))
+        && !structureWallKeys.has(gridKey(coordinate))
     )
-    const structureFloorCoordinates = campFloorCoordinates(structureTiles)
     const campPropPlacements = makeCampPropPlacements(
       themeCamps,
       roadCoordinates
@@ -2626,33 +2621,20 @@ export const makeCampgroundLevel = (
         .concat(propCoordinates)
         .map(gridKey)
     )
-    const requiredFloorCoordinates = uniqueGridPositions(
-      structureFloorCoordinates.concat(
-        themeCamps.map((layout) => layout.coolerPosition)
-      )
-    ).filter((coordinate) => !floorBlockerKeys.has(gridKey(coordinate)))
-    const puddleKeys = new globalThis.Set(
-      campgroundMudPuddleCoordinates().map(gridKey)
-    )
-    const wakeUpKey = gridKey(campgroundWakeUpCoordinate)
     const wakeUpDistanceFromRoad = 1
-    const fieldCoordinates = uniqueGridPositions(
-      campgroundFloorCandidateCoordinates(
-        roadCoordinates,
-        themeCamps,
-        requiredFloorCoordinates
-      ).filter((coordinate) =>
-        !floorBlockerKeys.has(gridKey(coordinate))
-        && !roadKeys.has(gridKey(coordinate))
-      ).concat(requiredFloorCoordinates)
-    ).filter((coordinate) => {
-      const coordinateKey = gridKey(coordinate)
-      if (coordinateKey === wakeUpKey) return true
-      if (puddleKeys.has(coordinateKey)) return false
-      return (coordinate.x - arrivalGateCoordinate.x) ** 2
-          + (coordinate.y - arrivalGateCoordinate.y) ** 2
-        > wakeUpDistanceFromRoad
-    })
+    const fieldCoordinates = allCampgroundCoordinates().filter(
+      (coordinate) => {
+        const coordinateKey = gridKey(coordinate)
+        return !floorBlockerKeys.has(coordinateKey)
+          && !roadKeys.has(coordinateKey)
+          && !puddleKeys.has(coordinateKey)
+          && (
+            (coordinate.x - arrivalGateCoordinate.x) ** 2
+                + (coordinate.y - arrivalGateCoordinate.y) ** 2
+              > wakeUpDistanceFromRoad
+          )
+      }
+    )
     const reservedPlayerSpawnCoordinate = campgroundWakeUpCoordinate
     const arrivalMarkerCoordinates = [
       arrivalGateCoordinate,
@@ -2873,13 +2855,24 @@ export const makeCampgroundLevel = (
     )
   })
 
+type LevelGeneratorKind = "campground" | "dungeon"
+
+const levelRandomSeed = (
+  generator: LevelGeneratorKind,
+  seed: number,
+  dlvl: number
+): string =>
+  `flag-hack:level-generation:v1:${generator}:seed:${seed}:level:${dlvl}`
+
 export const CampgroundGenLevel = (
   seed: number,
   dlvl: number
 ): Effect.Effect<World, LevelGenerationError> =>
   makeCampgroundLevel(dlvl).pipe(
     Effect.provide(CounterKeyGeneratorLive),
-    Effect.withRandom(Random.make(seed * 100 + dlvl))
+    Effect.withRandom(
+      Random.make(levelRandomSeed("campground", seed, dlvl))
+    )
   )
 
 export const firstDungeonArrivalCoordinate: GridPosition = { x: 1, y: 1 }
@@ -2963,6 +2956,55 @@ const cardinalCorridorNeighborCount = (
     { x: coordinate.x, y: coordinate.y + 1 }
   ].filter((neighbor) => corridorKeys.has(gridKey(neighbor))).length
 
+const corridorDistancesFrom = (
+  start: GridPosition,
+  corridorKeys: ReadonlySet<string>
+): ReadonlyMap<string, number> => {
+  const distances = new globalThis.Map<string, number>([
+    [gridKey(start), 0]
+  ])
+  const pending: Array<GridPosition> = [start]
+
+  for (let index = 0; index < pending.length; index += 1) {
+    const current = pending[index]
+    if (current === undefined) continue
+    const currentDistance = distances.get(gridKey(current))
+    if (currentDistance === undefined) continue
+
+    for (const neighbor of cardinalGridNeighbors(current)) {
+      const neighborKey = gridKey(neighbor)
+      if (!corridorKeys.has(neighborKey) || distances.has(neighborKey)) {
+        continue
+      }
+
+      distances.set(neighborKey, currentDistance + 1)
+      pending.push(neighbor)
+    }
+  }
+
+  return distances
+}
+
+const compareCoordinatesByDistance = (
+  distances: ReadonlyMap<string, number>,
+  left: GridPosition,
+  right: GridPosition
+): number =>
+  (distances.get(gridKey(left)) ?? -1)
+    - (distances.get(gridKey(right)) ?? -1)
+  || left.y - right.y
+  || left.x - right.x
+
+const distanceBands = (
+  coordinates: ReadonlyArray<GridPosition>,
+  count: number
+): ReadonlyArray<ReadonlyArray<GridPosition>> =>
+  Array.from({ length: count }, (_, index) =>
+    coordinates.slice(
+      Math.floor((index * coordinates.length) / count),
+      Math.floor(((index + 1) * coordinates.length) / count)
+    ))
+
 const makeFirstDungeonLevel = (
   dlvl: number
 ): Effect.Effect<World, LevelGenerationError, KeyGenerator> =>
@@ -2980,37 +3022,58 @@ const makeFirstDungeonLevel = (
           : Effect.succeed(entity),
       { concurrency: 1 }
     )
-    const terrain = carvedTerrain.map((entity) =>
-      entity._tag === "wall"
-        ? {
-          ...entity,
-          variant: determineWallVariant(entity, carvedTerrain)
-        }
-        : entity
-    )
+    const terrain = finalizeWallVariants(carvedTerrain)
     const deadEnds = corridorCoordinates.filter((coordinate) =>
       !sameGridPosition(coordinate, firstDungeonArrivalCoordinate)
       && cardinalCorridorNeighborCount(coordinate, corridorKeys) === 1
     )
+    const corridorDistances = corridorDistancesFrom(
+      firstDungeonArrivalCoordinate,
+      corridorKeys
+    )
     const flagCoordinate = [...deadEnds].sort((left, right) =>
-      Math.abs(right.x - firstDungeonArrivalCoordinate.x)
-        + Math.abs(right.y - firstDungeonArrivalCoordinate.y)
-        - Math.abs(left.x - firstDungeonArrivalCoordinate.x)
-        - Math.abs(left.y - firstDungeonArrivalCoordinate.y)
-      || right.y - left.y
-      || right.x - left.x
+      compareCoordinatesByDistance(corridorDistances, right, left)
     ).at(0)
     if (flagCoordinate === undefined) {
       return yield* Effect.fail(
         levelGenerationError("first dungeon missing-flag dead end")
       )
     }
-    const hippieCoordinates = yield* chooseRandomCoordinates(
-      deadEnds.filter((coordinate) =>
-        !sameGridPosition(coordinate, flagCoordinate)
-      ),
-      FIRST_DUNGEON_HIPPIE_COUNT,
-      "first dungeon hippie spawn"
+    const maximumCorridorDistance = Math.max(
+      ...corridorDistances.values()
+    )
+    const minimumHippieDistance = Math.ceil(maximumCorridorDistance / 4)
+    const hippieCandidates = deadEnds.filter((coordinate) =>
+      !sameGridPosition(coordinate, flagCoordinate)
+      && (corridorDistances.get(gridKey(coordinate)) ?? -1)
+        >= minimumHippieDistance
+    ).sort((left, right) =>
+      compareCoordinatesByDistance(corridorDistances, left, right)
+    )
+    if (hippieCandidates.length < FIRST_DUNGEON_HIPPIE_COUNT) {
+      return yield* Effect.fail(
+        levelGenerationError(
+          `first dungeon needs ${FIRST_DUNGEON_HIPPIE_COUNT} distant hippie`
+            + ` dead ends, but only ${hippieCandidates.length} are available`
+        )
+      )
+    }
+    const hippieCoordinates = yield* Effect.forEach(
+      distanceBands(hippieCandidates, FIRST_DUNGEON_HIPPIE_COUNT),
+      (band, bandIndex) =>
+        Effect.gen(function*() {
+          const coordinateIndex = yield* randomIntInclusive(
+            0,
+            band.length - 1,
+            `first dungeon hippie distance band ${bandIndex}`
+          )
+          return yield* getRequiredAt(
+            band,
+            coordinateIndex,
+            `first dungeon hippie distance band ${bandIndex}`
+          )
+        }),
+      { concurrency: 1 }
     )
     const hippies = yield* Effect.forEach(
       hippieCoordinates,
@@ -3042,7 +3105,7 @@ export const makeBspLevel = (
     }
 
     const walls = yield* makeAllWalls(SCREEN_WIDTH, SCREEN_HEIGHT, dlvl)
-    const level = yield* _BSPGenLevel(walls)
+    const level = finalizeWallVariants(yield* _BSPGenLevel(walls))
 
     return HashMap.fromIterable(
       level.map((e) => [e.key, e])
@@ -3055,7 +3118,9 @@ export const BSPGenLevel = (
 ): Effect.Effect<World, LevelGenerationError> =>
   makeBspLevel(dlvl).pipe(
     Effect.provide(CounterKeyGeneratorLive),
-    Effect.withRandom(Random.make(seed * 100 + dlvl))
+    Effect.withRandom(
+      Random.make(levelRandomSeed("dungeon", seed, dlvl))
+    )
   )
 // const genFeatures = (world: World) => {
 // }
